@@ -28,6 +28,8 @@ class MockTextProvider:
                     "reason": "先理解进程视图，有助于理解容器隔离。",
                 } if gap else None,
             }
+        if task == "bridge_note":
+            return {"content": "📌 认知打通：前置知识帮助你看清当前主题背后的底层机制。"}
         return {
             "title": "Mock 学习知识卡",
             "summary": "用于本地开发验证的知识卡。",

@@ -81,3 +81,25 @@ class Note(Base):
     content: Mapped[str] = mapped_column(Text)
     source_type: Mapped[str] = mapped_column(String(20), default="manual")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class RelatedCardProposal(Base):
+    __tablename__ = "related_card_proposals"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"))
+    card_id: Mapped[str] = mapped_column(ForeignKey("knowledge_cards.id"))
+    section_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    title: Mapped[str] = mapped_column(String(200))
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    generated_card_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class BridgeNote(Base):
+    __tablename__ = "bridge_notes"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    card_id: Mapped[str] = mapped_column(ForeignKey("knowledge_cards.id"))
+    related_card_id: Mapped[str] = mapped_column(ForeignKey("knowledge_cards.id"))
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)

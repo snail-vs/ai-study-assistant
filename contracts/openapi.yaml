@@ -136,6 +136,42 @@ paths:
             text/event-stream:
               schema:
                 type: string
+  /proposals/{proposalId}/accept:
+    parameters:
+      - name: proposalId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: acceptRelatedCardProposal
+      responses:
+        '201':
+          description: Related knowledge card created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeCard'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /proposals/{proposalId}/reject:
+    parameters:
+      - name: proposalId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: rejectRelatedCardProposal
+      responses:
+        '200':
+          description: Proposal rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, proposalId]
+                properties:
+                  status: { type: string, enum: [rejected] }
+                  proposalId: { type: string }
   /cards/{cardId}/notes:
     parameters:
       - $ref: '#/components/parameters/CardId'

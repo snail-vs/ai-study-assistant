@@ -1,6 +1,5 @@
 import json
 from collections.abc import AsyncIterator
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -8,10 +7,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .ai.gateway import AIGateway
+from .agents.bridge_agent import BridgeAgent
 from .agents.main_agent import MainAgent
 from .agents.side_agent import SideAgent
 from .db import get_db
-from .models import CardSection, Conversation, KnowledgeCard, LearningSpace, Message, Note
+from .models import (
+    BridgeNote,
+    CardSection,
+    Conversation,
+    KnowledgeCard,
+    LearningSpace,
+    Message,
+    Note,
+    RelatedCardProposal,
+)
 from .schemas import (
     ConversationResponse,
     CreateKnowledgeCardRequest,
@@ -30,6 +39,7 @@ router = APIRouter()
 gateway = AIGateway()
 side_agent = SideAgent(gateway)
 main_agent = MainAgent(gateway)
+bridge_agent = BridgeAgent(gateway)
 
 
 @router.get("/health")
@@ -139,13 +149,66 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                 yield f"event: diagnosis.updated\ndata: {json.dumps(diagnosis.diagnosis.model_dump(by_alias=True), ensure_ascii=False)}\n\n"
                 if diagnosis.proposal:
                     proposal = diagnosis.proposal.model_dump()
-                    proposal["proposalId"] = str(uuid4())
+                    stored = RelatedCardProposal(
+                        conversation_id=conversation_id,
+                        card_id=conversation.card_id,
+                        section_id=conversation.section_id,
+                        title=proposal["title"],
+                        reason=proposal["reason"],
+                    )
+                    db.add(stored)
+                    db.commit()
+                    proposal["proposalId"] = stored.id
                     yield f"event: related_card.proposed\ndata: {json.dumps(proposal, ensure_ascii=False)}\n\n"
         except Exception as exc:
             yield f"event: run.failed\ndata: {json.dumps({'code': 'AI_DIAGNOSIS_FAILED', 'message': str(exc)})}\n\n"
         yield "event: message.completed\ndata: {}\n\n"
 
     return StreamingResponse(events(), media_type="text/event-stream")
+
+
+@router.post("/proposals/{proposal_id}/accept", response_model=KnowledgeCardResponse, status_code=201)
+async def accept_proposal(proposal_id: str, db: Session = Depends(get_db)):
+    proposal = db.get(RelatedCardProposal, proposal_id)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    if proposal.generated_card_id:
+        card = db.get(KnowledgeCard, proposal.generated_card_id)
+        if card:
+            return card
+    source_card = db.get(KnowledgeCard, proposal.card_id)
+    if not source_card:
+        raise HTTPException(status_code=404, detail="Source card not found")
+    draft = await main_agent.create_card(f"生成关联知识卡：{proposal.title}\n学习原因：{proposal.reason}")
+    card = KnowledgeCard(
+        space_id=source_card.space_id,
+        parent_card_id=source_card.id,
+        source_conversation_id=proposal.conversation_id,
+        title=draft.title or proposal.title,
+        card_type="related",
+        status="active",
+    )
+    db.add(card)
+    db.flush()
+    for index, section in enumerate(draft.sections):
+        db.add(CardSection(card_id=card.id, title=section.get("title", f"第 {index + 1} 节"), order_index=index, content_markdown=section.get("content_markdown", "")))
+    bridge = await bridge_agent.create(source_card.title, card.title)
+    db.add(BridgeNote(card_id=source_card.id, related_card_id=card.id, content=bridge.content))
+    proposal.status = "accepted"
+    proposal.generated_card_id = card.id
+    db.commit()
+    db.refresh(card)
+    return card
+
+
+@router.post("/proposals/{proposal_id}/reject")
+def reject_proposal(proposal_id: str, db: Session = Depends(get_db)):
+    proposal = db.get(RelatedCardProposal, proposal_id)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    proposal.status = "rejected"
+    db.commit()
+    return {"status": "rejected", "proposalId": proposal_id}
 
 
 @router.post("/cards/{card_id}/notes", response_model=NoteResponse, status_code=201)

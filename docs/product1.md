@@ -826,3 +826,5 @@ uv --project backend run uvicorn backend.main:app --reload
 - [ ] 知识卡关联图
 
 当前实施优先级是 Phase 0 → Phase 1 → Phase 2，先建立可以稳定迭代的契约和运行骨架，再实现完整学习闭环。
+
+Phase 2 当前已实现 Provider、主 Agent、旁支诊断、SSE 和关联知识卡提议闭环；真实多模态 Provider、互动展示和多 Agent 角色聊天仍按第二版范围保留。

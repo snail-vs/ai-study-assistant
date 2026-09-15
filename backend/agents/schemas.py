@@ -21,3 +21,7 @@ class KnowledgeCardDraft(BaseModel):
     title: str
     summary: str
     sections: list[dict[str, str]]
+
+
+class BridgeNoteDraft(BaseModel):
+    content: str
