@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 
 const base = '/api/v1'
@@ -15,6 +15,7 @@ const conversations = ref([])
 const activeConversation = ref(null)
 const messages = ref([])
 const input = ref('')
+const composerInput = ref(null)
 const notesList = ref([])
 const showNotes = ref(false)
 const editingNote = ref(null)
@@ -97,6 +98,15 @@ function stopChatResize() {
 function adjustChatWidth(delta) {
   chatWidth.value = Math.min(560, Math.max(280, chatWidth.value + delta))
   localStorage.setItem('studycenter.chatWidth', String(chatWidth.value))
+}
+
+function resizeComposer(event) {
+  const textarea = event?.target || composerInput.value
+  if (!textarea) return
+  textarea.style.height = 'auto'
+  const height = Math.min(textarea.scrollHeight, 180)
+  textarea.style.height = `${height}px`
+  textarea.style.overflowY = textarea.scrollHeight > 180 ? 'auto' : 'hidden'
 }
 
 async function request(path, options = {}) {
@@ -401,6 +411,8 @@ async function sendMessage(text = input.value) {
   if (!activeConversation.value || !text.trim()) return
   error.value = ''
   input.value = ''
+  await nextTick()
+  resizeComposer()
   messages.value.push({ role: 'user', content: text })
   const assistant = { role: 'assistant', content: '' }
   messages.value.push(assistant)
@@ -587,7 +599,7 @@ async function selectConversation(item) {
         </div>
         <p v-if="error" class="error chat-error">{{ error }}</p>
         <form class="composer" @submit.prevent="activeConversation ? sendMessage() : openSideConversation()">
-          <textarea v-model="input" placeholder="问问当前内容…"></textarea>
+          <textarea ref="composerInput" v-model="input" placeholder="问问当前内容…" @input="resizeComposer"></textarea>
           <button>发送 ↗</button>
         </form>
       </aside>
