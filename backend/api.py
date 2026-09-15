@@ -7,6 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .ai.gateway import AIGateway
+from .ai.registry import create_named_text_provider
+from .ai.providers.mock import MockTextProvider
 from .agents.bridge_agent import BridgeAgent
 from .agents.main_agent import MainAgent
 from .agents.side_agent import SideAgent
@@ -33,6 +35,8 @@ from .schemas import (
     KnowledgeCardResponse,
     MessageResponse,
     NoteResponse,
+    ConfigureProviderRequest,
+    ProviderSettingsResponse,
 )
 
 router = APIRouter()
@@ -40,6 +44,34 @@ gateway = AIGateway()
 side_agent = SideAgent(gateway)
 main_agent = MainAgent(gateway)
 bridge_agent = BridgeAgent(gateway)
+provider_state = {"active": "mock", "providers": {"deepseek": False, "opencode": False, "openrouter": False}}
+
+
+@router.get("/settings/providers", response_model=ProviderSettingsResponse)
+def get_provider_settings():
+    return {"activeProvider": provider_state["active"], "providers": provider_state["providers"]}
+
+
+@router.put("/settings/providers/{provider_name}", response_model=ProviderSettingsResponse)
+def configure_provider(provider_name: str, payload: ConfigureProviderRequest):
+    try:
+        gateway.configure(create_named_text_provider(provider_name, payload.api_key))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    provider_state["active"] = provider_name
+    provider_state["providers"][provider_name] = True
+    return {"activeProvider": provider_state["active"], "providers": provider_state["providers"]}
+
+
+@router.delete("/settings/providers/{provider_name}", response_model=ProviderSettingsResponse)
+def clear_provider(provider_name: str):
+    if provider_name not in provider_state["providers"]:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    provider_state["providers"][provider_name] = False
+    if provider_state["active"] == provider_name:
+        gateway.configure(MockTextProvider())
+        provider_state["active"] = "mock"
+    return {"activeProvider": provider_state["active"], "providers": provider_state["providers"]}
 
 
 @router.get("/health")

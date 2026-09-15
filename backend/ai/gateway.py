@@ -9,6 +9,9 @@ class AIGateway:
     def __init__(self, provider: TextProvider | None = None) -> None:
         self.provider = provider or create_text_provider()
 
+    def configure(self, provider: TextProvider) -> None:
+        self.provider = provider
+
     def stream_text(
         self, messages: Sequence[dict[str, str]], *, task: str
     ) -> AsyncIterator[str]:

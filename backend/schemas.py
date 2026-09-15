@@ -19,6 +19,15 @@ class ErrorResponse(ApiModel):
     error: ErrorDetail
 
 
+class ProviderSettingsResponse(ApiModel):
+    active_provider: str = Field(alias="activeProvider")
+    providers: dict[str, bool]
+
+
+class ConfigureProviderRequest(ApiModel):
+    api_key: str = Field(alias="apiKey", min_length=1)
+
+
 class CreateLearningSpaceRequest(ApiModel):
     title: str = Field(min_length=1)
     learning_goal: str = Field(alias="learningGoal", min_length=1)

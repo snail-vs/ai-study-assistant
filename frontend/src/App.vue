@@ -16,6 +16,10 @@ const input = ref('')
 const note = ref('')
 const loading = ref(false)
 const error = ref('')
+const showSettings = ref(false)
+const selectedProvider = ref('deepseek')
+const apiKey = ref('')
+const providerStatus = ref({ activeProvider: 'mock', providers: {} })
 const proposal = ref(null)
 const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
 
@@ -33,6 +37,30 @@ async function request(path, options = {}) {
   const body = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(body?.error?.message || body?.detail || '请求失败')
   return body
+}
+
+async function openSettings() {
+  providerStatus.value = await request('/settings/providers')
+  showSettings.value = true
+}
+
+async function saveProvider() {
+  if (!apiKey.value.trim()) return
+  loading.value = true
+  try {
+    providerStatus.value = await request(`/settings/providers/${selectedProvider.value}`, {
+      method: 'PUT', body: JSON.stringify({ apiKey: apiKey.value.trim() }),
+    })
+    apiKey.value = ''
+    showSettings.value = false
+  } catch (err) { error.value = err.message } finally { loading.value = false }
+}
+
+async function useMock() {
+  if (providerStatus.value.activeProvider !== 'mock') {
+    await request(`/settings/providers/${providerStatus.value.activeProvider}`, { method: 'DELETE' })
+  }
+  providerStatus.value = await request('/settings/providers')
 }
 
 async function startLearning() {
@@ -170,7 +198,8 @@ async function saveNote() {
     <header class="topbar">
       <div class="brand">Study<span>Center</span></div>
       <div v-if="space" class="crumb">学习空间 / {{ card?.title }} / {{ section?.title || '未开始' }}</div>
-      <div class="status">{{ loading ? 'AI 正在准备内容…' : '本地 Mock Provider' }}</div>
+      <div class="status">{{ loading ? 'AI 正在准备内容…' : `当前模型：${providerStatus.activeProvider}` }}</div>
+      <button class="settings-button" @click="openSettings">设置</button>
     </header>
 
     <section v-if="!space" class="welcome">
@@ -191,7 +220,17 @@ async function saveNote() {
       <p v-if="error" class="error">{{ error }}</p>
     </section>
 
-    <section v-else class="workspace">
+    <div v-if="showSettings" class="modal-backdrop" @click.self="showSettings = false">
+      <section class="settings-modal">
+        <div class="settings-head"><div><div class="panel-title">模型设置</div><p>Key 仅保存在后端当前进程内，不写入数据库。</p></div><button @click="showSettings = false">×</button></div>
+        <label>Provider<select v-model="selectedProvider"><option value="deepseek">DeepSeek</option><option value="opencode">OpenCode Zen</option><option value="openrouter">OpenRouter</option></select></label>
+        <label>API Key<input v-model="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" /></label>
+        <div class="provider-actions"><button class="secondary" @click="useMock">切换 Mock</button><button class="primary" :disabled="loading || !apiKey" @click="saveProvider">保存并使用</button></div>
+        <div class="provider-hint">已配置：{{ Object.entries(providerStatus.providers).filter(([, value]) => value).map(([key]) => key).join('、') || '暂无' }}</div>
+      </section>
+    </div>
+
+    <section v-if="space" class="workspace">
       <aside class="sidebar panel">
         <div class="panel-title">知识结构</div>
         <div class="tree-label">主知识卡</div>

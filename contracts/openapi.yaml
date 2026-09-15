@@ -6,6 +6,46 @@ info:
 servers:
   - url: /api/v1
 paths:
+  /settings/providers:
+    get:
+      operationId: getProviderSettings
+      responses:
+        '200':
+          description: Runtime provider status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderSettings'
+  /settings/providers/{providerName}:
+    parameters:
+      - name: providerName
+        in: path
+        required: true
+        schema: { type: string, enum: [deepseek, opencode, openrouter] }
+    put:
+      operationId: configureProvider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigureProviderRequest'
+      responses:
+        '200':
+          description: Provider configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderSettings'
+    delete:
+      operationId: clearProvider
+      responses:
+        '200':
+          description: Provider cleared
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderSettings'
   /health:
     get:
       operationId: getHealth
@@ -226,6 +266,19 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    ProviderSettings:
+      type: object
+      required: [activeProvider, providers]
+      properties:
+        activeProvider: { type: string }
+        providers:
+          type: object
+          additionalProperties: { type: boolean }
+    ConfigureProviderRequest:
+      type: object
+      required: [apiKey]
+      properties:
+        apiKey: { type: string, minLength: 1, writeOnly: true }
     HealthResponse:
       type: object
       required: [status]

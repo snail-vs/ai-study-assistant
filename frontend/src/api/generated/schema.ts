@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/settings/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getProviderSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/providers/{providerName}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerName: "deepseek" | "opencode" | "openrouter";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["configureProvider"];
+        post?: never;
+        delete: operations["clearProvider"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -184,6 +218,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ProviderSettings: {
+            activeProvider: string;
+            providers: {
+                [key: string]: boolean;
+            };
+        };
+        ConfigureProviderRequest: {
+            apiKey: string;
+        };
         HealthResponse: {
             /** @example ok */
             status: string;
@@ -311,6 +354,74 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getProviderSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Runtime provider status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderSettings"];
+                };
+            };
+        };
+    };
+    configureProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerName: "deepseek" | "opencode" | "openrouter";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigureProviderRequest"];
+            };
+        };
+        responses: {
+            /** @description Provider configured */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderSettings"];
+                };
+            };
+        };
+    };
+    clearProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerName: "deepseek" | "opencode" | "openrouter";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider cleared */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderSettings"];
+                };
+            };
+        };
+    };
     getHealth: {
         parameters: {
             query?: never;
