@@ -10,10 +10,11 @@ from ..base import AIProviderError
 class OpenAICompatibleProvider:
     """Chat Completions adapter for OpenAI and compatible endpoints."""
 
-    def __init__(self, base_url: str, api_key: str, model: str) -> None:
+    def __init__(self, base_url: str, api_key: str, model: str, endpoint: str | None = None) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
+        self.endpoint = endpoint or f"{self.base_url}/chat/completions"
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
@@ -34,7 +35,7 @@ class OpenAICompatibleProvider:
         payload = {"model": self.model, "messages": list(messages), "stream": True}
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream(
-                "POST", f"{self.base_url}/chat/completions", headers=self._headers(), json=payload
+                "POST", self.endpoint, headers=self._headers(), json=payload
             ) as response:
                 if response.status_code >= 400:
                     raise AIProviderError(f"{response.status_code}: {await response.aread()}")
@@ -68,13 +69,13 @@ class OpenAICompatibleProvider:
         }
         async with httpx.AsyncClient(timeout=120) as client:
             response = await client.post(
-                f"{self.base_url}/chat/completions", headers=self._headers(), json=payload
+                self.endpoint, headers=self._headers(), json=payload
             )
             if response.status_code == 400 and "response_format" in response.text:
                 # Many compatible endpoints support JSON mode but not JSON Schema mode.
                 payload["response_format"] = {"type": "json_object"}
                 response = await client.post(
-                    f"{self.base_url}/chat/completions", headers=self._headers(), json=payload
+                    self.endpoint, headers=self._headers(), json=payload
                 )
             if response.status_code == 400 and "response_format" in response.text:
                 # Last compatibility fallback: the agent prompt still requires JSON.

@@ -1,11 +1,12 @@
 from .config import load_provider_config
 from .providers.mock import MockTextProvider
 from .providers.openai import OpenAIProvider
+from .model_routing import resolve_model_route
 
 PROVIDER_DEFAULTS = {
-    "deepseek": ("https://api.deepseek.com", "deepseek-chat", ["deepseek-chat", "deepseek-reasoner"]),
-    "openrouter": ("https://openrouter.ai/api/v1", "openrouter/auto", ["openrouter/auto", "deepseek/deepseek-chat", "openai/gpt-4o-mini"]),
-    "opencode": ("https://opencode.ai/zen/v1", "deepseek-v4-pro", ["deepseek-v4-pro", "deepseek-v4-flash"]),
+    "deepseek": ("https://api.deepseek.com", "deepseek-chat"),
+    "openrouter": ("https://openrouter.ai/api/v1", "openrouter/auto"),
+    "opencode": ("https://opencode.ai/zen/v1", "deepseek-v4-pro"),
 }
 
 
@@ -19,5 +20,12 @@ def create_text_provider():
 def create_named_text_provider(name: str, api_key: str, model: str | None = None):
     if name not in PROVIDER_DEFAULTS:
         raise ValueError(f"Unsupported provider: {name}")
-    base_url, default_model, _ = PROVIDER_DEFAULTS[name]
-    return OpenAIProvider(base_url, api_key, model or default_model)
+    base_url, default_model = PROVIDER_DEFAULTS[name]
+    selected_model = model or default_model
+    route = resolve_model_route(name, base_url, selected_model)
+    if route.protocol != "openai_chat_completions":
+        raise ValueError(
+            f"Model {selected_model} uses unsupported protocol {route.protocol}; "
+            "this protocol adapter has not been enabled yet"
+        )
+    return OpenAIProvider(base_url, api_key, selected_model, endpoint=route.endpoint)

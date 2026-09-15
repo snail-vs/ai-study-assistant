@@ -180,6 +180,10 @@ TextModel
 
 ### 4. Provider Adapter
 
+Provider 路由分为真实模型 Provider 和访问渠道 Provider。真实 Provider 维护稳定的协议定义，访问渠道（例如 OpenCode、OpenRouter）维护模型命名空间/前缀到真实 Provider 的解析规则以及渠道级 Endpoint 覆盖。模型不逐个绑定协议。
+
+解析优先级为：访问渠道的命名空间或前缀规则 → 真实 Provider 默认协议 → 访问渠道默认协议；无法解析的模型标记为不支持，不根据模型名称猜测协议。协议适配器独立处理 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google Generative 等请求和流式响应格式。
+
 建议设计成下面的结构：
 
 ```text
