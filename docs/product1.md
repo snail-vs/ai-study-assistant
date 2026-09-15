@@ -785,7 +785,9 @@ Agent 的结构化输出另行使用 Pydantic 和 JSON Schema 定义，不与 HT
 Phase 1 当前使用 `uv` 管理 Python 工程：
 
 ```bash
-uv --project backend run alembic upgrade head
+cd backend
+uv run alembic upgrade head
+cd ..
 uv --project backend run uvicorn backend.main:app --reload
 ```
 
