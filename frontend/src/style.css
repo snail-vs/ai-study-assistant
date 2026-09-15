@@ -3,8 +3,8 @@
 * { scrollbar-width: thin; scrollbar-color: #304253 transparent; }
 *::-webkit-scrollbar { width: 5px; height: 5px; }
 *::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: #304253; border-radius: 999px; }
-*:hover::-webkit-scrollbar-thumb { background: #496477; }
+*::-webkit-scrollbar-thumb { background: #304253; background-clip: content-box; border: 2px solid transparent; border-radius: 999px; }
+*:hover::-webkit-scrollbar-thumb { background: #496477; background-clip: border-box; border-width: 0; }
 body { margin: 0; min-width: 1100px; }
 .notes-list-toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }.notes-list-toolbar button { border: 1px solid #3b5b59; background: #18302f; color: #74d2b4; border-radius: 6px; padding: 8px 12px; }.notes-list-toolbar button:disabled { cursor: not-allowed; opacity: .4; }.note-target-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }.note-target-fields label { color: #71849b; font-size: 11px; }.note-target-fields select { display: block; width: 100%; margin-top: 6px; padding: 9px; border-radius: 6px; border: 1px solid #30415a; background: #0d1520; color: #e8edf5; }
 .board-actions { display: flex; align-items: center; gap: 16px; }.board-actions button { background: transparent; border: 1px solid #3b5b59; color: #74d2b4; border-radius: 6px; padding: 6px 10px; font-size: 12px; letter-spacing: 0; text-transform: none; }.board-actions button:hover { background: #18302f; }.note-editor-actions .primary:disabled { cursor: not-allowed; opacity: .45; }
