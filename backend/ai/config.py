@@ -16,6 +16,8 @@ class ProviderConfig:
 
 
 def load_provider_config() -> ProviderConfig | None:
+    if os.getenv("AI_PROVIDER", "auto").lower() == "mock":
+        return None
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         return None

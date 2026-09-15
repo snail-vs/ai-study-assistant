@@ -834,9 +834,12 @@ Phase 2 当前已实现 Provider、主 Agent、旁支诊断、SSE 和关联知�
 后端从 `backend/.env` 读取文本模型配置。复制 `backend/.env.example` 为 `backend/.env`，至少填写：
 
 ```env
+AI_PROVIDER=auto
 OPENAI_API_KEY=your-api-key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
 ```
 
 `OPENAI_BASE_URL` 可以替换为任意兼容 Chat Completions 的服务地址；未配置 `OPENAI_API_KEY` 时自动使用 Mock Provider。图片、音频和视频 Provider 目前只有抽象接口，尚未接入实际调用。
+
+本地离线验证时可以设置 `AI_PROVIDER=mock`；使用真实模型时设置 `AI_PROVIDER=auto` 或 `AI_PROVIDER=openai` 并填写 API Key。
