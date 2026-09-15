@@ -45,11 +45,16 @@ class OpenAICompatibleProvider:
     async def structured(
         self, messages: Sequence[dict[str, str]], *, task: str, schema: dict[str, Any]
     ) -> dict[str, Any]:
+        is_deepseek = "deepseek" in self.base_url.lower()
+        response_format = {"type": "json_object"} if is_deepseek else {
+            "type": "json_schema",
+            "json_schema": {"name": task, "schema": schema},
+        }
         payload = {
             "model": self.model,
             "messages": list(messages),
             "temperature": 0.2,
-            "response_format": {"type": "json_schema", "json_schema": {"name": task, "schema": schema}},
+            "response_format": response_format,
         }
         async with httpx.AsyncClient(timeout=120) as client:
             response = await client.post(
