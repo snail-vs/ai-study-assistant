@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 
 const base = '/api/v1'
@@ -29,9 +29,12 @@ const selectedDefaultModel = ref('')
 const fetchingModels = ref(false)
 const editingKey = ref(false)
 const proposal = ref(null)
+const chatWidth = ref(Math.min(560, Math.max(280, Number(localStorage.getItem('studycenter.chatWidth')) || 360)))
+let resizingChat = false
 const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
 
 onMounted(() => Promise.all([loadHistory(), loadProviderSettings()]))
+onUnmounted(() => stopChatResize())
 
 const section = computed(() => card.value?.sections?.[activeSection.value] || null)
 const renderedContent = computed(() => md.render(section.value?.contentMarkdown || '本节内容正在生成。'))
@@ -43,6 +46,33 @@ const homeCards = computed(() => history.value.flatMap((spaceItem) => (
     space: spaceItem,
   }))
 )))
+
+function startChatResize(event) {
+  event.preventDefault()
+  resizingChat = true
+  document.body.style.userSelect = 'none'
+  window.addEventListener('pointermove', resizeChat)
+  window.addEventListener('pointerup', stopChatResize)
+}
+
+function resizeChat(event) {
+  if (!resizingChat) return
+  chatWidth.value = Math.min(560, Math.max(280, window.innerWidth - event.clientX - 12))
+  localStorage.setItem('studycenter.chatWidth', String(chatWidth.value))
+}
+
+function stopChatResize() {
+  if (!resizingChat) return
+  resizingChat = false
+  document.body.style.userSelect = ''
+  window.removeEventListener('pointermove', resizeChat)
+  window.removeEventListener('pointerup', stopChatResize)
+}
+
+function adjustChatWidth(delta) {
+  chatWidth.value = Math.min(560, Math.max(280, chatWidth.value + delta))
+  localStorage.setItem('studycenter.chatWidth', String(chatWidth.value))
+}
 
 async function request(path, options = {}) {
   const response = await fetch(`${base}${path}`, {
@@ -360,7 +390,7 @@ async function saveNote() {
       正在恢复学习空间…
     </section>
 
-    <section v-if="space && card" class="workspace">
+    <section v-if="space && card" class="workspace" :style="{ '--chat-width': `${chatWidth}px` }">
       <aside class="sidebar panel">
         <div class="panel-title">知识结构</div>
         <div class="tree-label">主知识卡</div>
@@ -387,6 +417,8 @@ async function saveNote() {
           <button class="save-note" @click="saveNote">保存笔记</button>
         </div>
       </section>
+
+      <div class="resize-handle" role="separator" aria-label="调整会话宽度" :aria-valuenow="chatWidth" aria-valuemin="280" aria-valuemax="560" tabindex="0" @pointerdown="startChatResize" @keydown.left.prevent="adjustChatWidth(20)" @keydown.right.prevent="adjustChatWidth(-20)"></div>
 
       <aside class="chat panel">
         <div class="chat-head"><div class="panel-title">学习对话</div><button class="new-chat" @click="activeConversation = null; messages = []">＋ 新旁支</button></div>
