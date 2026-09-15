@@ -282,7 +282,11 @@ async function saveNote() {
       </section>
     </div>
 
-    <section v-if="space" class="workspace">
+    <section v-if="space && !card" class="loading-state">
+      正在恢复学习空间…
+    </section>
+
+    <section v-if="space && card" class="workspace">
       <aside class="sidebar panel">
         <div class="panel-title">知识结构</div>
         <div class="tree-label">主知识卡</div>
