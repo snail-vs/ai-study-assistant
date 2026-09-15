@@ -30,6 +30,8 @@ class MockTextProvider:
             }
         if task == "bridge_note":
             return {"content": "📌 认知打通：前置知识帮助你看清当前主题背后的底层机制。"}
+        if task == "teacher_guidance":
+            return {"content": "老师：这一节先抓住核心概念，再观察它和前后知识的关系。可以边读边记录你认为最重要的一点。"}
         return {
             "title": "Mock 学习知识卡",
             "summary": "用于本地开发验证的知识卡。",

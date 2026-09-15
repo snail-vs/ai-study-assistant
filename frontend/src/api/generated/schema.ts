@@ -176,6 +176,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cards/{cardId}/sections/{sectionId}/guidance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cardId: components["parameters"]["CardId"];
+                sectionId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["listTeacherGuidance"];
+        put?: never;
+        post: operations["createSectionTeacherGuidance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/conversations/{conversationId}/messages/stream": {
         parameters: {
             query?: never;
@@ -374,6 +393,17 @@ export interface components {
             contentMarkdown: string;
             /** @enum {string} */
             learningStatus?: "unread" | "learning" | "completed";
+        };
+        TeacherGuidance: {
+            id: string;
+            cardId: string;
+            sectionId: string;
+            sourceConversationId?: string | null;
+            /** @enum {string} */
+            trigger: "section_enter" | "side_question";
+            content: string;
+            /** Format: date-time */
+            createdAt: string;
         };
         CreateConversationRequest: {
             sectionId?: string | null;
@@ -796,6 +826,54 @@ export interface operations {
                     "application/json": components["schemas"]["Conversation"];
                 };
             };
+        };
+    };
+    listTeacherGuidance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cardId: components["parameters"]["CardId"];
+                sectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Teacher guidance history for a card section */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherGuidance"][];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createSectionTeacherGuidance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cardId: components["parameters"]["CardId"];
+                sectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Initial teacher guidance for a card section */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherGuidance"];
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     streamConversationMessage: {

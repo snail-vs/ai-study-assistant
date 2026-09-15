@@ -12,6 +12,8 @@ const rootCard = ref(null)
 const relatedCards = ref([])
 const activeSection = ref(0)
 const showKnowledgeSidebar = ref(localStorage.getItem('studycenter.knowledgeSidebar') !== 'false')
+const teacherGuidance = ref([])
+const showTeacherGuidance = ref(true)
 const conversations = ref([])
 const activeConversation = ref(null)
 const showConversationList = ref(false)
@@ -43,6 +45,7 @@ const proposal = ref(null)
 const chatWidth = ref(Math.min(560, Math.max(280, Number(localStorage.getItem('studycenter.chatWidth')) || 360)))
 let resizingChat = false
 let conversationLoadVersion = 0
+let guidanceLoadVersion = 0
 const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
 
 onMounted(() => Promise.all([loadHistory(), loadProviderSettings()]))
@@ -319,6 +322,7 @@ async function startLearning() {
     })
     card.value = await request(`/cards/${space.value.rootCardId}`)
     rootCard.value = card.value
+    await loadTeacherGuidance()
     relatedCards.value = (await request(`/learning-spaces/${space.value.id}/cards`)).filter((item) => item.cardType === 'related')
     const main = await request(`/cards/${card.value.id}/conversations`, {
       method: 'POST',
@@ -360,8 +364,9 @@ async function openHistory(item) {
     space.value = item
     card.value = await request(`/cards/${item.rootCardId}`)
     rootCard.value = card.value
-    relatedCards.value = (await request(`/learning-spaces/${item.id}/cards`)).filter((item) => item.cardType === 'related')
     activeSection.value = 0
+    await loadTeacherGuidance()
+    relatedCards.value = (await request(`/learning-spaces/${item.id}/cards`)).filter((item) => item.cardType === 'related')
     conversations.value = await request(`/cards/${card.value.id}/conversations`)
     activeConversation.value = conversations.value[0] || null
     await loadConversationMessages(activeConversation.value)
@@ -380,6 +385,7 @@ function goHome() {
   relatedCards.value = []
   activeConversation.value = null
   showConversationList.value = false
+  teacherGuidance.value = []
   conversations.value = []
   messages.value = []
   proposal.value = null
@@ -447,6 +453,7 @@ async function sendMessage(text = input.value) {
         const data = JSON.parse(dataLine.slice(5))
         if (block.includes('message.delta')) assistant.content += data.delta || ''
         if (block.includes('related_card.proposed')) proposal.value = data
+        if (block.includes('guidance.updated')) teacherGuidance.value = [...teacherGuidance.value, data]
         if (block.includes('run.failed')) {
           error.value = data.message || 'AI 服务调用失败'
           if (!assistant.content) {
@@ -466,6 +473,7 @@ async function acceptProposal() {
     card.value = await request(`/proposals/${proposal.value.proposalId}/accept`, { method: 'POST' })
     relatedCards.value = [...relatedCards.value.filter((item) => item.id !== card.value.id), card.value]
     activeSection.value = 0
+    await loadTeacherGuidance()
     proposal.value = null
   } catch (err) { error.value = err.message } finally { loading.value = false }
 }
@@ -474,6 +482,7 @@ async function openCard(target) {
   card.value = target
   showConversationList.value = false
   activeSection.value = 0
+  await loadTeacherGuidance()
   conversations.value = await request(`/cards/${target.id}/conversations`)
   activeConversation.value = conversations.value[0] || null
   await loadConversationMessages(activeConversation.value)
@@ -502,6 +511,30 @@ async function selectConversation(item) {
   showConversationList.value = false
   messages.value = []
   await loadConversationMessages(item)
+}
+
+async function loadTeacherGuidance() {
+  const version = ++guidanceLoadVersion
+  const sectionId = card.value?.sections?.[activeSection.value]?.id
+  if (!card.value || !sectionId) {
+    teacherGuidance.value = []
+    return
+  }
+  try {
+    let stored = await request(`/cards/${card.value.id}/sections/${sectionId}/guidance`)
+    if (!stored.length) {
+      await request(`/cards/${card.value.id}/sections/${sectionId}/guidance`, { method: 'POST' })
+      stored = await request(`/cards/${card.value.id}/sections/${sectionId}/guidance`)
+    }
+    if (version === guidanceLoadVersion) teacherGuidance.value = stored
+  } catch (err) {
+    if (version === guidanceLoadVersion) error.value = err.message
+  }
+}
+
+async function selectSection(index) {
+  activeSection.value = index
+  await loadTeacherGuidance()
 }
 
 </script>
@@ -577,7 +610,7 @@ async function selectConversation(item) {
       <aside class="sidebar panel">
         <div class="sidebar-head"><div class="panel-title">知识结构</div><button class="sidebar-toggle" title="收起知识结构" @click="toggleKnowledgeSidebar">‹</button></div>
         <div class="tree-label">主知识卡</div>
-        <button v-for="(item, index) in card.sections" :key="item.id" class="tree-item" :class="{ active: index === activeSection }" @click="activeSection = index">
+        <button v-for="(item, index) in card.sections" :key="item.id" class="tree-item" :class="{ active: index === activeSection }" @click="selectSection(index)">
           <span>{{ String(index + 1).padStart(2, '0') }}</span>{{ item.title }}
         </button>
         <div class="tree-label related">关联知识卡</div>
@@ -589,11 +622,26 @@ async function selectConversation(item) {
 
       <section class="board panel">
         <div class="board-meta"><div class="board-location"><button v-if="!showKnowledgeSidebar" class="sidebar-toggle collapsed-toggle" title="展开知识结构" @click="toggleKnowledgeSidebar">› <span>知识结构</span></button><span>第 {{ activeSection + 1 }} 节</span></div><div class="board-actions"><span>Markdown 白板</span><button @click="startNote">＋ 记笔记</button></div></div>
-        <button v-if="isRelatedCard" class="back-main" @click="returnToMain">← 返回主知识卡</button>
-        <article class="markdown">
-          <h2>{{ section?.title }}</h2>
-          <div class="content" v-html="renderedContent"></div>
-        </article>
+        <div class="board-scroll">
+          <button v-if="isRelatedCard" class="back-main" @click="returnToMain">← 返回主知识卡</button>
+          <article class="markdown">
+            <h2>{{ section?.title }}</h2>
+            <div class="content" v-html="renderedContent"></div>
+          </article>
+        </div>
+        <section class="teacher-guidance" :class="{ collapsed: !showTeacherGuidance }">
+          <div class="teacher-guidance-head">
+            <div><span class="teacher-label">老师引导</span><span v-if="teacherGuidance.length" class="teacher-count">{{ teacherGuidance.length }} 条</span></div>
+            <button @click="showTeacherGuidance = !showTeacherGuidance">{{ showTeacherGuidance ? '收起' : '展开' }}</button>
+          </div>
+          <div v-if="showTeacherGuidance" class="teacher-guidance-body">
+            <article v-for="item in teacherGuidance" :key="item.id" class="teacher-guidance-item">
+              <span class="teacher-guidance-trigger">{{ item.trigger === 'section_enter' ? '进入本节' : '针对旁支问题' }}</span>
+              <p>{{ item.content }}</p>
+            </article>
+            <div v-if="!teacherGuidance.length" class="teacher-guidance-empty">正在准备本节的学习引导…</div>
+          </div>
+        </section>
       </section>
 
       <div class="resize-handle" role="separator" aria-label="调整会话宽度" :aria-valuenow="chatWidth" aria-valuemin="280" aria-valuemax="560" tabindex="0" @pointerdown="startChatResize" @keydown.left.prevent="adjustChatWidth(20)" @keydown.right.prevent="adjustChatWidth(-20)"></div>

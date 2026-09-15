@@ -40,3 +40,19 @@ button { cursor: pointer; }
 .sidebar-toggle:hover { border-color: #74d2b4; background: #18302f; }
 .collapsed-toggle { width: auto; padding: 0 8px; font-size: 12px; }
 .collapsed-toggle span { margin-left: 3px; }
+.board { display: flex; flex-direction: column; overflow: hidden; }
+.board-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.teacher-guidance { flex: 0 0 auto; margin: 0 20px 16px; border: 1px solid #304b59; border-radius: 9px; background: #13232d; }
+.teacher-guidance-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 13px; border-bottom: 1px solid #29404d; }
+.teacher-guidance-head > div { display: flex; align-items: center; gap: 9px; }
+.teacher-label { color: #74d2b4; font-size: 12px; font-weight: 700; }
+.teacher-count { color: #718da0; font-size: 11px; }
+.teacher-guidance-head button { border: 0; background: transparent; color: #9cb6c5; font-size: 11px; }
+.teacher-guidance-body { max-height: 142px; overflow-y: auto; padding: 3px 13px 8px; }
+.teacher-guidance-item { padding: 8px 0 5px; border-bottom: 1px solid #29404d; }
+.teacher-guidance-item:last-child { border-bottom: 0; }
+.teacher-guidance-trigger { color: #d6b878; font-size: 10px; }
+.teacher-guidance-item p { margin: 4px 0 0; color: #c0d0d8; font-size: 12px; line-height: 1.65; white-space: pre-wrap; }
+.teacher-guidance-empty { padding: 13px 0; color: #718da0; font-size: 12px; }
+.teacher-guidance.collapsed { background: #10202a; }
+.teacher-guidance.collapsed .teacher-guidance-head { border-bottom: 0; }

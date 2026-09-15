@@ -25,3 +25,7 @@ class KnowledgeCardDraft(BaseModel):
 
 class BridgeNoteDraft(BaseModel):
     content: str
+
+
+class TeacherGuidanceDraft(BaseModel):
+    content: str

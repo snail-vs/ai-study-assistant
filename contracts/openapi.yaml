@@ -211,6 +211,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Conversation'
+  /cards/{cardId}/sections/{sectionId}/guidance:
+    parameters:
+      - $ref: '#/components/parameters/CardId'
+      - name: sectionId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: listTeacherGuidance
+      responses:
+        '200':
+          description: Teacher guidance history for a card section
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TeacherGuidance'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createSectionTeacherGuidance
+      responses:
+        '201':
+          description: Initial teacher guidance for a card section
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeacherGuidance'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /conversations/{conversationId}/messages/stream:
     parameters:
       - $ref: '#/components/parameters/ConversationId'
@@ -467,6 +498,17 @@ components:
         orderIndex: { type: integer }
         contentMarkdown: { type: string }
         learningStatus: { type: string, enum: [unread, learning, completed] }
+    TeacherGuidance:
+      type: object
+      required: [id, cardId, sectionId, trigger, content, createdAt]
+      properties:
+        id: { type: string }
+        cardId: { type: string }
+        sectionId: { type: string }
+        sourceConversationId: { type: string, nullable: true }
+        trigger: { type: string, enum: [section_enter, side_question] }
+        content: { type: string }
+        createdAt: { type: string, format: date-time }
     CreateConversationRequest:
       type: object
       required: [conversationType, title, rootQuestion]

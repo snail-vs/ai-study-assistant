@@ -49,6 +49,17 @@ class CardSection(Base):
     card: Mapped[KnowledgeCard] = relationship(back_populates="sections")
 
 
+class TeacherGuidance(Base):
+    __tablename__ = "teacher_guidance"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    card_id: Mapped[str] = mapped_column(ForeignKey("knowledge_cards.id"))
+    section_id: Mapped[str] = mapped_column(ForeignKey("card_sections.id"))
+    source_conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    trigger: Mapped[str] = mapped_column(String(30))
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)

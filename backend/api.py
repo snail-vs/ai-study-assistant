@@ -12,6 +12,7 @@ from .ai.providers.mock import MockTextProvider
 from .agents.bridge_agent import BridgeAgent
 from .agents.main_agent import MainAgent
 from .agents.side_agent import SideAgent
+from .agents.teacher_agent import TeacherAgent
 from .db import get_db
 from .models import (
     BridgeNote,
@@ -23,6 +24,7 @@ from .models import (
     Note,
     ProviderCredential,
     RelatedCardProposal,
+    TeacherGuidance,
 )
 from .schemas import (
     ConversationResponse,
@@ -42,12 +44,14 @@ from .schemas import (
     DiscoverModelsResponse,
     ProviderSettingsResponse,
     SelectModelRequest,
+    TeacherGuidanceResponse,
 )
 from .security.encryption import EncryptionError, decrypt_secret, encrypt_secret
 
 router = APIRouter()
 gateway = AIGateway()
 side_agent = SideAgent(gateway)
+teacher_agent = TeacherAgent(gateway)
 main_agent = MainAgent(gateway)
 bridge_agent = BridgeAgent(gateway)
 provider_state = {
@@ -258,6 +262,50 @@ def get_card(card_id: str, db: Session = Depends(get_db)):
     return card
 
 
+@router.get("/cards/{card_id}/sections/{section_id}/guidance", response_model=list[TeacherGuidanceResponse])
+def list_teacher_guidance(card_id: str, section_id: str, db: Session = Depends(get_db)):
+    section = db.get(CardSection, section_id)
+    if not section or section.card_id != card_id:
+        raise HTTPException(status_code=404, detail="Card section not found")
+    return list(
+        db.scalars(
+            select(TeacherGuidance)
+            .where(TeacherGuidance.card_id == card_id, TeacherGuidance.section_id == section_id)
+            .order_by(TeacherGuidance.created_at, TeacherGuidance.id)
+        )
+    )
+
+
+@router.post("/cards/{card_id}/sections/{section_id}/guidance", response_model=TeacherGuidanceResponse, status_code=201)
+async def create_section_guidance(card_id: str, section_id: str, db: Session = Depends(get_db)):
+    card = db.get(KnowledgeCard, card_id)
+    section = db.get(CardSection, section_id)
+    if not card or not section or section.card_id != card_id:
+        raise HTTPException(status_code=404, detail="Card section not found")
+    existing = db.scalar(
+        select(TeacherGuidance)
+        .where(
+            TeacherGuidance.card_id == card_id,
+            TeacherGuidance.section_id == section_id,
+            TeacherGuidance.trigger == "section_enter",
+        )
+        .order_by(TeacherGuidance.created_at)
+    )
+    if existing:
+        return existing
+    draft = await teacher_agent.create_section_intro(card.title, section.title, section.content_markdown)
+    guidance = TeacherGuidance(
+        card_id=card_id,
+        section_id=section_id,
+        trigger="section_enter",
+        content=draft.content,
+    )
+    db.add(guidance)
+    db.commit()
+    db.refresh(guidance)
+    return guidance
+
+
 @router.post("/cards/{card_id}/conversations", response_model=ConversationResponse, status_code=201)
 def create_conversation(card_id: str, payload: CreateConversationRequest, db: Session = Depends(get_db)):
     if not db.get(KnowledgeCard, card_id):
@@ -332,6 +380,30 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
             diagnosis = await side_agent.diagnose(payload.content)
             if diagnosis.diagnosis.has_knowledge_gap:
                 yield f"event: diagnosis.updated\ndata: {json.dumps(diagnosis.diagnosis.model_dump(by_alias=True), ensure_ascii=False)}\n\n"
+                section = db.get(CardSection, conversation.section_id) if conversation.section_id else None
+                source_card = db.get(KnowledgeCard, conversation.card_id) if section else None
+                if section and source_card and section.card_id == conversation.card_id:
+                    try:
+                        guidance_draft = await teacher_agent.create_side_followup(
+                            source_card.title,
+                            section.title,
+                            section.content_markdown,
+                            payload.content,
+                            "".join(response_parts),
+                        )
+                        guidance = TeacherGuidance(
+                            card_id=conversation.card_id,
+                            section_id=section.id,
+                            source_conversation_id=conversation.id,
+                            trigger="side_question",
+                            content=guidance_draft.content,
+                        )
+                        db.add(guidance)
+                        db.commit()
+                        db.refresh(guidance)
+                        yield f"event: guidance.updated\ndata: {json.dumps(TeacherGuidanceResponse.model_validate(guidance).model_dump(by_alias=True), default=str, ensure_ascii=False)}\n\n"
+                    except Exception as exc:
+                        yield f"event: run.failed\ndata: {json.dumps({'code': 'TEACHER_GUIDANCE_FAILED', 'message': str(exc)}, ensure_ascii=False)}\n\n"
                 if diagnosis.proposal:
                     proposal = diagnosis.proposal.model_dump()
                     stored = RelatedCardProposal(

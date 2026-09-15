@@ -70,6 +70,16 @@ class CardSectionResponse(ApiModel):
     learning_status: str = Field(default="unread", alias="learningStatus")
 
 
+class TeacherGuidanceResponse(ApiModel):
+    id: str
+    card_id: str = Field(alias="cardId")
+    section_id: str = Field(alias="sectionId")
+    source_conversation_id: str | None = Field(default=None, alias="sourceConversationId")
+    trigger: str
+    content: str
+    created_at: datetime = Field(alias="createdAt")
+
+
 class KnowledgeCardResponse(ApiModel):
     id: str
     space_id: str = Field(alias="spaceId")
