@@ -1,10 +1,12 @@
 <script setup>
 import { computed, ref } from 'vue'
+import MarkdownIt from 'markdown-it'
 
 const base = '/api/v1'
 const goal = ref('')
 const space = ref(null)
 const card = ref(null)
+const rootCard = ref(null)
 const activeSection = ref(0)
 const conversations = ref([])
 const activeConversation = ref(null)
@@ -13,8 +15,12 @@ const input = ref('')
 const note = ref('')
 const loading = ref(false)
 const error = ref('')
+const proposal = ref(null)
+const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
 
 const section = computed(() => card.value?.sections?.[activeSection.value] || null)
+const renderedContent = computed(() => md.render(section.value?.contentMarkdown || '本节内容正在生成。'))
+const isRelatedCard = computed(() => card.value?.cardType === 'related')
 
 async function request(path, options = {}) {
   const response = await fetch(`${base}${path}`, {
@@ -36,6 +42,7 @@ async function startLearning() {
       body: JSON.stringify({ title: goal.value.trim(), learningGoal: goal.value.trim() }),
     })
     card.value = await request(`/cards/${space.value.rootCardId}`)
+    rootCard.value = card.value
     const main = await request(`/cards/${card.value.id}/conversations`, {
       method: 'POST',
       body: JSON.stringify({ conversationType: 'main', title: '主线导师', rootQuestion: goal.value }),
@@ -91,10 +98,26 @@ async function sendMessage(text = input.value) {
       try {
         const data = JSON.parse(dataLine.slice(5))
         if (block.includes('message.delta')) assistant.content += data.delta || ''
-        if (block.includes('related_card.proposed')) assistant.content += `\n\n📚 建议知识卡：${data.title}\n${data.reason}`
+        if (block.includes('related_card.proposed')) proposal.value = data
       } catch (_) {}
     }
   }
+}
+
+async function acceptProposal() {
+  if (!proposal.value) return
+  loading.value = true
+  try {
+    card.value = await request(`/proposals/${proposal.value.proposalId}/accept`, { method: 'POST' })
+    activeSection.value = 0
+    proposal.value = null
+  } catch (err) { error.value = err.message } finally { loading.value = false }
+}
+
+function returnToMain() {
+  if (!rootCard.value) return
+  card.value = rootCard.value
+  activeSection.value = 0
 }
 
 async function selectConversation(item) {
@@ -144,9 +167,10 @@ async function saveNote() {
 
       <section class="board panel">
         <div class="board-meta"><span>第 {{ activeSection + 1 }} 节</span><span>Markdown 白板</span></div>
+        <button v-if="isRelatedCard" class="back-main" @click="returnToMain">← 返回主知识卡</button>
         <article class="markdown">
           <h2>{{ section?.title }}</h2>
-          <div class="content">{{ section?.contentMarkdown || '本节内容正在生成。' }}</div>
+          <div class="content" v-html="renderedContent"></div>
         </article>
         <div class="notes">
           <div class="note-title">✦ 我的笔记</div>
@@ -165,6 +189,12 @@ async function saveNote() {
         <div class="messages">
           <div v-for="(message, index) in messages" :key="index" class="message" :class="message.role"><span>{{ message.role === 'user' ? '你' : 'AI' }}</span>{{ message.content }}</div>
           <div v-if="!messages.length" class="chat-empty">从当前章节提出一个问题，开始旁支探索。</div>
+          <div v-if="proposal" class="proposal-card">
+            <div class="proposal-kicker">检测到一个知识断层</div>
+            <strong>{{ proposal.title }}</strong>
+            <p>{{ proposal.reason }}</p>
+            <button @click="acceptProposal">生成关联知识卡 →</button>
+          </div>
         </div>
         <form class="composer" @submit.prevent="activeConversation ? sendMessage() : openSideConversation()">
           <textarea v-model="input" placeholder="问问当前内容…" @keydown.enter.exact.prevent="activeConversation ? sendMessage() : openSideConversation()"></textarea>
