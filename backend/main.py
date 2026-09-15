@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import router
-from .db import Base, engine
 from . import models  # noqa: F401
 
 app = FastAPI(title="StudyCenter API", version="0.1.0")
@@ -14,5 +13,4 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-Base.metadata.create_all(bind=engine)
 app.include_router(router, prefix="/api/v1")

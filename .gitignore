@@ -7,3 +7,4 @@ frontend/dist/
 .env.*
 !.env.example
 backend/data/
+*.db
