@@ -396,6 +396,7 @@ async function loadConversationMessages(conversation) {
 
 async function sendMessage(text = input.value) {
   if (!activeConversation.value || !text.trim()) return
+  error.value = ''
   input.value = ''
   messages.value.push({ role: 'user', content: text })
   const assistant = { role: 'assistant', content: '' }
@@ -418,6 +419,10 @@ async function sendMessage(text = input.value) {
         const data = JSON.parse(dataLine.slice(5))
         if (block.includes('message.delta')) assistant.content += data.delta || ''
         if (block.includes('related_card.proposed')) proposal.value = data
+        if (block.includes('run.failed')) {
+          error.value = data.message || 'AI 服务调用失败'
+          messages.value = messages.value.filter((message) => message !== assistant)
+        }
       } catch (_) {}
     }
   }
@@ -576,6 +581,7 @@ async function selectConversation(item) {
             <button @click="acceptProposal">生成关联知识卡 →</button>
           </div>
         </div>
+        <p v-if="error" class="error chat-error">{{ error }}</p>
         <form class="composer" @submit.prevent="activeConversation ? sendMessage() : openSideConversation()">
           <textarea v-model="input" placeholder="问问当前内容…"></textarea>
           <button>发送 ↗</button>

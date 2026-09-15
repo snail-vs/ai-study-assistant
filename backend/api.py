@@ -301,9 +301,17 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         yield f"event: message.started\ndata: {json.dumps({'conversationId': conversation_id})}\n\n"
         messages = [{"role": "user", "content": payload.content}]
         response_parts: list[str] = []
-        async for delta in gateway.stream_text(messages, task="side_agent"):
-            response_parts.append(delta)
-            yield f"event: message.delta\ndata: {json.dumps({'delta': delta})}\n\n"
+        try:
+            async for delta in gateway.stream_text(messages, task="side_agent"):
+                response_parts.append(delta)
+                yield f"event: message.delta\ndata: {json.dumps({'delta': delta})}\n\n"
+        except Exception as exc:
+            message = str(exc)
+            if "MissingSessionID" in message or "only be used in OpenCode" in message:
+                message = "OpenCode 免费模型只能在 OpenCode 会话中使用，请改用 OpenCode 付费模型、DeepSeek 或 OpenRouter 模型。"
+            yield f"event: run.failed\ndata: {json.dumps({'code': 'AI_PROVIDER_ERROR', 'message': message}, ensure_ascii=False)}\n\n"
+            yield "event: message.completed\ndata: {}\n\n"
+            return
         assistant = Message(
             conversation_id=conversation_id,
             role="assistant",
