@@ -96,6 +96,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  /agents:
+    get:
+      operationId: listAgents
+      responses:
+        '200':
+          description: Available StudyCenter agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AgentDefinition'
   /learning-spaces:
     post:
       operationId: createLearningSpace
@@ -451,6 +463,16 @@ components:
           additionalProperties:
             type: array
             items: { type: string }
+    AgentDefinition:
+      type: object
+      required: [id, name, role, description, visible, priority]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        role: { type: string }
+        description: { type: string }
+        visible: { type: boolean }
+        priority: { type: integer }
     ConfigureProviderRequest:
       type: object
       required: [models, defaultModel]
@@ -550,6 +572,12 @@ components:
         conversationType: { type: string, enum: [main, side] }
         title: { type: string }
         rootQuestion: { type: string }
+        mode: { type: string, enum: [single, group], default: single }
+        participantIds:
+          type: array
+          items: { type: string }
+        triggerAgentId: { type: string, nullable: true }
+        directorPolicy: { type: string, enum: [guided, deterministic, llm], default: guided }
     Conversation:
       type: object
       required: [id, cardId, conversationType, title, status, createdAt]
@@ -559,6 +587,12 @@ components:
         sectionId: { type: string, nullable: true }
         conversationType: { type: string, enum: [main, side] }
         title: { type: string }
+        mode: { type: string, enum: [single, group] }
+        participantIds:
+          type: array
+          items: { type: string }
+        triggerAgentId: { type: string, nullable: true }
+        directorPolicy: { type: string, enum: [guided, deterministic, llm] }
         status: { type: string, enum: [active, completed, archived] }
         createdAt: { type: string, format: date-time }
     RelatedCardProposal:
@@ -587,6 +621,10 @@ components:
         id: { type: string }
         conversationId: { type: string }
         role: { type: string, enum: [user, assistant, system] }
+        senderId: { type: string, nullable: true }
+        senderName: { type: string, nullable: true }
+        senderRole: { type: string, nullable: true }
+        visibility: { type: string, enum: [user, internal] }
         content: { type: string }
         messageType: { type: string }
         createdAt: { type: string, format: date-time }

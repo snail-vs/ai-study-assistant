@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncIterator
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -13,6 +14,7 @@ from .agents.bridge_agent import BridgeAgent
 from .agents.main_agent import MainAgent
 from .agents.side_agent import SideAgent
 from .agents.teacher_agent import TeacherAgent
+from .agents.registry import default_participants, get_agent, AGENTS
 from .db import get_db
 from .models import (
     BridgeNote,
@@ -44,6 +46,7 @@ from .schemas import (
     DiscoverModelsResponse,
     ProviderSettingsResponse,
     SelectModelRequest,
+    AgentDefinitionResponse,
     RelatedCardProposalResponse,
     TeacherGuidanceResponse,
 )
@@ -193,6 +196,11 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.get("/agents", response_model=list[AgentDefinitionResponse])
+def list_agents():
+    return AGENTS
+
+
 @router.post("/learning-spaces", response_model=LearningSpaceResponse, status_code=status.HTTP_201_CREATED)
 async def create_learning_space(payload: CreateLearningSpaceRequest, db: Session = Depends(get_db)):
     restore_active_provider(db)
@@ -311,7 +319,13 @@ async def create_section_guidance(card_id: str, section_id: str, db: Session = D
 def create_conversation(card_id: str, payload: CreateConversationRequest, db: Session = Depends(get_db)):
     if not db.get(KnowledgeCard, card_id):
         raise HTTPException(status_code=404, detail="Knowledge card not found")
-    conversation = Conversation(card_id=card_id, **payload.model_dump())
+    participant_ids = payload.participant_ids or default_participants(payload.conversation_type)
+    unknown = [agent_id for agent_id in participant_ids if not get_agent(agent_id)]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown agent: {unknown[0]}")
+    values = payload.model_dump(exclude={"participant_ids"})
+    values["participant_ids_json"] = json.dumps(participant_ids)
+    conversation = Conversation(card_id=card_id, **values)
     db.add(conversation)
     db.commit()
     db.refresh(conversation)
@@ -358,12 +372,25 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    user_message = Message(conversation_id=conversation_id, role="user", content=payload.content)
+    primary_agent_id = conversation.participant_ids[0] if conversation.participant_ids else (
+        "teacher" if conversation.conversation_type == "main" else "side_tutor"
+    )
+    primary_agent = get_agent(primary_agent_id)
+    user_message = Message(
+        conversation_id=conversation_id,
+        role="user",
+        sender_id="user",
+        sender_name="你",
+        sender_role="user",
+        visibility="user",
+        content=payload.content,
+    )
     db.add(user_message)
     db.commit()
 
     async def events() -> AsyncIterator[str]:
-        yield f"event: message.started\ndata: {json.dumps({'conversationId': conversation_id})}\n\n"
+        message_id = str(uuid4())
+        yield f"event: message.started\ndata: {json.dumps({'conversationId': conversation_id, 'messageId': message_id, 'senderId': primary_agent_id, 'senderName': primary_agent.name if primary_agent else primary_agent_id, 'senderRole': primary_agent.role if primary_agent else 'assistant'}, ensure_ascii=False)}\n\n"
         messages = []
         if conversation.root_question:
             messages.append({"role": "system", "content": conversation.root_question})
@@ -372,7 +399,7 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         try:
             async for delta in gateway.stream_text(messages, task="side_agent"):
                 response_parts.append(delta)
-                yield f"event: message.delta\ndata: {json.dumps({'delta': delta})}\n\n"
+                yield f"event: message.delta\ndata: {json.dumps({'messageId': message_id, 'senderId': primary_agent_id, 'delta': delta}, ensure_ascii=False)}\n\n"
         except Exception as exc:
             # Keep text already received before a provider/parser failure. This
             # makes a partially streamed answer available after a refresh.
@@ -380,6 +407,10 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                 db.add(Message(
                     conversation_id=conversation_id,
                     role="assistant",
+                    sender_id=primary_agent_id,
+                    sender_name=primary_agent.name if primary_agent else primary_agent_id,
+                    sender_role=primary_agent.role if primary_agent else "assistant",
+                    visibility="user",
                     content="".join(response_parts),
                 ))
                 db.commit()
@@ -392,6 +423,10 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         assistant = Message(
             conversation_id=conversation_id,
             role="assistant",
+            sender_id=primary_agent_id,
+            sender_name=primary_agent.name if primary_agent else primary_agent_id,
+            sender_role=primary_agent.role if primary_agent else "assistant",
+            visibility="user",
             content="".join(response_parts),
         )
         db.add(assistant)

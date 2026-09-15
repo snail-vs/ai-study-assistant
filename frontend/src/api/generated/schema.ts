@@ -88,6 +88,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAgents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/learning-spaces": {
         parameters: {
             query?: never;
@@ -369,6 +385,14 @@ export interface components {
                 [key: string]: string[];
             };
         };
+        AgentDefinition: {
+            id: string;
+            name: string;
+            role: string;
+            description: string;
+            visible: boolean;
+            priority: number;
+        };
         ConfigureProviderRequest: {
             apiKey?: string | null;
             models: string[];
@@ -447,6 +471,18 @@ export interface components {
             conversationType: "main" | "side";
             title: string;
             rootQuestion: string;
+            /**
+             * @default single
+             * @enum {string}
+             */
+            mode: "single" | "group";
+            participantIds?: string[];
+            triggerAgentId?: string | null;
+            /**
+             * @default guided
+             * @enum {string}
+             */
+            directorPolicy: "guided" | "deterministic" | "llm";
         };
         Conversation: {
             id: string;
@@ -455,6 +491,12 @@ export interface components {
             /** @enum {string} */
             conversationType: "main" | "side";
             title: string;
+            /** @enum {string} */
+            mode?: "single" | "group";
+            participantIds?: string[];
+            triggerAgentId?: string | null;
+            /** @enum {string} */
+            directorPolicy?: "guided" | "deterministic" | "llm";
             /** @enum {string} */
             status: "active" | "completed" | "archived";
             /** Format: date-time */
@@ -482,6 +524,11 @@ export interface components {
             conversationId: string;
             /** @enum {string} */
             role: "user" | "assistant" | "system";
+            senderId?: string | null;
+            senderName?: string | null;
+            senderRole?: string | null;
+            /** @enum {string} */
+            visibility?: "user" | "internal";
             content: string;
             messageType: string;
             /** Format: date-time */
@@ -685,6 +732,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    listAgents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Available StudyCenter agents */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDefinition"][];
                 };
             };
         };

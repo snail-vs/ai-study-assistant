@@ -26,6 +26,15 @@ class ProviderSettingsResponse(ApiModel):
     models: dict[str, list[str]]
 
 
+class AgentDefinitionResponse(ApiModel):
+    id: str
+    name: str
+    role: str
+    description: str
+    visible: bool
+    priority: int
+
+
 class ConfigureProviderRequest(ApiModel):
     api_key: str | None = Field(default=None, alias="apiKey", min_length=1)
     models: list[str] = Field(min_length=1)
@@ -107,6 +116,10 @@ class MessageResponse(ApiModel):
     id: str
     conversation_id: str = Field(alias="conversationId")
     role: str
+    sender_id: str | None = Field(default=None, alias="senderId")
+    sender_name: str | None = Field(default=None, alias="senderName")
+    sender_role: str | None = Field(default=None, alias="senderRole")
+    visibility: str = "user"
     content: str
     message_type: str = Field(alias="messageType")
     created_at: datetime = Field(alias="createdAt")
@@ -117,6 +130,10 @@ class CreateConversationRequest(ApiModel):
     conversation_type: Literal["main", "side"] = Field(alias="conversationType")
     title: str
     root_question: str = Field(alias="rootQuestion")
+    mode: Literal["single", "group"] = "single"
+    participant_ids: list[str] = Field(default_factory=list, alias="participantIds")
+    trigger_agent_id: str | None = Field(default=None, alias="triggerAgentId")
+    director_policy: Literal["guided", "deterministic", "llm"] = Field(default="guided", alias="directorPolicy")
 
 
 class ConversationResponse(ApiModel):
@@ -125,6 +142,10 @@ class ConversationResponse(ApiModel):
     section_id: str | None = Field(alias="sectionId")
     conversation_type: str = Field(alias="conversationType")
     title: str
+    mode: str
+    participant_ids: list[str] = Field(default_factory=list, alias="participantIds")
+    trigger_agent_id: str | None = Field(default=None, alias="triggerAgentId")
+    director_policy: str = Field(alias="directorPolicy")
     status: str
     created_at: datetime = Field(alias="createdAt")
 

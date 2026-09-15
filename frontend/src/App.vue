@@ -426,7 +426,13 @@ async function loadConversationMessages(conversation) {
   }
   const stored = await request(`/conversations/${conversation.id}/messages`)
   if (version !== conversationLoadVersion || activeConversation.value?.id !== conversation.id) return
-  messages.value = stored.map((message) => ({ role: message.role, content: message.content }))
+  messages.value = stored.filter((message) => message.visibility !== 'internal').map((message) => ({
+    role: message.role,
+    content: message.content,
+    senderId: message.senderId,
+    senderName: message.senderName,
+    senderRole: message.senderRole,
+  }))
 }
 
 async function sendMessage(text = input.value) {
@@ -436,7 +442,7 @@ async function sendMessage(text = input.value) {
   await nextTick()
   resizeComposer()
   messages.value.push({ role: 'user', content: text })
-  const assistant = { role: 'assistant', content: '' }
+  const assistant = { role: 'assistant', content: '', senderId: 'side_tutor', senderName: '旁支助教', senderRole: 'assistant' }
   messages.value.push(assistant)
   const response = await fetch(`${base}/conversations/${activeConversation.value.id}/messages/stream`, {
     method: 'POST',
@@ -457,6 +463,11 @@ async function sendMessage(text = input.value) {
       if (!dataLine) continue
       try {
         const data = JSON.parse(dataLine.slice(5))
+        if (block.includes('message.started')) {
+          assistant.senderId = data.senderId || assistant.senderId
+          assistant.senderName = data.senderName || assistant.senderName
+          assistant.senderRole = data.senderRole || assistant.senderRole
+        }
         if (block.includes('message.delta')) assistant.content += data.delta || ''
         if (block.includes('related_card.proposed')) {
           proposal.value = data
@@ -741,7 +752,7 @@ function nextSection() {
           </div>
         </div>
         <div class="messages">
-          <div v-for="(message, index) in messages" :key="index" class="message" :class="message.role"><span>{{ message.role === 'user' ? '你' : 'AI' }}</span>{{ message.content }}</div>
+          <div v-for="(message, index) in messages" :key="index" class="message" :class="message.role"><span>{{ message.senderName || (message.role === 'user' ? '你' : 'AI') }}</span>{{ message.content }}</div>
           <div v-if="!messages.length" class="chat-empty">从当前章节提出一个问题，开始旁支探索。</div>
           <div v-if="proposal" class="proposal-card">
             <div class="proposal-kicker">检测到一个知识断层</div>

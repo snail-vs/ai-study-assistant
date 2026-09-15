@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 from uuid import uuid4
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
@@ -68,8 +69,19 @@ class Conversation(Base):
     conversation_type: Mapped[str] = mapped_column(String(20))
     title: Mapped[str] = mapped_column(String(200))
     root_question: Mapped[str] = mapped_column(Text)
+    mode: Mapped[str] = mapped_column(String(20), default="single", server_default="single")
+    participant_ids_json: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
+    trigger_agent_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    director_policy: Mapped[str] = mapped_column(String(30), default="guided", server_default="guided")
     status: Mapped[str] = mapped_column(String(20), default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+    @property
+    def participant_ids(self) -> list[str]:
+        try:
+            return json.loads(self.participant_ids_json)
+        except (TypeError, json.JSONDecodeError):
+            return []
 
 
 class Message(Base):
@@ -77,6 +89,10 @@ class Message(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"))
     role: Mapped[str] = mapped_column(String(20))
+    sender_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    sender_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sender_role: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    visibility: Mapped[str] = mapped_column(String(20), default="user", server_default="user")
     content: Mapped[str] = mapped_column(Text)
     message_type: Mapped[str] = mapped_column(String(30), default="text")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
