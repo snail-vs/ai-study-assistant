@@ -381,7 +381,7 @@ async function saveNote() {
           </div>
         </div>
         <form class="composer" @submit.prevent="activeConversation ? sendMessage() : openSideConversation()">
-          <textarea v-model="input" placeholder="问问当前内容…" @keydown.enter.exact.prevent="activeConversation ? sendMessage() : openSideConversation()"></textarea>
+          <textarea v-model="input" placeholder="问问当前内容…"></textarea>
           <button>发送 ↗</button>
         </form>
       </aside>
