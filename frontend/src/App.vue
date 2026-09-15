@@ -254,6 +254,11 @@ async function openCard(target) {
   await loadConversationMessages(activeConversation.value)
 }
 
+async function openHistoryCard(spaceItem, target) {
+  await openHistory(spaceItem)
+  await openCard(target)
+}
+
 function returnToMain() {
   if (!rootCard.value) return
   openCard(rootCard.value)
@@ -293,15 +298,23 @@ async function saveNote() {
       </form>
       <div v-if="history.length" class="history">
         <div class="history-title">最近的学习空间</div>
-        <button v-for="item in history" :key="item.id" class="history-item" @click="openHistory(item)">
-          <span>
-            {{ item.title }}
-            <small v-if="(historyCards[item.id] || []).some((card) => card.cardType === 'related')">
-              · {{ (historyCards[item.id] || []).filter((card) => card.cardType === 'related').length }} 张关联知识卡
-            </small>
-          </span>
-          <small>{{ new Date(item.createdAt).toLocaleDateString('zh-CN') }} · 继续学习 →</small>
-        </button>
+        <div v-for="item in history" :key="item.id" class="history-group">
+          <button class="history-item" @click="openHistory(item)">
+            <span>{{ item.title }}</span>
+            <small>{{ new Date(item.createdAt).toLocaleDateString('zh-CN') }} · 继续学习 →</small>
+          </button>
+          <div v-if="(historyCards[item.id] || []).some((card) => card.cardType === 'related')" class="history-related">
+            <div class="history-related-title">关联知识卡</div>
+            <button
+              v-for="related in (historyCards[item.id] || []).filter((card) => card.cardType === 'related')"
+              :key="related.id"
+              class="history-related-item"
+              @click="openHistoryCard(item, related)"
+            >
+              {{ related.title }} <span>→</span>
+            </button>
+          </div>
+        </div>
       </div>
       <p v-if="error" class="error">{{ error }}</p>
     </section>
