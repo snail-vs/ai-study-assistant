@@ -424,10 +424,13 @@ async function sendMessage(text = input.value) {
   if (!response.ok || !response.body) return
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
+  let buffer = ''
   while (true) {
     const { value, done } = await reader.read()
-    if (done) break
-    for (const block of decoder.decode(value).split('\n\n')) {
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    const blocks = buffer.split('\n\n')
+    buffer = blocks.pop() || ''
+    for (const block of blocks) {
       const dataLine = block.split('\n').find((line) => line.startsWith('data:'))
       if (!dataLine) continue
       try {
@@ -436,10 +439,13 @@ async function sendMessage(text = input.value) {
         if (block.includes('related_card.proposed')) proposal.value = data
         if (block.includes('run.failed')) {
           error.value = data.message || 'AI 服务调用失败'
-          messages.value = messages.value.filter((message) => message !== assistant)
+          if (!assistant.content) {
+            messages.value = messages.value.filter((message) => message !== assistant)
+          }
         }
       } catch (_) {}
     }
+    if (done) break
   }
 }
 

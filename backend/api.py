@@ -306,6 +306,15 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                 response_parts.append(delta)
                 yield f"event: message.delta\ndata: {json.dumps({'delta': delta})}\n\n"
         except Exception as exc:
+            # Keep text already received before a provider/parser failure. This
+            # makes a partially streamed answer available after a refresh.
+            if response_parts:
+                db.add(Message(
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content="".join(response_parts),
+                ))
+                db.commit()
             message = str(exc)
             if "MissingSessionID" in message or "only be used in OpenCode" in message:
                 message = "OpenCode 免费模型只能在 OpenCode 会话中使用，请改用 OpenCode 付费模型、DeepSeek 或 OpenRouter 模型。"

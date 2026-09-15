@@ -47,10 +47,21 @@ class OpenAICompatibleProvider:
                         break
                     try:
                         chunk = json.loads(data)
-                        delta = chunk["choices"][0].get("delta", {}).get("content")
+                        # Compatible providers may send usage/final chunks with an
+                        # empty choices array. They are valid SSE events, but do
+                        # not contain text to yield.
+                        choices = chunk.get("choices")
+                        if not choices:
+                            if chunk.get("error"):
+                                raise AIProviderError(str(chunk["error"]))
+                            continue
+                        choice = choices[0]
+                        delta = choice.get("delta", {}).get("content")
                         if delta:
                             yield delta
-                    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+                    except AIProviderError:
+                        raise
+                    except (AttributeError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
                         raise AIProviderError("Invalid streaming response from provider") from exc
 
     async def structured(
