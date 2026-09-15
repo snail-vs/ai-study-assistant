@@ -8,14 +8,18 @@ from sqlalchemy.orm import Session
 
 from .ai.gateway import AIGateway
 from .db import get_db
-from .models import Conversation, KnowledgeCard, LearningSpace, Note
+from .models import Conversation, KnowledgeCard, LearningSpace, Message, Note
 from .schemas import (
     ConversationResponse,
+    CreateKnowledgeCardRequest,
     CreateConversationRequest,
     CreateLearningSpaceRequest,
+    CreateMessageRequest,
     CreateNoteRequest,
     LearningSpaceList,
     LearningSpaceResponse,
+    KnowledgeCardResponse,
+    MessageResponse,
     NoteResponse,
 )
 
@@ -50,7 +54,18 @@ def get_learning_space(space_id: str, db: Session = Depends(get_db)):
     return space
 
 
-@router.get("/cards/{card_id}")
+@router.post("/learning-spaces/{space_id}/cards", response_model=KnowledgeCardResponse, status_code=201)
+def create_card(space_id: str, payload: CreateKnowledgeCardRequest, db: Session = Depends(get_db)):
+    if not db.get(LearningSpace, space_id):
+        raise HTTPException(status_code=404, detail="Learning space not found")
+    card = KnowledgeCard(space_id=space_id, **payload.model_dump())
+    db.add(card)
+    db.commit()
+    db.refresh(card)
+    return card
+
+
+@router.get("/cards/{card_id}", response_model=KnowledgeCardResponse)
 def get_card(card_id: str, db: Session = Depends(get_db)):
     card = db.get(KnowledgeCard, card_id)
     if not card:
@@ -75,15 +90,29 @@ def list_conversations(card_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/conversations/{conversation_id}/messages/stream")
-async def stream_message(conversation_id: str, payload: dict[str, str], db: Session = Depends(get_db)) -> StreamingResponse:
-    if not db.get(Conversation, conversation_id):
+async def stream_message(conversation_id: str, payload: CreateMessageRequest, db: Session = Depends(get_db)) -> StreamingResponse:
+    conversation = db.get(Conversation, conversation_id)
+    if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
+    user_message = Message(conversation_id=conversation_id, role="user", content=payload.content)
+    db.add(user_message)
+    db.commit()
 
     async def events() -> AsyncIterator[str]:
         yield f"event: message.started\ndata: {json.dumps({'conversationId': conversation_id})}\n\n"
-        messages = [{"role": "user", "content": payload.get("content", "")}]
+        messages = [{"role": "user", "content": payload.content}]
+        response_parts: list[str] = []
         async for delta in gateway.stream_text(messages, task="side_agent"):
+            response_parts.append(delta)
             yield f"event: message.delta\ndata: {json.dumps({'delta': delta})}\n\n"
+        assistant = Message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content="".join(response_parts),
+        )
+        db.add(assistant)
+        db.commit()
         yield "event: message.completed\ndata: {}\n\n"
 
     return StreamingResponse(events(), media_type="text/event-stream")

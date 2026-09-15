@@ -26,6 +26,46 @@ class LearningSpaceList(ApiModel):
     next_cursor: str | None = Field(default=None, alias="nextCursor")
 
 
+class CardSectionResponse(ApiModel):
+    id: str
+    title: str
+    order_index: int = Field(alias="orderIndex")
+    content_markdown: str = Field(alias="contentMarkdown")
+    learning_status: str = Field(default="unread", alias="learningStatus")
+
+
+class KnowledgeCardResponse(ApiModel):
+    id: str
+    space_id: str = Field(alias="spaceId")
+    parent_card_id: str | None = Field(default=None, alias="parentCardId")
+    source_conversation_id: str | None = Field(default=None, alias="sourceConversationId")
+    title: str
+    card_type: str = Field(alias="cardType")
+    status: str
+    sections: list[CardSectionResponse]
+
+
+class CreateKnowledgeCardRequest(ApiModel):
+    title: str
+    card_type: Literal["root", "related"] = Field(default="root", alias="cardType")
+    parent_card_id: str | None = Field(default=None, alias="parentCardId")
+    source_conversation_id: str | None = Field(default=None, alias="sourceConversationId")
+
+
+class CreateMessageRequest(ApiModel):
+    content: str = Field(min_length=1)
+    client_message_id: str | None = Field(default=None, alias="clientMessageId")
+
+
+class MessageResponse(ApiModel):
+    id: str
+    conversation_id: str = Field(alias="conversationId")
+    role: str
+    content: str
+    message_type: str = Field(alias="messageType")
+    created_at: datetime = Field(alias="createdAt")
+
+
 class CreateConversationRequest(ApiModel):
     section_id: str | None = Field(default=None, alias="sectionId")
     conversation_type: Literal["main", "side"] = Field(alias="conversationType")

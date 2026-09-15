@@ -61,6 +61,16 @@ class Conversation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
+class Message(Base):
+    __tablename__ = "messages"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"))
+    role: Mapped[str] = mapped_column(String(20))
+    content: Mapped[str] = mapped_column(Text)
+    message_type: Mapped[str] = mapped_column(String(30), default="text")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
 class Note(Base):
     __tablename__ = "notes"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)

@@ -69,6 +69,26 @@ paths:
                 $ref: '#/components/schemas/KnowledgeCard'
         '404':
           $ref: '#/components/responses/NotFound'
+  /learning-spaces/{spaceId}/cards:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    post:
+      operationId: createKnowledgeCard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateKnowledgeCardRequest'
+      responses:
+        '201':
+          description: Knowledge card created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeCard'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /cards/{cardId}/conversations:
     parameters:
       - $ref: '#/components/parameters/CardId'
@@ -212,6 +232,14 @@ components:
         sections:
           type: array
           items: { $ref: '#/components/schemas/CardSection' }
+    CreateKnowledgeCardRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1 }
+        cardType: { type: string, enum: [root, related], default: root }
+        parentCardId: { type: string, nullable: true }
+        sourceConversationId: { type: string, nullable: true }
     CardSection:
       type: object
       required: [id, title, orderIndex, contentMarkdown]

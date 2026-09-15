@@ -766,21 +766,30 @@ Agent 的结构化输出另行使用 Pydantic 和 JSON Schema 定义，不与 HT
 
 ### Phase 0：工程和契约基础
 
-- [ ] 确认前后端目录和本地启动方式
-- [ ] 建立 `contracts/openapi.yaml`
-- [ ] 定义公共错误、分页、SSE 事件 Schema
-- [ ] 定义学习空间、知识卡、章节、会话、消息、笔记 DTO
-- [ ] 配置前端 TypeScript Client 生成
+- [x] 确认前后端目录和本地启动方式
+- [x] 建立 `contracts/openapi.yaml`
+- [x] 定义公共错误、分页、SSE 事件 Schema
+- [x] 定义学习空间、知识卡、章节、会话、消息、笔记 DTO
+- [x] 配置前端 TypeScript Client 生成
 - [ ] 配置契约校验和生成代码检查
 
 ### Phase 1：后端基础
 
-- [ ] FastAPI 应用和 `/api/v1` 路由
-- [ ] SQLAlchemy 数据库连接
-- [ ] SQLite 本地配置和 Alembic 初始化
-- [ ] 核心数据表和基础 CRUD
+- [x] FastAPI 应用和 `/api/v1` 路由
+- [x] SQLAlchemy 数据库连接
+- [x] SQLite 本地配置和 Alembic 初始化
+- [x] 核心数据表和基础 CRUD
 - [ ] 统一错误处理和 requestId
-- [ ] 学习空间、知识卡、会话、笔记接口
+- [x] 学习空间、知识卡、会话、笔记接口
+
+Phase 1 当前使用 `uv` 管理 Python 工程：
+
+```bash
+uv --project backend run alembic upgrade head
+uv --project backend run uvicorn backend.main:app --reload
+```
+
+消息发送会先持久化用户消息，AI 流式完成后再持久化 assistant 消息；知识卡通过 `parentCardId` 保留主线与关联卡的挂接关系。
 
 ### Phase 2：AI 基础
 
