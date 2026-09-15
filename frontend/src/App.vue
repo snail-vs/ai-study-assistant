@@ -21,10 +21,13 @@ const selectedProvider = ref('deepseek')
 const apiKey = ref('')
 const providerStatus = ref({ activeProvider: 'mock', providers: {} })
 const selectedModel = ref('')
+const availableModels = ref([])
+const selectedModels = ref([])
+const fetchingModels = ref(false)
 const proposal = ref(null)
 const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
 
-onMounted(loadHistory)
+onMounted(() => Promise.all([loadHistory(), loadProviderSettings()]))
 
 const section = computed(() => card.value?.sections?.[activeSection.value] || null)
 const renderedContent = computed(() => md.render(section.value?.contentMarkdown || '本节内容正在生成。'))
@@ -41,20 +44,46 @@ async function request(path, options = {}) {
 }
 
 async function openSettings() {
-  providerStatus.value = await request('/settings/providers')
+  await loadProviderSettings()
   selectedProvider.value = providerStatus.value.activeProvider === 'mock' ? 'deepseek' : providerStatus.value.activeProvider
   selectedModel.value = providerStatus.value.activeModel || providerStatus.value.models?.[selectedProvider.value]?.[0] || ''
+  selectedModels.value = [...(providerStatus.value.models?.[selectedProvider.value] || [])]
+  availableModels.value = [...selectedModels.value]
   showSettings.value = true
 }
 
-async function saveProvider() {
+async function loadProviderSettings() {
+  try {
+    providerStatus.value = await request('/settings/providers')
+    selectedModel.value = providerStatus.value.activeModel || ''
+  } catch (_) {
+    // Keep the page usable with Mock when settings are unavailable.
+  }
+}
+
+async function fetchModels() {
   if (!apiKey.value.trim()) return
+  fetchingModels.value = true
+  error.value = ''
+  try {
+    const result = await request(`/settings/providers/${selectedProvider.value}/models`, {
+      method: 'POST', body: JSON.stringify({ apiKey: apiKey.value.trim() }),
+    })
+    availableModels.value = result.models || []
+    selectedModels.value = selectedModels.value.filter((model) => availableModels.value.includes(model))
+  } catch (err) { error.value = err.message } finally { fetchingModels.value = false }
+}
+
+async function saveProvider() {
+  if (!apiKey.value.trim() || !selectedModels.value.length) return
   loading.value = true
   try {
     providerStatus.value = await request(`/settings/providers/${selectedProvider.value}`, {
-      method: 'PUT', body: JSON.stringify({ apiKey: apiKey.value.trim() }),
+      method: 'PUT', body: JSON.stringify({ apiKey: apiKey.value.trim(), models: selectedModels.value }),
     })
     selectedModel.value = providerStatus.value.activeModel || ''
+    availableModels.value = []
+    selectedModels.value = []
     apiKey.value = ''
     showSettings.value = false
   } catch (err) { error.value = err.message } finally { loading.value = false }
@@ -233,9 +262,10 @@ async function saveNote() {
     <div v-if="showSettings" class="modal-backdrop" @click.self="showSettings = false">
       <section class="settings-modal">
         <div class="settings-head"><div><div class="panel-title">模型设置</div><p>Key 仅保存在后端当前进程内，不写入数据库。</p></div><button @click="showSettings = false">×</button></div>
-        <label>Provider<select v-model="selectedProvider"><option value="deepseek">DeepSeek</option><option value="opencode">OpenCode Zen</option><option value="openrouter">OpenRouter</option></select></label>
-        <label>API Key<input v-model="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" /></label>
-        <div class="provider-actions"><button class="secondary" @click="useMock">切换 Mock</button><button class="primary" :disabled="loading || !apiKey" @click="saveProvider">保存并使用</button></div>
+        <label>Provider<select v-model="selectedProvider" @change="availableModels = []; selectedModels = []"><option value="deepseek">DeepSeek</option><option value="opencode">OpenCode Zen</option><option value="openrouter">OpenRouter</option></select></label>
+        <label>API Key<div class="key-row"><input v-model="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" /><button :disabled="fetchingModels || !apiKey" @click="fetchModels">{{ fetchingModels ? '获取中…' : '获取模型' }}</button></div></label>
+        <div v-if="availableModels.length" class="model-catalog"><div class="catalog-title">选择要使用的模型</div><label v-for="model in availableModels" :key="model" class="model-check"><input v-model="selectedModels" type="checkbox" :value="model" /><span>{{ model }}</span></label></div>
+        <div class="provider-actions"><button class="secondary" @click="useMock">切换 Mock</button><button class="primary" :disabled="loading || !apiKey || !selectedModels.length" @click="saveProvider">保存并使用</button></div>
         <div class="provider-hint">已配置：{{ Object.entries(providerStatus.providers).filter(([, value]) => value).map(([key]) => key).join('、') || '暂无' }}</div>
       </section>
     </div>

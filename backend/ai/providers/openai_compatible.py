@@ -18,6 +18,16 @@ class OpenAICompatibleProvider:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
+    async def list_models(self) -> list[str]:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(f"{self.base_url}/models", headers=self._headers())
+        if response.status_code >= 400:
+            raise AIProviderError(f"{response.status_code}: {response.text}")
+        try:
+            return sorted(item["id"] for item in response.json()["data"] if item.get("id"))
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise AIProviderError("Invalid model list response from provider") from exc
+
     async def stream_text(
         self, messages: Sequence[dict[str, str]], *, task: str
     ) -> AsyncIterator[str]:

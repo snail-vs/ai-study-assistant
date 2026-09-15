@@ -32,6 +32,24 @@ export interface paths {
         get?: never;
         put: operations["configureProvider"];
         post?: never;
+        delete: operations["clearProvider"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/providers/{providerName}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerName: "deepseek" | "opencode" | "openrouter";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["discoverProviderModels"];
         delete?: never;
         options?: never;
         head?: never;
@@ -48,7 +66,7 @@ export interface paths {
         get?: never;
         put: operations["selectModel"];
         post?: never;
-        delete: operations["clearProvider"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -236,12 +254,23 @@ export interface components {
     schemas: {
         ProviderSettings: {
             activeProvider: string;
+            activeModel: string | null;
             providers: {
                 [key: string]: boolean;
+            };
+            models: {
+                [key: string]: string[];
             };
         };
         ConfigureProviderRequest: {
             apiKey: string;
+            models: string[];
+        };
+        DiscoverModelsRequest: {
+            apiKey: string;
+        };
+        DiscoverModelsResponse: {
+            models: string[];
         };
         HealthResponse: {
             /** @example ok */
@@ -416,6 +445,54 @@ export interface operations {
             };
         };
     };
+    clearProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerName: "deepseek" | "opencode" | "openrouter";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider cleared */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderSettings"];
+                };
+            };
+        };
+    };
+    discoverProviderModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerName: "deepseek" | "opencode" | "openrouter";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscoverModelsRequest"];
+            };
+        };
+        responses: {
+            /** @description Models available from the provider */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoverModelsResponse"];
+                };
+            };
+        };
+    };
     selectModel: {
         parameters: {
             query?: never;
@@ -432,26 +509,6 @@ export interface operations {
         };
         responses: {
             /** @description Model selected */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProviderSettings"];
-                };
-            };
-        };
-    };
-    clearProvider: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Provider cleared */
             200: {
                 headers: {
                     [name: string]: unknown;

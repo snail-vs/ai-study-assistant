@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .ai.gateway import AIGateway
-from .ai.registry import create_named_text_provider, models_for_provider
+from .ai.registry import create_named_text_provider
 from .ai.providers.mock import MockTextProvider
 from .agents.bridge_agent import BridgeAgent
 from .agents.main_agent import MainAgent
@@ -36,6 +36,8 @@ from .schemas import (
     MessageResponse,
     NoteResponse,
     ConfigureProviderRequest,
+    DiscoverModelsRequest,
+    DiscoverModelsResponse,
     ProviderSettingsResponse,
     SelectModelRequest,
 )
@@ -49,7 +51,7 @@ provider_state = {
     "active": "mock",
     "active_model": None,
     "providers": {"deepseek": False, "opencode": False, "openrouter": False},
-    "models": {name: models_for_provider(name) for name in ("deepseek", "opencode", "openrouter")},
+    "models": {name: [] for name in ("deepseek", "opencode", "openrouter")},
 }
 
 
@@ -58,15 +60,28 @@ def get_provider_settings():
     return {"activeProvider": provider_state["active"], "activeModel": provider_state["active_model"], "providers": provider_state["providers"], "models": provider_state["models"]}
 
 
+@router.post("/settings/providers/{provider_name}/models", response_model=DiscoverModelsResponse)
+async def discover_models(provider_name: str, payload: DiscoverModelsRequest):
+    try:
+        provider = create_named_text_provider(provider_name, payload.api_key)
+        models = await provider.list_models()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not models:
+        raise HTTPException(status_code=502, detail="Provider returned an empty model list")
+    return {"models": models}
+
+
 @router.put("/settings/providers/{provider_name}", response_model=ProviderSettingsResponse)
 def configure_provider(provider_name: str, payload: ConfigureProviderRequest):
     try:
-        gateway.configure(create_named_text_provider(provider_name, payload.api_key))
+        gateway.configure(create_named_text_provider(provider_name, payload.api_key, payload.models[0]))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     provider_state["active"] = provider_name
-    provider_state["active_model"] = models_for_provider(provider_name)[0]
+    provider_state["active_model"] = payload.models[0]
     provider_state["providers"][provider_name] = True
+    provider_state["models"][provider_name] = list(dict.fromkeys(payload.models))
     return get_provider_settings()
 
 
@@ -85,6 +100,7 @@ def clear_provider(provider_name: str):
     if provider_name not in provider_state["providers"]:
         raise HTTPException(status_code=404, detail="Provider not found")
     provider_state["providers"][provider_name] = False
+    provider_state["models"][provider_name] = []
     if provider_state["active"] == provider_name:
         gateway.configure(MockTextProvider())
         provider_state["active"] = "mock"
