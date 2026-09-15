@@ -7,6 +7,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from .api import router
+from .ai.base import AIProviderError
 from . import models  # noqa: F401
 
 app = FastAPI(title="StudyCenter API", version="0.1.0")
@@ -51,5 +52,10 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     return error_response(request, "VALIDATION_ERROR", "请求参数校验失败", {"errors": exc.errors()}, 422)
+
+
+@app.exception_handler(AIProviderError)
+async def ai_provider_exception_handler(request: Request, exc: AIProviderError):
+    return error_response(request, "AI_PROVIDER_ERROR", "AI 服务调用失败", {"reason": str(exc)}, 502)
 
 app.include_router(router, prefix="/api/v1")
