@@ -25,6 +25,12 @@ ORIGIN_PROVIDERS = (
     OriginProviderDefinition("qwen", ("qwen-",), "openai_chat_completions"),
     OriginProviderDefinition("minimax", ("minimax-",), "openai_chat_completions"),
     OriginProviderDefinition("kimi", ("kimi-",), "openai_chat_completions"),
+    OriginProviderDefinition("grok", ("grok-",), "openai_responses"),
+    OriginProviderDefinition("muse", ("muse-spark-",), "openai_responses"),
+    OriginProviderDefinition("mimo", ("mimo-",), "openai_chat_completions"),
+    OriginProviderDefinition("ling", ("ling-",), "openai_chat_completions"),
+    OriginProviderDefinition("nemotron", ("nemotron-",), "openai_chat_completions"),
+    OriginProviderDefinition("big-pickle", ("big-pickle",), "openai_chat_completions"),
 )
 
 ORIGIN_BY_ID = {item.id: item for item in ORIGIN_PROVIDERS}
@@ -42,6 +48,12 @@ ACCESS_ROUTES = {
         "glm": ("openai_chat_completions", "/chat/completions"),
         "minimax": ("openai_chat_completions", "/chat/completions"),
         "kimi": ("openai_chat_completions", "/chat/completions"),
+        "grok": ("openai_responses", "/responses"),
+        "muse": ("openai_responses", "/responses"),
+        "mimo": ("openai_chat_completions", "/chat/completions"),
+        "ling": ("openai_chat_completions", "/chat/completions"),
+        "nemotron": ("openai_chat_completions", "/chat/completions"),
+        "big-pickle": ("openai_chat_completions", "/chat/completions"),
     },
 }
 
@@ -81,7 +93,12 @@ def resolve_model_route(access_provider: str, base_url: str, model_id: str) -> M
             access_provider, (access_provider, None, None)
         )
         protocol = default_protocol or ORIGIN_BY_ID[origin].default_protocol
-        path = default_path or "/chat/completions"
+        path = default_path or {
+            "openai_responses": "/responses",
+            "anthropic_messages": "/messages",
+            "google_generative": f"/models/{model_id}",
+            "openai_chat_completions": "/chat/completions",
+        }[protocol]
         if default_origin and default_origin != origin:
             protocol = ORIGIN_BY_ID[origin].default_protocol
     endpoint = f"{base_url.rstrip('/')}{path}"
