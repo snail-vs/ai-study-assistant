@@ -50,7 +50,7 @@ class OpenAICompatibleProvider:
                         delta = chunk["choices"][0].get("delta", {}).get("content")
                         if delta:
                             yield delta
-                    except (KeyError, json.JSONDecodeError) as exc:
+                    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
                         raise AIProviderError("Invalid streaming response from provider") from exc
 
     async def structured(
@@ -86,12 +86,18 @@ class OpenAICompatibleProvider:
         if response.status_code >= 400:
             raise AIProviderError(f"{response.status_code}: {response.text}")
         try:
-            content = response.json()["choices"][0]["message"]["content"]
+            body = response.json()
+            choices = body.get("choices")
+            if not choices:
+                raise AIProviderError("Provider returned no choices")
+            content = choices[0]["message"]["content"]
             if isinstance(content, dict):
                 return content
             content = content.strip()
             if content.startswith("```"):
                 content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
             return json.loads(content)
-        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        except AIProviderError:
+            raise
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             raise AIProviderError("Invalid structured response from provider") from exc
