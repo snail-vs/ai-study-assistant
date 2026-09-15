@@ -24,7 +24,6 @@ from .models import (
     Note,
     ProviderCredential,
     RelatedCardProposal,
-    RelatedCardProposalResponse,
     TeacherGuidance,
 )
 from .schemas import (
@@ -45,6 +44,7 @@ from .schemas import (
     DiscoverModelsResponse,
     ProviderSettingsResponse,
     SelectModelRequest,
+    RelatedCardProposalResponse,
     TeacherGuidanceResponse,
 )
 from .security.encryption import EncryptionError, decrypt_secret, encrypt_secret
