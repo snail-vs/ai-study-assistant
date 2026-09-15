@@ -1,9 +1,10 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 
 const base = '/api/v1'
 const goal = ref('')
+const history = ref([])
 const space = ref(null)
 const card = ref(null)
 const rootCard = ref(null)
@@ -17,6 +18,8 @@ const loading = ref(false)
 const error = ref('')
 const proposal = ref(null)
 const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
+
+onMounted(loadHistory)
 
 const section = computed(() => card.value?.sections?.[activeSection.value] || null)
 const renderedContent = computed(() => md.render(section.value?.contentMarkdown || '本节内容正在生成。'))
@@ -49,6 +52,33 @@ async function startLearning() {
     })
     conversations.value = [main]
     activeConversation.value = main
+    messages.value = []
+    await loadHistory()
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadHistory() {
+  try {
+    history.value = (await request('/learning-spaces')).items || []
+  } catch (_) {
+    // The empty state remains usable if the API is temporarily unavailable.
+  }
+}
+
+async function openHistory(item) {
+  loading.value = true
+  error.value = ''
+  try {
+    space.value = item
+    card.value = await request(`/cards/${item.rootCardId}`)
+    rootCard.value = card.value
+    activeSection.value = 0
+    conversations.value = await request(`/cards/${card.value.id}/conversations`)
+    activeConversation.value = conversations.value[0] || null
     messages.value = []
   } catch (err) {
     error.value = err.message
@@ -151,6 +181,13 @@ async function saveNote() {
         <input v-model="goal" placeholder="例如：我想理解 Kubernetes 容器隔离" autofocus />
         <button :disabled="loading">创建知识卡</button>
       </form>
+      <div v-if="history.length" class="history">
+        <div class="history-title">最近的学习空间</div>
+        <button v-for="item in history" :key="item.id" class="history-item" @click="openHistory(item)">
+          <span>{{ item.title }}</span>
+          <small>{{ new Date(item.createdAt).toLocaleDateString('zh-CN') }} · 继续学习 →</small>
+        </button>
+      </div>
       <p v-if="error" class="error">{{ error }}</p>
     </section>
 
