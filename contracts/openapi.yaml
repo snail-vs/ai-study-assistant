@@ -1,0 +1,281 @@
+openapi: 3.1.0
+info:
+  title: StudyCenter API
+  version: 0.1.0
+  description: Contract for the StudyCenter learning-space and knowledge-card API.
+servers:
+  - url: /api/v1
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /learning-spaces:
+    post:
+      operationId: createLearningSpace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLearningSpaceRequest'
+      responses:
+        '201':
+          description: Learning space created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningSpace'
+    get:
+      operationId: listLearningSpaces
+      responses:
+        '200':
+          description: Learning spaces
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningSpaceList'
+  /learning-spaces/{spaceId}:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: getLearningSpace
+      responses:
+        '200':
+          description: Learning space
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningSpace'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /cards/{cardId}:
+    parameters:
+      - $ref: '#/components/parameters/CardId'
+    get:
+      operationId: getKnowledgeCard
+      responses:
+        '200':
+          description: Knowledge card
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeCard'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /cards/{cardId}/conversations:
+    parameters:
+      - $ref: '#/components/parameters/CardId'
+    get:
+      operationId: listConversations
+      responses:
+        '200':
+          description: Conversations for a card
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Conversation'
+    post:
+      operationId: createConversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConversationRequest'
+      responses:
+        '201':
+          description: Conversation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+  /conversations/{conversationId}/messages/stream:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
+    post:
+      operationId: streamConversationMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMessageRequest'
+      responses:
+        '200':
+          description: Server-sent AI events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /cards/{cardId}/notes:
+    parameters:
+      - $ref: '#/components/parameters/CardId'
+    get:
+      operationId: listNotes
+      responses:
+        '200':
+          description: Notes for a card
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Note'
+    post:
+      operationId: createNote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNoteRequest'
+      responses:
+        '201':
+          description: Note created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+components:
+  parameters:
+    SpaceId:
+      name: spaceId
+      in: path
+      required: true
+      schema: { type: string }
+    CardId:
+      name: cardId
+      in: path
+      required: true
+      schema: { type: string }
+    ConversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, example: ok }
+    CreateLearningSpaceRequest:
+      type: object
+      required: [title, learningGoal]
+      properties:
+        title: { type: string, minLength: 1 }
+        learningGoal: { type: string, minLength: 1 }
+    LearningSpace:
+      type: object
+      required: [id, title, learningGoal, rootCardId, createdAt]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        learningGoal: { type: string }
+        rootCardId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    LearningSpaceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/LearningSpace' }
+        nextCursor: { type: string, nullable: true }
+    KnowledgeCard:
+      type: object
+      required: [id, spaceId, title, cardType, status, sections]
+      properties:
+        id: { type: string }
+        spaceId: { type: string }
+        parentCardId: { type: string, nullable: true }
+        sourceConversationId: { type: string, nullable: true }
+        title: { type: string }
+        cardType: { type: string, enum: [root, related] }
+        status: { type: string, enum: [draft, active, completed] }
+        sections:
+          type: array
+          items: { $ref: '#/components/schemas/CardSection' }
+    CardSection:
+      type: object
+      required: [id, title, orderIndex, contentMarkdown]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        orderIndex: { type: integer }
+        contentMarkdown: { type: string }
+        learningStatus: { type: string, enum: [unread, learning, completed] }
+    CreateConversationRequest:
+      type: object
+      required: [conversationType, title, rootQuestion]
+      properties:
+        sectionId: { type: string, nullable: true }
+        conversationType: { type: string, enum: [main, side] }
+        title: { type: string }
+        rootQuestion: { type: string }
+    Conversation:
+      type: object
+      required: [id, cardId, conversationType, title, status, createdAt]
+      properties:
+        id: { type: string }
+        cardId: { type: string }
+        sectionId: { type: string, nullable: true }
+        conversationType: { type: string, enum: [main, side] }
+        title: { type: string }
+        status: { type: string, enum: [active, completed, archived] }
+        createdAt: { type: string, format: date-time }
+    CreateMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1 }
+        clientMessageId: { type: string, nullable: true }
+    CreateNoteRequest:
+      type: object
+      required: [content]
+      properties:
+        sectionId: { type: string, nullable: true }
+        conversationId: { type: string, nullable: true }
+        sourceMessageId: { type: string, nullable: true }
+        content: { type: string, minLength: 1 }
+        sourceType: { type: string, enum: [manual, saved_message], default: manual }
+    Note:
+      type: object
+      required: [id, cardId, content, sourceType, createdAt]
+      properties:
+        id: { type: string }
+        cardId: { type: string }
+        sectionId: { type: string, nullable: true }
+        conversationId: { type: string, nullable: true }
+        sourceMessageId: { type: string, nullable: true }
+        content: { type: string }
+        sourceType: { type: string, enum: [manual, saved_message] }
+        createdAt: { type: string, format: date-time }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { type: object }
+            requestId: { type: string }
