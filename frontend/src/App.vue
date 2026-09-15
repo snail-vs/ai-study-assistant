@@ -15,13 +15,13 @@ const conversations = ref([])
 const activeConversation = ref(null)
 const messages = ref([])
 const input = ref('')
-const note = ref('')
-const noteTitle = ref('')
 const notesList = ref([])
 const showNotes = ref(false)
 const editingNote = ref(null)
+const noteEditorMode = ref('list')
 const noteEditorTitle = ref('')
 const noteEditorContent = ref('')
+const noteEditorInitial = ref({ title: '', content: '' })
 const loading = ref(false)
 const error = ref('')
 const showSettings = ref(false)
@@ -46,6 +46,15 @@ const section = computed(() => card.value?.sections?.[activeSection.value] || nu
 const renderedContent = computed(() => md.render(section.value?.contentMarkdown || '本节内容正在生成。'))
 const isRelatedCard = computed(() => card.value?.cardType === 'related')
 const keyConfigured = computed(() => Boolean(providerStatus.value.providers?.[selectedProvider.value]))
+const noteEditorDirty = computed(() => noteEditorMode.value !== 'list' && (
+  noteEditorTitle.value !== noteEditorInitial.value.title
+  || noteEditorContent.value !== noteEditorInitial.value.content
+))
+const noteEditorSource = computed(() => (
+  noteEditorMode.value === 'edit' && editingNote.value
+    ? noteSource(editingNote.value)
+    : card.value && section.value ? `${card.value.title} · ${section.value.title}` : card.value?.title || '学习笔记'
+))
 const homeCards = computed(() => history.value.flatMap((spaceItem) => (
   (historyCards.value[spaceItem.id] || []).map((cardItem) => ({
     card: cardItem,
@@ -104,6 +113,17 @@ async function openSettings() {
 
 async function openNotes() {
   await loadNotes()
+  resetNoteEditor()
+  showNotes.value = true
+}
+
+function startNote() {
+  if (!card.value) return
+  editingNote.value = null
+  noteEditorMode.value = 'create'
+  noteEditorTitle.value = ''
+  noteEditorContent.value = ''
+  noteEditorInitial.value = { title: '', content: '' }
   showNotes.value = true
 }
 
@@ -117,8 +137,10 @@ async function loadNotes() {
 
 function editNote(item) {
   editingNote.value = item
+  noteEditorMode.value = 'edit'
   noteEditorTitle.value = item.title
   noteEditorContent.value = item.content
+  noteEditorInitial.value = { title: item.title, content: item.content }
 }
 
 function noteSource(item) {
@@ -128,10 +150,40 @@ function noteSource(item) {
   return sectionItem ? `${owner.card.title} · ${sectionItem.title}` : owner.card.title
 }
 
-function closeNoteEditor() {
+function resetNoteEditor() {
   editingNote.value = null
+  noteEditorMode.value = 'list'
   noteEditorTitle.value = ''
   noteEditorContent.value = ''
+  noteEditorInitial.value = { title: '', content: '' }
+}
+
+function closeNoteEditor() {
+  if (noteEditorDirty.value && !window.confirm('当前笔记还没有保存，确定放弃修改吗？')) return
+  resetNoteEditor()
+}
+
+function closeNotes() {
+  if (noteEditorDirty.value && !window.confirm('当前笔记还没有保存，确定关闭吗？')) return
+  showNotes.value = false
+  resetNoteEditor()
+}
+
+async function createNote() {
+  if (!card.value || !noteEditorContent.value.trim()) return
+  try {
+    await request(`/cards/${card.value.id}/notes`, {
+      method: 'POST',
+      body: JSON.stringify({
+        title: noteEditorTitle.value.trim() || null,
+        sectionId: section.value?.id || null,
+        content: noteEditorContent.value.trim(),
+        sourceType: 'manual',
+      }),
+    })
+    await loadNotes()
+    resetNoteEditor()
+  } catch (err) { error.value = err.message }
 }
 
 async function updateNote() {
@@ -142,7 +194,7 @@ async function updateNote() {
       body: JSON.stringify({ title: noteEditorTitle.value.trim() || '未命名笔记', content: noteEditorContent.value.trim() }),
     })
     notesList.value = notesList.value.map((item) => item.id === updated.id ? updated : item)
-    closeNoteEditor()
+    resetNoteEditor()
   } catch (err) { error.value = err.message }
 }
 
@@ -399,16 +451,6 @@ async function selectConversation(item) {
   await loadConversationMessages(item)
 }
 
-async function saveNote() {
-  if (!card.value || !note.value.trim()) return
-  await request(`/cards/${card.value.id}/notes`, {
-    method: 'POST',
-    body: JSON.stringify({ title: noteTitle.value.trim() || null, sectionId: section.value?.id || null, content: note.value.trim(), sourceType: 'manual' }),
-  })
-  note.value = ''
-  noteTitle.value = ''
-  await loadNotes()
-}
 </script>
 
 <template>
@@ -450,13 +492,13 @@ async function saveNote() {
       </section>
     </div>
 
-    <div v-if="showNotes" class="notes-backdrop" @click.self="showNotes = false">
+    <div v-if="showNotes" class="notes-backdrop" @click.self="closeNotes">
       <aside class="notes-drawer">
-        <div class="notes-drawer-head"><div><div class="panel-title">我的笔记</div><p>记录、整理和回看学习过程中的重要内容。</p></div><button @click="showNotes = false">×</button></div>
-        <div v-if="editingNote" class="note-editor">
+        <div class="notes-drawer-head"><div><div class="panel-title">{{ noteEditorMode === 'list' ? '我的笔记' : noteEditorMode === 'create' ? '记笔记' : '编辑笔记' }}</div><p>{{ noteEditorMode === 'list' ? '记录、整理和回看学习过程中的重要内容。' : noteEditorSource }}</p></div><button @click="closeNotes">×</button></div>
+        <div v-if="noteEditorMode !== 'list'" class="note-editor">
           <input v-model="noteEditorTitle" placeholder="笔记标题" />
           <textarea v-model="noteEditorContent" placeholder="写下你的理解…"></textarea>
-          <div class="note-editor-actions"><button class="secondary" @click="closeNoteEditor">取消</button><button class="primary" @click="updateNote">保存修改</button></div>
+          <div class="note-editor-actions"><button class="secondary" @click="closeNoteEditor">取消</button><button class="primary" :disabled="!noteEditorContent.trim()" @click="noteEditorMode === 'create' ? createNote() : updateNote()">{{ noteEditorMode === 'create' ? '保存笔记' : '保存修改' }}</button></div>
         </div>
         <div v-else class="notes-list">
           <div v-if="!notesList.length" class="notes-empty">还没有笔记。<br />在学习页面记录第一条笔记吧。</div>
@@ -488,18 +530,12 @@ async function saveNote() {
       </aside>
 
       <section class="board panel">
-        <div class="board-meta"><span>第 {{ activeSection + 1 }} 节</span><span>Markdown 白板</span></div>
+        <div class="board-meta"><span>第 {{ activeSection + 1 }} 节</span><div class="board-actions"><span>Markdown 白板</span><button @click="startNote">＋ 记笔记</button></div></div>
         <button v-if="isRelatedCard" class="back-main" @click="returnToMain">← 返回主知识卡</button>
         <article class="markdown">
           <h2>{{ section?.title }}</h2>
           <div class="content" v-html="renderedContent"></div>
         </article>
-        <div class="notes">
-          <div class="note-title">✦ 我的笔记</div>
-          <input v-model="noteTitle" placeholder="笔记标题（可选）" />
-          <textarea v-model="note" placeholder="记录这节课中你觉得重要的内容…"></textarea>
-          <button class="save-note" @click="saveNote">保存笔记</button>
-        </div>
       </section>
 
       <div class="resize-handle" role="separator" aria-label="调整会话宽度" :aria-valuenow="chatWidth" aria-valuemin="280" aria-valuemax="560" tabindex="0" @pointerdown="startChatResize" @keydown.left.prevent="adjustChatWidth(20)" @keydown.right.prevent="adjustChatWidth(-20)"></div>
