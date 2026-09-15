@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncIterator
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -7,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .ai.gateway import AIGateway
+from .agents.side_agent import SideAgent
 from .db import get_db
 from .models import Conversation, KnowledgeCard, LearningSpace, Message, Note
 from .schemas import (
@@ -25,6 +27,7 @@ from .schemas import (
 
 router = APIRouter()
 gateway = AIGateway()
+side_agent = SideAgent(gateway)
 
 
 @router.get("/health")
@@ -113,6 +116,16 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         )
         db.add(assistant)
         db.commit()
+        try:
+            diagnosis = await side_agent.diagnose(payload.content)
+            if diagnosis.diagnosis.has_knowledge_gap:
+                yield f"event: diagnosis.updated\ndata: {json.dumps(diagnosis.diagnosis.model_dump(by_alias=True), ensure_ascii=False)}\n\n"
+                if diagnosis.proposal:
+                    proposal = diagnosis.proposal.model_dump()
+                    proposal["proposalId"] = str(uuid4())
+                    yield f"event: related_card.proposed\ndata: {json.dumps(proposal, ensure_ascii=False)}\n\n"
+        except Exception as exc:
+            yield f"event: run.failed\ndata: {json.dumps({'code': 'AI_DIAGNOSIS_FAILED', 'message': str(exc)})}\n\n"
         yield "event: message.completed\ndata: {}\n\n"
 
     return StreamingResponse(events(), media_type="text/event-stream")

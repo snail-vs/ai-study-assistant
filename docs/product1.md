@@ -795,15 +795,15 @@ uv --project backend run uvicorn backend.main:app --reload
 
 ### Phase 2：AI 基础
 
-- [ ] Provider 抽象接口
-- [ ] OpenAI Provider
-- [ ] OpenAI Compatible Provider
-- [ ] Mock Provider
-- [ ] Provider Registry 和任务路由
-- [ ] 结构化 Agent 输出校验
-- [ ] 主 Agent 生成主知识卡
-- [ ] 旁支 Agent 普通问答和断层诊断
-- [ ] SSE 流式消息
+- [x] Provider 抽象接口
+- [x] OpenAI Provider
+- [x] OpenAI Compatible Provider
+- [x] Mock Provider
+- [x] Provider Registry 和任务路由
+- [x] 结构化 Agent 输出校验
+- [x] 主 Agent 生成主知识卡
+- [x] 旁支 Agent 普通问答和断层诊断
+- [x] SSE 流式消息
 
 ### Phase 3：第一版核心交互
 

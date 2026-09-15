@@ -1,0 +1,16 @@
+from collections.abc import Awaitable
+from typing import Protocol
+
+
+class ImageProvider(Protocol):
+    def generate(self, prompt: str, **options: object) -> Awaitable[str]: ...
+    def edit(self, image_url: str, prompt: str, **options: object) -> Awaitable[str]: ...
+
+
+class AudioProvider(Protocol):
+    def speech_to_text(self, audio_url: str, **options: object) -> Awaitable[str]: ...
+    def text_to_speech(self, text: str, **options: object) -> Awaitable[str]: ...
+
+
+class VideoProvider(Protocol):
+    def generate(self, prompt: str, **options: object) -> Awaitable[str]: ...

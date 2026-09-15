@@ -14,4 +14,24 @@ class MockTextProvider:
     async def structured(
         self, messages: Sequence[dict[str, str]], *, task: str, schema: dict[str, Any]
     ) -> dict[str, Any]:
-        return {"action": "NORMAL_ANSWER", "reply": "这是 Mock 结构化回复。", "proposal": None}
+        if task == "side_agent":
+            question = messages[-1]["content"] if messages else ""
+            gap = any(word in question for word in ("进程", "内核", "隔离", "namespace"))
+            return {
+                "reply": f"这是针对问题的 Mock 解释：{question}",
+                "diagnosis": {
+                    "hasKnowledgeGap": gap,
+                    "missingTopics": ["Linux 进程与命名空间"] if gap else [],
+                },
+                "proposal": {
+                    "title": "Linux 进程与命名空间",
+                    "reason": "先理解进程视图，有助于理解容器隔离。",
+                } if gap else None,
+            }
+        return {
+            "title": "Mock 学习知识卡",
+            "summary": "用于本地开发验证的知识卡。",
+            "sections": [
+                {"title": "核心概念", "content_markdown": "## 核心概念\n\n这是 Mock 内容。"}
+            ],
+        }
