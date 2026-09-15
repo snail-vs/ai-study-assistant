@@ -310,6 +310,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Note'
+  /notes:
+    get:
+      operationId: listAllNotes
+      responses:
+        '200':
+          description: All notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Note'
+  /notes/{noteId}:
+    parameters:
+      - name: noteId
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      operationId: updateNote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNoteRequest'
+      responses:
+        '200':
+          description: Note updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+    delete:
+      operationId: deleteNote
+      responses:
+        '200':
+          description: Note deleted
 components:
   parameters:
     SpaceId:
@@ -471,20 +509,28 @@ components:
         sectionId: { type: string, nullable: true }
         conversationId: { type: string, nullable: true }
         sourceMessageId: { type: string, nullable: true }
+        title: { type: string, nullable: true, maxLength: 200 }
         content: { type: string, minLength: 1 }
         sourceType: { type: string, enum: [manual, saved_message], default: manual }
+    UpdateNoteRequest:
+      type: object
+      properties:
+        title: { type: string, nullable: true, maxLength: 200 }
+        content: { type: string, minLength: 1 }
     Note:
       type: object
-      required: [id, cardId, content, sourceType, createdAt]
+      required: [id, cardId, title, content, sourceType, createdAt, updatedAt]
       properties:
         id: { type: string }
         cardId: { type: string }
         sectionId: { type: string, nullable: true }
         conversationId: { type: string, nullable: true }
         sourceMessageId: { type: string, nullable: true }
+        title: { type: string }
         content: { type: string }
         sourceType: { type: string, enum: [manual, saved_message] }
         createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     ErrorResponse:
       type: object
       required: [error]

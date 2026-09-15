@@ -16,6 +16,12 @@ const activeConversation = ref(null)
 const messages = ref([])
 const input = ref('')
 const note = ref('')
+const noteTitle = ref('')
+const notesList = ref([])
+const showNotes = ref(false)
+const editingNote = ref(null)
+const noteEditorTitle = ref('')
+const noteEditorContent = ref('')
 const loading = ref(false)
 const error = ref('')
 const showSettings = ref(false)
@@ -96,6 +102,59 @@ async function openSettings() {
   showSettings.value = true
 }
 
+async function openNotes() {
+  await loadNotes()
+  showNotes.value = true
+}
+
+async function loadNotes() {
+  try {
+    notesList.value = await request('/notes')
+  } catch (_) {
+    // Notes remain optional if the API is temporarily unavailable.
+  }
+}
+
+function editNote(item) {
+  editingNote.value = item
+  noteEditorTitle.value = item.title
+  noteEditorContent.value = item.content
+}
+
+function noteSource(item) {
+  const owner = homeCards.value.find(({ card: cardItem }) => cardItem.id === item.cardId)
+  if (!owner) return '学习笔记'
+  const sectionItem = owner.card.sections?.find((sectionItem) => sectionItem.id === item.sectionId)
+  return sectionItem ? `${owner.card.title} · ${sectionItem.title}` : owner.card.title
+}
+
+function closeNoteEditor() {
+  editingNote.value = null
+  noteEditorTitle.value = ''
+  noteEditorContent.value = ''
+}
+
+async function updateNote() {
+  if (!editingNote.value || !noteEditorContent.value.trim()) return
+  try {
+    const updated = await request(`/notes/${editingNote.value.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title: noteEditorTitle.value.trim() || '未命名笔记', content: noteEditorContent.value.trim() }),
+    })
+    notesList.value = notesList.value.map((item) => item.id === updated.id ? updated : item)
+    closeNoteEditor()
+  } catch (err) { error.value = err.message }
+}
+
+async function removeNote(item) {
+  if (!window.confirm(`确定删除“${item.title}”吗？`)) return
+  try {
+    await request(`/notes/${item.id}`, { method: 'DELETE' })
+    notesList.value = notesList.value.filter((noteItem) => noteItem.id !== item.id)
+    if (editingNote.value?.id === item.id) closeNoteEditor()
+  } catch (err) { error.value = err.message }
+}
+
 function changeProvider() {
   availableModels.value = [...(providerStatus.value.models?.[selectedProvider.value] || [])]
   selectedModels.value = [...availableModels.value]
@@ -122,7 +181,7 @@ async function loadProviderSettings() {
 }
 
 async function fetchModels() {
-  if (!apiKey.value.trim()) return
+  if (!apiKey.value.trim() && !keyConfigured.value) return
   fetchingModels.value = true
   error.value = ''
   try {
@@ -184,6 +243,7 @@ async function startLearning() {
     conversations.value = [main]
     activeConversation.value = main
     messages.value = []
+    await loadNotes()
     await loadHistory()
   } catch (err) {
     error.value = err.message
@@ -220,6 +280,7 @@ async function openHistory(item) {
     conversations.value = await request(`/cards/${card.value.id}/conversations`)
     activeConversation.value = conversations.value[0] || null
     await loadConversationMessages(activeConversation.value)
+    await loadNotes()
   } catch (err) {
     error.value = err.message
   } finally {
@@ -342,9 +403,11 @@ async function saveNote() {
   if (!card.value || !note.value.trim()) return
   await request(`/cards/${card.value.id}/notes`, {
     method: 'POST',
-    body: JSON.stringify({ sectionId: section.value?.id || null, content: note.value.trim(), sourceType: 'manual' }),
+    body: JSON.stringify({ title: noteTitle.value.trim() || null, sectionId: section.value?.id || null, content: note.value.trim(), sourceType: 'manual' }),
   })
   note.value = ''
+  noteTitle.value = ''
+  await loadNotes()
 }
 </script>
 
@@ -354,6 +417,7 @@ async function saveNote() {
       <button class="brand" @click="goHome" title="返回首页">Study<span>Center</span></button>
       <div v-if="space" class="crumb">学习空间 / {{ card?.title }} / {{ section?.title || '未开始' }}</div>
       <div class="status">{{ loading ? 'AI 正在准备内容…' : `当前模型：${providerStatus.activeProvider}` }}</div>
+      <button class="notes-button" @click="openNotes">笔记</button>
       <button class="settings-button" @click="openSettings">设置</button>
     </header>
 
@@ -386,6 +450,25 @@ async function saveNote() {
       </section>
     </div>
 
+    <div v-if="showNotes" class="notes-backdrop" @click.self="showNotes = false">
+      <aside class="notes-drawer">
+        <div class="notes-drawer-head"><div><div class="panel-title">我的笔记</div><p>记录、整理和回看学习过程中的重要内容。</p></div><button @click="showNotes = false">×</button></div>
+        <div v-if="editingNote" class="note-editor">
+          <input v-model="noteEditorTitle" placeholder="笔记标题" />
+          <textarea v-model="noteEditorContent" placeholder="写下你的理解…"></textarea>
+          <div class="note-editor-actions"><button class="secondary" @click="closeNoteEditor">取消</button><button class="primary" @click="updateNote">保存修改</button></div>
+        </div>
+        <div v-else class="notes-list">
+          <div v-if="!notesList.length" class="notes-empty">还没有笔记。<br />在学习页面记录第一条笔记吧。</div>
+          <article v-for="item in notesList" :key="item.id" class="note-item">
+            <div class="note-item-head"><strong>{{ item.title }}</strong><div><button @click="editNote(item)">编辑</button><button @click="removeNote(item)">删除</button></div></div>
+            <p>{{ item.content }}</p>
+            <small>{{ noteSource(item) }} · {{ new Date(item.updatedAt).toLocaleString('zh-CN') }}</small>
+          </article>
+        </div>
+      </aside>
+    </div>
+
     <section v-if="space && !card" class="loading-state">
       正在恢复学习空间…
     </section>
@@ -413,6 +496,7 @@ async function saveNote() {
         </article>
         <div class="notes">
           <div class="note-title">✦ 我的笔记</div>
+          <input v-model="noteTitle" placeholder="笔记标题（可选）" />
           <textarea v-model="note" placeholder="记录这节课中你觉得重要的内容…"></textarea>
           <button class="save-note" @click="saveNote">保存笔记</button>
         </div>

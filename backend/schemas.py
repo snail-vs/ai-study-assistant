@@ -123,6 +123,7 @@ class CreateNoteRequest(ApiModel):
     section_id: str | None = Field(default=None, alias="sectionId")
     conversation_id: str | None = Field(default=None, alias="conversationId")
     source_message_id: str | None = Field(default=None, alias="sourceMessageId")
+    title: str | None = Field(default=None, max_length=200)
     content: str = Field(min_length=1)
     source_type: Literal["manual", "saved_message"] = Field(default="manual", alias="sourceType")
 
@@ -133,6 +134,13 @@ class NoteResponse(ApiModel):
     section_id: str | None = Field(alias="sectionId")
     conversation_id: str | None = Field(alias="conversationId")
     source_message_id: str | None = Field(alias="sourceMessageId")
+    title: str
     content: str
     source_type: str = Field(alias="sourceType")
     created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+
+class UpdateNoteRequest(ApiModel):
+    title: str | None = Field(default=None, max_length=200)
+    content: str | None = Field(default=None, min_length=1)

@@ -36,6 +36,7 @@ from .schemas import (
     KnowledgeCardResponse,
     MessageResponse,
     NoteResponse,
+    UpdateNoteRequest,
     ConfigureProviderRequest,
     DiscoverModelsRequest,
     DiscoverModelsResponse,
@@ -382,7 +383,9 @@ def reject_proposal(proposal_id: str, db: Session = Depends(get_db)):
 def create_note(card_id: str, payload: CreateNoteRequest, db: Session = Depends(get_db)):
     if not db.get(KnowledgeCard, card_id):
         raise HTTPException(status_code=404, detail="Knowledge card not found")
-    note = Note(card_id=card_id, **payload.model_dump())
+    values = payload.model_dump()
+    values["title"] = values.get("title") or values["content"].splitlines()[0][:200] or "未命名笔记"
+    note = Note(card_id=card_id, **values)
     db.add(note)
     db.commit()
     db.refresh(note)
@@ -391,4 +394,35 @@ def create_note(card_id: str, payload: CreateNoteRequest, db: Session = Depends(
 
 @router.get("/cards/{card_id}/notes", response_model=list[NoteResponse])
 def list_notes(card_id: str, db: Session = Depends(get_db)):
-    return list(db.scalars(select(Note).where(Note.card_id == card_id)))
+    return list(db.scalars(select(Note).where(Note.card_id == card_id).order_by(Note.updated_at.desc())))
+
+
+@router.get("/notes", response_model=list[NoteResponse])
+def list_all_notes(db: Session = Depends(get_db)):
+    return list(db.scalars(select(Note).order_by(Note.updated_at.desc())))
+
+
+@router.patch("/notes/{note_id}", response_model=NoteResponse)
+def update_note(note_id: str, payload: UpdateNoteRequest, db: Session = Depends(get_db)):
+    note = db.get(Note, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    values = payload.model_dump(exclude_unset=True)
+    if "content" in values and not values["content"].strip():
+        raise HTTPException(status_code=400, detail="Note content cannot be empty")
+    for key, value in values.items():
+        if value is not None:
+            setattr(note, key, value.strip() if isinstance(value, str) else value)
+    db.commit()
+    db.refresh(note)
+    return note
+
+
+@router.delete("/notes/{note_id}")
+def delete_note(note_id: str, db: Session = Depends(get_db)):
+    note = db.get(Note, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    db.delete(note)
+    db.commit()
+    return {"status": "deleted", "noteId": note_id}

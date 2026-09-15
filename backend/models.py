@@ -78,9 +78,11 @@ class Note(Base):
     section_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     source_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    title: Mapped[str] = mapped_column(String(200), default="未命名笔记")
     content: Mapped[str] = mapped_column(Text)
     source_type: Mapped[str] = mapped_column(String(20), default="manual")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
 
 
 class RelatedCardProposal(Base):
