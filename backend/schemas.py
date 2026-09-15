@@ -27,12 +27,12 @@ class ProviderSettingsResponse(ApiModel):
 
 
 class ConfigureProviderRequest(ApiModel):
-    api_key: str = Field(alias="apiKey", min_length=1)
+    api_key: str | None = Field(default=None, alias="apiKey", min_length=1)
     models: list[str] = Field(min_length=1)
 
 
 class DiscoverModelsRequest(ApiModel):
-    api_key: str = Field(alias="apiKey", min_length=1)
+    api_key: str | None = Field(default=None, alias="apiKey", min_length=1)
 
 
 class DiscoverModelsResponse(ApiModel):

@@ -96,9 +96,18 @@ def get_provider_settings(db: Session = Depends(get_db)):
 
 
 @router.post("/settings/providers/{provider_name}/models", response_model=DiscoverModelsResponse)
-async def discover_models(provider_name: str, payload: DiscoverModelsRequest):
+async def discover_models(provider_name: str, payload: DiscoverModelsRequest, db: Session = Depends(get_db)):
+    api_key = payload.api_key
+    if not api_key:
+        credential = db.get(ProviderCredential, provider_name)
+        if not credential:
+            raise HTTPException(status_code=400, detail="Provider is not configured")
+        try:
+            api_key = decrypt_secret(credential.api_key_ciphertext, credential.api_key_nonce)
+        except EncryptionError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
     try:
-        provider = create_named_text_provider(provider_name, payload.api_key)
+        provider = create_named_text_provider(provider_name, api_key)
         models = await provider.list_models()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -109,17 +118,27 @@ async def discover_models(provider_name: str, payload: DiscoverModelsRequest):
 
 @router.put("/settings/providers/{provider_name}", response_model=ProviderSettingsResponse)
 def configure_provider(provider_name: str, payload: ConfigureProviderRequest, db: Session = Depends(get_db)):
+    credential = db.get(ProviderCredential, provider_name)
+    api_key = payload.api_key
+    if not api_key:
+        if credential is None:
+            raise HTTPException(status_code=400, detail="API Key is required for a new provider")
+        try:
+            api_key = decrypt_secret(credential.api_key_ciphertext, credential.api_key_nonce)
+        except EncryptionError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
     try:
-        ciphertext, nonce = encrypt_secret(payload.api_key)
-        gateway.configure(create_named_text_provider(provider_name, payload.api_key, payload.models[0]))
+        if payload.api_key:
+            ciphertext, nonce = encrypt_secret(api_key)
+        gateway.configure(create_named_text_provider(provider_name, api_key, payload.models[0]))
     except (ValueError, EncryptionError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    credential = db.get(ProviderCredential, provider_name)
     if credential is None:
         credential = ProviderCredential(provider_name=provider_name)
         db.add(credential)
-    credential.api_key_ciphertext = ciphertext
-    credential.api_key_nonce = nonce
+    if payload.api_key:
+        credential.api_key_ciphertext = ciphertext
+        credential.api_key_nonce = nonce
     credential.models_json = json.dumps(list(dict.fromkeys(payload.models)))
     credential.active_model = payload.models[0]
     credential.is_active = True

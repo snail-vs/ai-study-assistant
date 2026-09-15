@@ -281,11 +281,11 @@ export interface components {
             };
         };
         ConfigureProviderRequest: {
-            apiKey: string;
+            apiKey?: string | null;
             models: string[];
         };
         DiscoverModelsRequest: {
-            apiKey: string;
+            apiKey?: string | null;
         };
         DiscoverModelsResponse: {
             models: string[];

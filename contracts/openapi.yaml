@@ -351,18 +351,17 @@ components:
             items: { type: string }
     ConfigureProviderRequest:
       type: object
-      required: [apiKey, models]
+      required: [models]
       properties:
-        apiKey: { type: string, minLength: 1, writeOnly: true }
+        apiKey: { type: string, minLength: 1, nullable: true, writeOnly: true }
         models:
           type: array
           minItems: 1
           items: { type: string }
     DiscoverModelsRequest:
       type: object
-      required: [apiKey]
       properties:
-        apiKey: { type: string, minLength: 1, writeOnly: true }
+        apiKey: { type: string, minLength: 1, nullable: true, writeOnly: true }
     DiscoverModelsResponse:
       type: object
       required: [models]
