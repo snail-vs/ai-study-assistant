@@ -587,6 +587,16 @@ async function selectSection(index) {
   await loadTeacherGuidance()
 }
 
+function previousSection() {
+  if (activeSection.value > 0) selectSection(activeSection.value - 1)
+}
+
+function nextSection() {
+  if (card.value?.sections && activeSection.value < card.value.sections.length - 1) {
+    selectSection(activeSection.value + 1)
+  }
+}
+
 </script>
 
 <template>
@@ -692,6 +702,11 @@ async function selectSection(index) {
             <div class="content" v-html="renderedContent"></div>
           </article>
         </div>
+        <nav class="section-navigation" aria-label="章节导航">
+          <button :disabled="activeSection === 0" @click="previousSection">← 上一节</button>
+          <span>第 {{ activeSection + 1 }} / {{ card.sections.length }} 节</span>
+          <button :disabled="activeSection === card.sections.length - 1" @click="nextSection">下一节 →</button>
+        </nav>
         <section class="teacher-guidance" :class="{ collapsed: !showTeacherGuidance }">
           <div class="teacher-guidance-head">
             <div><span class="teacher-label">老师引导</span><span v-if="teacherGuidance.length" class="teacher-count">{{ teacherGuidance.length }} 条</span></div>
