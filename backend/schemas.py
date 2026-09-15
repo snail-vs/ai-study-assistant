@@ -8,6 +8,17 @@ class ApiModel(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
+class ErrorDetail(ApiModel):
+    code: str
+    message: str
+    details: dict = Field(default_factory=dict)
+    request_id: str = Field(alias="requestId")
+
+
+class ErrorResponse(ApiModel):
+    error: ErrorDetail
+
+
 class CreateLearningSpaceRequest(ApiModel):
     title: str = Field(min_length=1)
     learning_goal: str = Field(alias="learningGoal", min_length=1)

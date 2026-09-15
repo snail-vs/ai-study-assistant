@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "api:generate": "openapi-typescript ../contracts/openapi.yaml -o src/api/generated/schema.ts",
+    "api:check": "sh scripts/check-api-generated.sh",
     "dev": "vite",
     "build": "vite build"
   },

@@ -771,7 +771,7 @@ Agent 的结构化输出另行使用 Pydantic 和 JSON Schema 定义，不与 HT
 - [x] 定义公共错误、分页、SSE 事件 Schema
 - [x] 定义学习空间、知识卡、章节、会话、消息、笔记 DTO
 - [x] 配置前端 TypeScript Client 生成
-- [ ] 配置契约校验和生成代码检查
+- [x] 配置契约校验和生成代码检查
 
 ### Phase 1：后端基础
 
@@ -779,7 +779,7 @@ Agent 的结构化输出另行使用 Pydantic 和 JSON Schema 定义，不与 HT
 - [x] SQLAlchemy 数据库连接
 - [x] SQLite 本地配置和 Alembic 初始化
 - [x] 核心数据表和基础 CRUD
-- [ ] 统一错误处理和 requestId
+- [x] 统一错误处理和 requestId
 - [x] 学习空间、知识卡、会话、笔记接口
 
 Phase 1 当前使用 `uv` 管理 Python 工程：
