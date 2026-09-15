@@ -176,6 +176,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cards/{cardId}/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cardId: components["parameters"]["CardId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listCardProposals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cards/{cardId}/sections/{sectionId}/guidance": {
         parameters: {
             query?: never;
@@ -243,6 +261,24 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["acceptRelatedCardProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/proposals/{proposalId}/discussion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["startProposalDiscussion"];
         delete?: never;
         options?: never;
         head?: never;
@@ -421,6 +457,19 @@ export interface components {
             title: string;
             /** @enum {string} */
             status: "active" | "completed" | "archived";
+            /** Format: date-time */
+            createdAt: string;
+        };
+        RelatedCardProposal: {
+            id: string;
+            conversationId: string;
+            cardId: string;
+            sectionId?: string | null;
+            title: string;
+            reason: string;
+            /** @enum {string} */
+            status: "pending" | "discussing" | "accepted" | "rejected";
+            generatedCardId?: string | null;
             /** Format: date-time */
             createdAt: string;
         };
@@ -828,6 +877,29 @@ export interface operations {
             };
         };
     };
+    listCardProposals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cardId: components["parameters"]["CardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending recommendations for a card */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RelatedCardProposal"][];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
     listTeacherGuidance: {
         parameters: {
             query?: never;
@@ -943,6 +1015,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KnowledgeCard"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    startProposalDiscussion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New isolated discussion session for a recommendation */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Conversation"];
                 };
             };
             404: components["responses"]["NotFound"];

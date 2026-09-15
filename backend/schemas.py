@@ -129,6 +129,18 @@ class ConversationResponse(ApiModel):
     created_at: datetime = Field(alias="createdAt")
 
 
+class RelatedCardProposalResponse(ApiModel):
+    id: str
+    conversation_id: str = Field(alias="conversationId")
+    card_id: str = Field(alias="cardId")
+    section_id: str | None = Field(default=None, alias="sectionId")
+    title: str
+    reason: str
+    status: str
+    generated_card_id: str | None = Field(default=None, alias="generatedCardId")
+    created_at: datetime = Field(alias="createdAt")
+
+
 class CreateNoteRequest(ApiModel):
     section_id: str | None = Field(default=None, alias="sectionId")
     conversation_id: str | None = Field(default=None, alias="conversationId")

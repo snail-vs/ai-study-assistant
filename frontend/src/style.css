@@ -55,4 +55,22 @@ button { cursor: pointer; }
 .teacher-guidance-item p { margin: 4px 0 0; color: #c0d0d8; font-size: 12px; line-height: 1.65; white-space: pre-wrap; }
 .teacher-guidance-empty { padding: 13px 0; color: #718da0; font-size: 12px; }
 .teacher-guidance.collapsed { background: #10202a; }
+.recommendation-link { display: block; width: 100%; padding: 9px 10px; border: 0; border-radius: 7px; background: transparent; color: #b8c7d2; text-align: left; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recommendation-link:hover { background: #1a3037; color: #e8fff7; }
+.recommendation-link span { color: #d6b878; margin-right: 9px; }
+.proposal-actions { display: flex; gap: 8px; margin-top: 12px; }
+.proposal-actions button { padding: 7px 9px; }
+.proposal-actions button:first-child { background: transparent; border: 1px solid #668b7e; color: #bce8d9; }
+.recommendation-backdrop { position: fixed; inset: 0; z-index: 14; display: grid; place-items: center; background: rgba(2, 6, 12, .58); }
+.recommendation-modal { width: min(420px, calc(100vw - 32px)); padding: 22px; border: 1px solid #395363; border-radius: 11px; background: #14222e; box-shadow: 0 20px 70px #0009; }
+.recommendation-modal-head { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
+.recommendation-modal-head h3 { margin: 6px 0 0; color: #e8edf5; font-size: 20px; }
+.recommendation-modal-head button { border: 0; background: transparent; color: #9eafc3; font-size: 22px; }
+.recommendation-kicker { color: #d6b878; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+.recommendation-modal > p { color: #c0ced8; line-height: 1.7; font-size: 13px; margin: 18px 0 12px; }
+.recommendation-source { color: #718da0; font-size: 11px; }
+.recommendation-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+.recommendation-actions button { border-radius: 6px; padding: 8px 10px; font-size: 12px; }
+.recommendation-actions .secondary { color: #b8c7d2; background: transparent; border: 1px solid #3b5567; }
+.recommendation-actions .primary { color: #0c1717; background: #74d2b4; border: 0; font-weight: 700; }
 .teacher-guidance.collapsed .teacher-guidance-head { border-bottom: 0; }

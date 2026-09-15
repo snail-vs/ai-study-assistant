@@ -42,6 +42,8 @@ const selectedDefaultModel = ref('')
 const fetchingModels = ref(false)
 const editingKey = ref(false)
 const proposal = ref(null)
+const recommendations = ref([])
+const selectedRecommendation = ref(null)
 const chatWidth = ref(Math.min(560, Math.max(280, Number(localStorage.getItem('studycenter.chatWidth')) || 360)))
 let resizingChat = false
 let conversationLoadVersion = 0
@@ -323,6 +325,7 @@ async function startLearning() {
     card.value = await request(`/cards/${space.value.rootCardId}`)
     rootCard.value = card.value
     await loadTeacherGuidance()
+    await loadRecommendations()
     relatedCards.value = (await request(`/learning-spaces/${space.value.id}/cards`)).filter((item) => item.cardType === 'related')
     const main = await request(`/cards/${card.value.id}/conversations`, {
       method: 'POST',
@@ -366,6 +369,7 @@ async function openHistory(item) {
     rootCard.value = card.value
     activeSection.value = 0
     await loadTeacherGuidance()
+    await loadRecommendations()
     relatedCards.value = (await request(`/learning-spaces/${item.id}/cards`)).filter((item) => item.cardType === 'related')
     conversations.value = await request(`/cards/${card.value.id}/conversations`)
     activeConversation.value = conversations.value[0] || null
@@ -386,6 +390,8 @@ function goHome() {
   activeConversation.value = null
   showConversationList.value = false
   teacherGuidance.value = []
+  recommendations.value = []
+  selectedRecommendation.value = null
   conversations.value = []
   messages.value = []
   proposal.value = null
@@ -452,7 +458,10 @@ async function sendMessage(text = input.value) {
       try {
         const data = JSON.parse(dataLine.slice(5))
         if (block.includes('message.delta')) assistant.content += data.delta || ''
-        if (block.includes('related_card.proposed')) proposal.value = data
+        if (block.includes('related_card.proposed')) {
+          proposal.value = data
+          recommendations.value = [data, ...recommendations.value.filter((item) => item.proposalId !== data.proposalId)]
+        }
         if (block.includes('guidance.updated')) teacherGuidance.value = [...teacherGuidance.value, data]
         if (block.includes('run.failed')) {
           error.value = data.message || 'AI 服务调用失败'
@@ -466,23 +475,52 @@ async function sendMessage(text = input.value) {
   }
 }
 
-async function acceptProposal() {
-  if (!proposal.value) return
+async function acceptProposal(item = proposal.value) {
+  if (!item) return
   loading.value = true
   try {
-    card.value = await request(`/proposals/${proposal.value.proposalId}/accept`, { method: 'POST' })
+    card.value = await request(`/proposals/${item.proposalId || item.id}/accept`, { method: 'POST' })
     relatedCards.value = [...relatedCards.value.filter((item) => item.id !== card.value.id), card.value]
+    recommendations.value = recommendations.value.filter((recommendation) => recommendation.id !== item.id && recommendation.proposalId !== item.proposalId)
     activeSection.value = 0
     await loadTeacherGuidance()
     proposal.value = null
+    selectedRecommendation.value = null
   } catch (err) { error.value = err.message } finally { loading.value = false }
+}
+
+async function continueRecommendation(item) {
+  loading.value = true
+  error.value = ''
+  try {
+    const conversation = await request(`/proposals/${item.proposalId || item.id}/discussion`, { method: 'POST' })
+    conversations.value = [...conversations.value, conversation]
+    activeConversation.value = conversation
+    messages.value = []
+    proposal.value = null
+    selectedRecommendation.value = null
+    await sendMessage(`我想先了解“${item.title}”，请先说明它和当前章节的关系，以及我是否需要为它创建关联知识卡。`)
+    await loadRecommendations()
+  } catch (err) { error.value = err.message } finally { loading.value = false }
+}
+
+async function dismissRecommendation(item) {
+  try {
+    await request(`/proposals/${item.proposalId || item.id}/reject`, { method: 'POST' })
+    recommendations.value = recommendations.value.filter((recommendation) => recommendation.id !== item.id && recommendation.proposalId !== item.proposalId)
+    if (proposal.value?.proposalId === item.proposalId || proposal.value?.id === item.id) proposal.value = null
+    selectedRecommendation.value = null
+  } catch (err) { error.value = err.message }
 }
 
 async function openCard(target) {
   card.value = target
   showConversationList.value = false
+  selectedRecommendation.value = null
+  proposal.value = null
   activeSection.value = 0
   await loadTeacherGuidance()
+  await loadRecommendations()
   conversations.value = await request(`/cards/${target.id}/conversations`)
   activeConversation.value = conversations.value[0] || null
   await loadConversationMessages(activeConversation.value)
@@ -529,6 +567,18 @@ async function loadTeacherGuidance() {
     if (version === guidanceLoadVersion) teacherGuidance.value = stored
   } catch (err) {
     if (version === guidanceLoadVersion) error.value = err.message
+  }
+}
+
+async function loadRecommendations() {
+  if (!card.value) {
+    recommendations.value = []
+    return
+  }
+  try {
+    recommendations.value = await request(`/cards/${card.value.id}/proposals`)
+  } catch (err) {
+    error.value = err.message
   }
 }
 
@@ -602,6 +652,15 @@ async function selectSection(index) {
       </aside>
     </div>
 
+    <div v-if="selectedRecommendation" class="recommendation-backdrop" @click.self="selectedRecommendation = null">
+      <section class="recommendation-modal">
+        <div class="recommendation-modal-head"><div><span class="recommendation-kicker">学习建议</span><h3>{{ selectedRecommendation.title }}</h3></div><button @click="selectedRecommendation = null">×</button></div>
+        <p>{{ selectedRecommendation.reason }}</p>
+        <div class="recommendation-source">来自：当前知识卡 · {{ section?.title }}</div>
+        <div class="recommendation-actions"><button class="secondary" @click="dismissRecommendation(selectedRecommendation)">暂不处理</button><button class="secondary" @click="continueRecommendation(selectedRecommendation)">继续讨论</button><button class="primary" @click="acceptProposal(selectedRecommendation)">创建关联知识卡</button></div>
+      </section>
+    </div>
+
     <section v-if="space && !card" class="loading-state">
       正在恢复学习空间…
     </section>
@@ -618,6 +677,10 @@ async function selectSection(index) {
           <span>↳</span>{{ related.title }}
         </button>
         <div v-if="!relatedCards.length" class="empty-related">从旁支问题中生成<br />新的学习分支</div>
+        <div v-if="recommendations.length" class="tree-label related">待处理推荐</div>
+        <button v-for="item in recommendations" :key="item.id || item.proposalId" class="recommendation-link" @click="selectedRecommendation = item">
+          <span>＋</span>{{ item.title }}
+        </button>
       </aside>
 
       <section class="board panel">
@@ -669,7 +732,7 @@ async function selectSection(index) {
             <div class="proposal-kicker">检测到一个知识断层</div>
             <strong>{{ proposal.title }}</strong>
             <p>{{ proposal.reason }}</p>
-            <button @click="acceptProposal">生成关联知识卡 →</button>
+            <div class="proposal-actions"><button @click="selectedRecommendation = proposal">查看推荐</button><button @click="acceptProposal">创建关联知识卡</button></div>
           </div>
         </div>
         <p v-if="error" class="error chat-error">{{ error }}</p>

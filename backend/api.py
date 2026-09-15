@@ -24,6 +24,7 @@ from .models import (
     Note,
     ProviderCredential,
     RelatedCardProposal,
+    RelatedCardProposalResponse,
     TeacherGuidance,
 )
 from .schemas import (
@@ -322,6 +323,22 @@ def list_conversations(card_id: str, db: Session = Depends(get_db)):
     return list(db.scalars(select(Conversation).where(Conversation.card_id == card_id)))
 
 
+@router.get("/cards/{card_id}/proposals", response_model=list[RelatedCardProposalResponse])
+def list_card_proposals(card_id: str, db: Session = Depends(get_db)):
+    if not db.get(KnowledgeCard, card_id):
+        raise HTTPException(status_code=404, detail="Knowledge card not found")
+    return list(
+        db.scalars(
+            select(RelatedCardProposal)
+            .where(
+                RelatedCardProposal.card_id == card_id,
+                RelatedCardProposal.status.in_(("pending", "discussing")),
+            )
+            .order_by(RelatedCardProposal.created_at.desc())
+        )
+    )
+
+
 @router.get("/conversations/{conversation_id}/messages", response_model=list[MessageResponse])
 def list_messages(conversation_id: str, db: Session = Depends(get_db)):
     if not db.get(Conversation, conversation_id):
@@ -347,7 +364,10 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
 
     async def events() -> AsyncIterator[str]:
         yield f"event: message.started\ndata: {json.dumps({'conversationId': conversation_id})}\n\n"
-        messages = [{"role": "user", "content": payload.content}]
+        messages = []
+        if conversation.root_question:
+            messages.append({"role": "system", "content": conversation.root_question})
+        messages.append({"role": "user", "content": payload.content})
         response_parts: list[str] = []
         try:
             async for delta in gateway.stream_text(messages, task="side_agent"):
@@ -456,6 +476,31 @@ async def accept_proposal(proposal_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(card)
     return card
+
+
+@router.post("/proposals/{proposal_id}/discussion", response_model=ConversationResponse, status_code=201)
+def start_proposal_discussion(proposal_id: str, db: Session = Depends(get_db)):
+    proposal = db.get(RelatedCardProposal, proposal_id)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    if proposal.generated_card_id:
+        raise HTTPException(status_code=400, detail="Proposal has already been accepted")
+    conversation = Conversation(
+        card_id=proposal.card_id,
+        section_id=proposal.section_id,
+        conversation_type="side",
+        title=f"讨论：{proposal.title}",
+        root_question=(
+            f"推荐学习主题：{proposal.title}\n"
+            f"推荐原因：{proposal.reason}\n"
+            "请围绕这个推荐主题帮助我判断是否值得创建一张关联知识卡。"
+        ),
+    )
+    db.add(conversation)
+    proposal.status = "discussing"
+    db.commit()
+    db.refresh(conversation)
+    return conversation
 
 
 @router.post("/proposals/{proposal_id}/reject")

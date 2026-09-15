@@ -211,6 +211,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Conversation'
+  /cards/{cardId}/proposals:
+    parameters:
+      - $ref: '#/components/parameters/CardId'
+    get:
+      operationId: listCardProposals
+      responses:
+        '200':
+          description: Pending recommendations for a card
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RelatedCardProposal'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /cards/{cardId}/sections/{sectionId}/guidance:
     parameters:
       - $ref: '#/components/parameters/CardId'
@@ -291,6 +307,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/KnowledgeCard'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /proposals/{proposalId}/discussion:
+    parameters:
+      - name: proposalId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: startProposalDiscussion
+      responses:
+        '201':
+          description: New isolated discussion session for a recommendation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
         '404':
           $ref: '#/components/responses/NotFound'
   /proposals/{proposalId}/reject:
@@ -527,6 +560,19 @@ components:
         conversationType: { type: string, enum: [main, side] }
         title: { type: string }
         status: { type: string, enum: [active, completed, archived] }
+        createdAt: { type: string, format: date-time }
+    RelatedCardProposal:
+      type: object
+      required: [id, conversationId, cardId, title, reason, status, createdAt]
+      properties:
+        id: { type: string }
+        conversationId: { type: string }
+        cardId: { type: string }
+        sectionId: { type: string, nullable: true }
+        title: { type: string }
+        reason: { type: string }
+        status: { type: string, enum: [pending, discussing, accepted, rejected] }
+        generatedCardId: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
     CreateMessageRequest:
       type: object
