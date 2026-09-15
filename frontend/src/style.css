@@ -32,3 +32,11 @@ button { cursor: pointer; }
 .conversation-menu-backdrop .conversation-list { margin: 10px; max-height: min(360px, 60vh); overflow-y: auto; background: #162231; border: 1px solid #3a4c65; border-radius: 8px; box-shadow: 0 16px 36px #0008; }
 .conversation-list-title { color: #6f8198; font-size: 11px; padding: 2px 8px 9px; text-transform: uppercase; letter-spacing: .1em; }
 .conversation-list-empty { color: #71849b; padding: 12px 8px; font-size: 12px; }
+.workspace.sidebar-collapsed { grid-template-columns: 0 minmax(460px, 1fr) 8px var(--chat-width, 360px); }
+.workspace.sidebar-collapsed .sidebar { width: 0; padding: 0; border: 0; }
+.sidebar-head, .board-location { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sidebar-head { justify-content: space-between; padding-left: 10px; }
+.sidebar-toggle { flex: 0 0 auto; width: 25px; height: 25px; padding: 0; border: 1px solid #3b4d66; border-radius: 6px; background: #121b28; color: #74d2b4; font-size: 18px; line-height: 20px; }
+.sidebar-toggle:hover { border-color: #74d2b4; background: #18302f; }
+.collapsed-toggle { width: auto; padding: 0 8px; font-size: 12px; }
+.collapsed-toggle span { margin-left: 3px; }

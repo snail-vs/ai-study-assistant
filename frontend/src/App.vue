@@ -11,6 +11,7 @@ const card = ref(null)
 const rootCard = ref(null)
 const relatedCards = ref([])
 const activeSection = ref(0)
+const showKnowledgeSidebar = ref(localStorage.getItem('studycenter.knowledgeSidebar') !== 'false')
 const conversations = ref([])
 const activeConversation = ref(null)
 const showConversationList = ref(false)
@@ -99,6 +100,11 @@ function stopChatResize() {
 function adjustChatWidth(delta) {
   chatWidth.value = Math.min(560, Math.max(280, chatWidth.value + delta))
   localStorage.setItem('studycenter.chatWidth', String(chatWidth.value))
+}
+
+function toggleKnowledgeSidebar() {
+  showKnowledgeSidebar.value = !showKnowledgeSidebar.value
+  localStorage.setItem('studycenter.knowledgeSidebar', String(showKnowledgeSidebar.value))
 }
 
 function resizeComposer(event) {
@@ -567,9 +573,9 @@ async function selectConversation(item) {
       正在恢复学习空间…
     </section>
 
-    <section v-if="space && card" class="workspace" :style="{ '--chat-width': `${chatWidth}px` }">
+    <section v-if="space && card" class="workspace" :class="{ 'sidebar-collapsed': !showKnowledgeSidebar }" :style="{ '--chat-width': `${chatWidth}px` }">
       <aside class="sidebar panel">
-        <div class="panel-title">知识结构</div>
+        <div class="sidebar-head"><div class="panel-title">知识结构</div><button class="sidebar-toggle" title="收起知识结构" @click="toggleKnowledgeSidebar">‹</button></div>
         <div class="tree-label">主知识卡</div>
         <button v-for="(item, index) in card.sections" :key="item.id" class="tree-item" :class="{ active: index === activeSection }" @click="activeSection = index">
           <span>{{ String(index + 1).padStart(2, '0') }}</span>{{ item.title }}
@@ -582,7 +588,7 @@ async function selectConversation(item) {
       </aside>
 
       <section class="board panel">
-        <div class="board-meta"><span>第 {{ activeSection + 1 }} 节</span><div class="board-actions"><span>Markdown 白板</span><button @click="startNote">＋ 记笔记</button></div></div>
+        <div class="board-meta"><div class="board-location"><button v-if="!showKnowledgeSidebar" class="sidebar-toggle collapsed-toggle" title="展开知识结构" @click="toggleKnowledgeSidebar">› <span>知识结构</span></button><span>第 {{ activeSection + 1 }} 节</span></div><div class="board-actions"><span>Markdown 白板</span><button @click="startNote">＋ 记笔记</button></div></div>
         <button v-if="isRelatedCard" class="back-main" @click="returnToMain">← 返回主知识卡</button>
         <article class="markdown">
           <h2>{{ section?.title }}</h2>
