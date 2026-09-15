@@ -34,6 +34,12 @@ onMounted(() => Promise.all([loadHistory(), loadProviderSettings()]))
 const section = computed(() => card.value?.sections?.[activeSection.value] || null)
 const renderedContent = computed(() => md.render(section.value?.contentMarkdown || '本节内容正在生成。'))
 const isRelatedCard = computed(() => card.value?.cardType === 'related')
+const homeCards = computed(() => history.value.flatMap((spaceItem) => (
+  (historyCards.value[spaceItem.id] || []).map((cardItem) => ({
+    card: cardItem,
+    space: spaceItem,
+  }))
+)))
 
 async function request(path, options = {}) {
   const response = await fetch(`${base}${path}`, {
@@ -259,6 +265,14 @@ async function openHistoryCard(spaceItem, target) {
   await openCard(target)
 }
 
+function openHomeCard(item) {
+  if (item.card.cardType === 'root') {
+    openHistory(item.space)
+  } else {
+    openHistoryCard(item.space, item.card)
+  }
+}
+
 function returnToMain() {
   if (!rootCard.value) return
   openCard(rootCard.value)
@@ -296,25 +310,12 @@ async function saveNote() {
         <textarea v-model="goal" placeholder="例如：我想系统理解 Kubernetes 容器隔离，并能看懂 Namespace 和 cgroups 的关系" autofocus></textarea>
         <div class="start-options"><label>模型<select v-model="selectedModel" :disabled="providerStatus.activeProvider === 'mock'"><option v-if="providerStatus.activeProvider === 'mock'" value="">Mock（请先配置模型）</option><option v-for="model in (providerStatus.models?.[providerStatus.activeProvider] || [])" :key="model" :value="model">{{ model }}</option></select></label><button :disabled="loading">创建知识卡</button></div>
       </form>
-      <div v-if="history.length" class="history">
-        <div class="history-title">最近的学习空间</div>
-        <div v-for="item in history" :key="item.id" class="history-group">
-          <button class="history-item" @click="openHistory(item)">
-            <span>{{ item.title }}</span>
-            <small>{{ new Date(item.createdAt).toLocaleDateString('zh-CN') }} · 继续学习 →</small>
-          </button>
-          <div v-if="(historyCards[item.id] || []).some((card) => card.cardType === 'related')" class="history-related">
-            <div class="history-related-title">关联知识卡</div>
-            <button
-              v-for="related in (historyCards[item.id] || []).filter((card) => card.cardType === 'related')"
-              :key="related.id"
-              class="history-related-item"
-              @click="openHistoryCard(item, related)"
-            >
-              {{ related.title }} <span>→</span>
-            </button>
-          </div>
-        </div>
+      <div v-if="homeCards.length" class="history">
+        <div class="history-title">我的知识卡</div>
+        <button v-for="item in homeCards" :key="item.card.id" class="history-item" @click="openHomeCard(item)">
+          <span>{{ item.card.title }}</span>
+          <small>{{ new Date(item.space.createdAt).toLocaleDateString('zh-CN') }} · 开始学习 →</small>
+        </button>
       </div>
       <p v-if="error" class="error">{{ error }}</p>
     </section>
