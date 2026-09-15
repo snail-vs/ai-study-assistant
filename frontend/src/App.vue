@@ -13,6 +13,7 @@ const relatedCards = ref([])
 const activeSection = ref(0)
 const conversations = ref([])
 const activeConversation = ref(null)
+const showConversationList = ref(false)
 const messages = ref([])
 const input = ref('')
 const composerInput = ref(null)
@@ -319,6 +320,7 @@ async function startLearning() {
     })
     conversations.value = [main]
     activeConversation.value = main
+    showConversationList.value = false
     messages.value = []
     await loadNotes()
     await loadHistory()
@@ -371,6 +373,7 @@ function goHome() {
   rootCard.value = null
   relatedCards.value = []
   activeConversation.value = null
+  showConversationList.value = false
   conversations.value = []
   messages.value = []
   proposal.value = null
@@ -392,6 +395,7 @@ async function openSideConversation() {
   })
   conversations.value.push(side)
   activeConversation.value = side
+  showConversationList.value = false
   messages.value = []
   await sendMessage(question)
 }
@@ -462,6 +466,7 @@ async function acceptProposal() {
 
 async function openCard(target) {
   card.value = target
+  showConversationList.value = false
   activeSection.value = 0
   conversations.value = await request(`/cards/${target.id}/conversations`)
   activeConversation.value = conversations.value[0] || null
@@ -488,6 +493,7 @@ function returnToMain() {
 
 async function selectConversation(item) {
   activeConversation.value = item
+  showConversationList.value = false
   messages.value = []
   await loadConversationMessages(item)
 }
@@ -587,11 +593,20 @@ async function selectConversation(item) {
       <div class="resize-handle" role="separator" aria-label="调整会话宽度" :aria-valuenow="chatWidth" aria-valuemin="280" aria-valuemax="560" tabindex="0" @pointerdown="startChatResize" @keydown.left.prevent="adjustChatWidth(20)" @keydown.right.prevent="adjustChatWidth(-20)"></div>
 
       <aside class="chat panel">
-        <div class="chat-head"><div class="panel-title">学习对话</div><button class="new-chat" @click="activeConversation = null; messages = []">＋ 新旁支</button></div>
-        <div class="conversation-list">
-          <button v-for="item in conversations" :key="item.id" @click="selectConversation(item)" :class="{ selected: activeConversation?.id === item.id }">
-            <small>{{ item.conversationType === 'main' ? '主线' : '旁支' }}</small>{{ item.title }}
+        <div class="chat-head">
+          <button class="conversation-trigger" @click="showConversationList = !showConversationList" :aria-expanded="showConversationList">
+            <span class="panel-title">{{ activeConversation?.title || '新旁支会话' }}</span><span class="conversation-trigger-icon">⌄</span>
           </button>
+          <button class="new-chat" @click="activeConversation = null; messages = []; showConversationList = false">＋ 新旁支</button>
+        </div>
+        <div v-if="showConversationList" class="conversation-menu-backdrop" @click="showConversationList = false">
+          <div class="conversation-list" @click.stop>
+            <div class="conversation-list-title">历史会话</div>
+            <button v-for="item in conversations" :key="item.id" @click="selectConversation(item)" :class="{ selected: activeConversation?.id === item.id }">
+              <small>{{ item.conversationType === 'main' ? '主线' : '旁支' }}</small>{{ item.title }}
+            </button>
+            <div v-if="!conversations.length" class="conversation-list-empty">暂无历史会话</div>
+          </div>
         </div>
         <div class="messages">
           <div v-for="(message, index) in messages" :key="index" class="message" :class="message.role"><span>{{ message.role === 'user' ? '你' : 'AI' }}</span>{{ message.content }}</div>
