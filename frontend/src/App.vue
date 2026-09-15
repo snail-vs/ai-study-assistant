@@ -22,6 +22,8 @@ const noteEditorMode = ref('list')
 const noteEditorTitle = ref('')
 const noteEditorContent = ref('')
 const noteEditorInitial = ref({ title: '', content: '' })
+const noteTargetCardId = ref('')
+const noteTargetSectionId = ref('')
 const loading = ref(false)
 const error = ref('')
 const showSettings = ref(false)
@@ -50,17 +52,24 @@ const noteEditorDirty = computed(() => noteEditorMode.value !== 'list' && (
   noteEditorTitle.value !== noteEditorInitial.value.title
   || noteEditorContent.value !== noteEditorInitial.value.content
 ))
-const noteEditorSource = computed(() => (
-  noteEditorMode.value === 'edit' && editingNote.value
-    ? noteSource(editingNote.value)
-    : card.value && section.value ? `${card.value.title} · ${section.value.title}` : card.value?.title || '学习笔记'
-))
 const homeCards = computed(() => history.value.flatMap((spaceItem) => (
   (historyCards.value[spaceItem.id] || []).map((cardItem) => ({
     card: cardItem,
     space: spaceItem,
   }))
 )))
+const noteCardOptions = computed(() => {
+  const cards = homeCards.value.map((item) => item.card)
+  if (card.value && !cards.some((item) => item.id === card.value.id)) cards.unshift(card.value)
+  return cards
+})
+const noteTargetCard = computed(() => noteCardOptions.value.find((item) => item.id === noteTargetCardId.value) || null)
+const noteTargetSections = computed(() => noteTargetCard.value?.sections || [])
+const noteEditorSource = computed(() => {
+  if (noteEditorMode.value === 'edit' && editingNote.value) return noteSource(editingNote.value)
+  const sectionItem = noteTargetSections.value.find((item) => item.id === noteTargetSectionId.value)
+  return sectionItem ? `${noteTargetCard.value?.title} · ${sectionItem.title}` : noteTargetCard.value?.title || '学习笔记'
+})
 
 function startChatResize(event) {
   event.preventDefault()
@@ -118,9 +127,12 @@ async function openNotes() {
 }
 
 function startNote() {
-  if (!card.value) return
+  const targetCard = card.value || noteCardOptions.value[0]
+  if (!targetCard) return
   editingNote.value = null
   noteEditorMode.value = 'create'
+  noteTargetCardId.value = targetCard.id
+  noteTargetSectionId.value = card.value?.id === targetCard.id ? section.value?.id || '' : ''
   noteEditorTitle.value = ''
   noteEditorContent.value = ''
   noteEditorInitial.value = { title: '', content: '' }
@@ -156,6 +168,8 @@ function resetNoteEditor() {
   noteEditorTitle.value = ''
   noteEditorContent.value = ''
   noteEditorInitial.value = { title: '', content: '' }
+  noteTargetCardId.value = ''
+  noteTargetSectionId.value = ''
 }
 
 function closeNoteEditor() {
@@ -170,13 +184,13 @@ function closeNotes() {
 }
 
 async function createNote() {
-  if (!card.value || !noteEditorContent.value.trim()) return
+  if (!noteTargetCardId.value || !noteEditorContent.value.trim()) return
   try {
-    await request(`/cards/${card.value.id}/notes`, {
+    await request(`/cards/${noteTargetCardId.value}/notes`, {
       method: 'POST',
       body: JSON.stringify({
         title: noteEditorTitle.value.trim() || null,
-        sectionId: section.value?.id || null,
+        sectionId: noteTargetSectionId.value || null,
         content: noteEditorContent.value.trim(),
         sourceType: 'manual',
       }),
@@ -496,11 +510,16 @@ async function selectConversation(item) {
       <aside class="notes-drawer">
         <div class="notes-drawer-head"><div><div class="panel-title">{{ noteEditorMode === 'list' ? '我的笔记' : noteEditorMode === 'create' ? '记笔记' : '编辑笔记' }}</div><p>{{ noteEditorMode === 'list' ? '记录、整理和回看学习过程中的重要内容。' : noteEditorSource }}</p></div><button @click="closeNotes">×</button></div>
         <div v-if="noteEditorMode !== 'list'" class="note-editor">
+          <div v-if="noteEditorMode === 'create'" class="note-target-fields">
+            <label>知识卡<select v-model="noteTargetCardId" @change="noteTargetSectionId = ''"><option v-for="cardItem in noteCardOptions" :key="cardItem.id" :value="cardItem.id">{{ cardItem.title }}</option></select></label>
+            <label>章节<select v-model="noteTargetSectionId"><option value="">整张知识卡</option><option v-for="sectionItem in noteTargetSections" :key="sectionItem.id" :value="sectionItem.id">{{ sectionItem.title }}</option></select></label>
+          </div>
           <input v-model="noteEditorTitle" placeholder="笔记标题" />
           <textarea v-model="noteEditorContent" placeholder="写下你的理解…"></textarea>
           <div class="note-editor-actions"><button class="secondary" @click="closeNoteEditor">取消</button><button class="primary" :disabled="!noteEditorContent.trim()" @click="noteEditorMode === 'create' ? createNote() : updateNote()">{{ noteEditorMode === 'create' ? '保存笔记' : '保存修改' }}</button></div>
         </div>
         <div v-else class="notes-list">
+          <div class="notes-list-toolbar"><button :disabled="!noteCardOptions.length" @click="startNote">＋ 新建笔记</button></div>
           <div v-if="!notesList.length" class="notes-empty">还没有笔记。<br />在学习页面记录第一条笔记吧。</div>
           <article v-for="item in notesList" :key="item.id" class="note-item">
             <div class="note-item-head"><strong>{{ item.title }}</strong><div><button @click="editNote(item)">编辑</button><button @click="removeNote(item)">删除</button></div></div>
