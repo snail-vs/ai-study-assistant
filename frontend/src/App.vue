@@ -25,6 +25,7 @@ const providerStatus = ref({ activeProvider: 'mock', providers: {} })
 const selectedModel = ref('')
 const availableModels = ref([])
 const selectedModels = ref([])
+const selectedDefaultModel = ref('')
 const fetchingModels = ref(false)
 const editingKey = ref(false)
 const proposal = ref(null)
@@ -58,6 +59,7 @@ async function openSettings() {
   selectedProvider.value = providerStatus.value.activeProvider === 'mock' ? 'deepseek' : providerStatus.value.activeProvider
   selectedModel.value = providerStatus.value.activeModel || providerStatus.value.models?.[selectedProvider.value]?.[0] || ''
   selectedModels.value = [...(providerStatus.value.models?.[selectedProvider.value] || [])]
+  selectedDefaultModel.value = providerStatus.value.activeModel || selectedModels.value[0] || ''
   availableModels.value = [...selectedModels.value]
   apiKey.value = ''
   editingKey.value = false
@@ -67,8 +69,17 @@ async function openSettings() {
 function changeProvider() {
   availableModels.value = [...(providerStatus.value.models?.[selectedProvider.value] || [])]
   selectedModels.value = [...availableModels.value]
+  selectedDefaultModel.value = providerStatus.value.activeProvider === selectedProvider.value
+    ? providerStatus.value.activeModel || selectedModels.value[0] || ''
+    : selectedModels.value[0] || ''
   apiKey.value = ''
   editingKey.value = false
+}
+
+function ensureDefaultModel() {
+  if (!selectedModels.value.includes(selectedDefaultModel.value)) {
+    selectedDefaultModel.value = selectedModels.value[0] || ''
+  }
 }
 
 async function loadProviderSettings() {
@@ -91,15 +102,16 @@ async function fetchModels() {
     })
     availableModels.value = result.models || []
     selectedModels.value = selectedModels.value.filter((model) => availableModels.value.includes(model))
+    ensureDefaultModel()
   } catch (err) { error.value = err.message } finally { fetchingModels.value = false }
 }
 
 async function saveProvider() {
-  if ((!apiKey.value.trim() && !keyConfigured.value) || !selectedModels.value.length) return
+  if ((!apiKey.value.trim() && !keyConfigured.value) || !selectedModels.value.length || !selectedDefaultModel.value) return
   loading.value = true
   try {
     providerStatus.value = await request(`/settings/providers/${selectedProvider.value}`, {
-      method: 'PUT', body: JSON.stringify({ ...(apiKey.value.trim() ? { apiKey: apiKey.value.trim() } : {}), models: selectedModels.value }),
+      method: 'PUT', body: JSON.stringify({ ...(apiKey.value.trim() ? { apiKey: apiKey.value.trim() } : {}), models: selectedModels.value, defaultModel: selectedDefaultModel.value }),
     })
     selectedModel.value = providerStatus.value.activeModel || ''
     availableModels.value = []
@@ -335,11 +347,11 @@ async function saveNote() {
 
     <div v-if="showSettings" class="modal-backdrop" @click.self="showSettings = false">
       <section class="settings-modal">
-        <div class="settings-head"><div><div class="panel-title">模型设置</div><p>Key 仅保存在后端当前进程内，不写入数据库。</p></div><button @click="showSettings = false">×</button></div>
+        <div class="settings-head"><div><div class="panel-title">模型设置</div><p>Key 会在后端加密保存，前端不会保存明文。</p></div><button @click="showSettings = false">×</button></div>
         <label>Provider<select v-model="selectedProvider" @change="changeProvider"><option value="deepseek">DeepSeek</option><option value="opencode">OpenCode Zen</option><option value="openrouter">OpenRouter</option></select></label>
         <label>API Key<div class="key-row"><input v-if="editingKey || !keyConfigured" v-model="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" /><div v-else class="masked-key">*****</div><button v-if="keyConfigured && !editingKey" class="edit-key" @click="editingKey = true">编辑</button><button :disabled="fetchingModels || (!apiKey && !keyConfigured)" @click="fetchModels">{{ fetchingModels ? '获取中…' : '获取模型' }}</button></div></label>
-        <div v-if="availableModels.length" class="model-catalog"><div class="catalog-title">选择要使用的模型</div><label v-for="model in availableModels" :key="model" class="model-check"><input v-model="selectedModels" type="checkbox" :value="model" /><span>{{ model }}</span></label></div>
-        <div class="provider-actions"><button class="secondary" @click="useMock">切换 Mock</button><button class="primary" :disabled="loading || ((!apiKey && !keyConfigured) || !selectedModels.length)" @click="saveProvider">保存并使用</button></div>
+        <div v-if="availableModels.length" class="model-catalog"><div class="catalog-title">选择模型，并指定一个默认模型</div><label v-for="model in availableModels" :key="model" class="model-check"><input v-model="selectedModels" type="checkbox" :value="model" @change="ensureDefaultModel" /><span>{{ model }}</span><input v-model="selectedDefaultModel" type="radio" name="default-model" :value="model" :disabled="!selectedModels.includes(model)" /><em>默认</em></label></div>
+        <div class="provider-actions"><button class="secondary" @click="useMock">切换 Mock</button><button class="primary" :disabled="loading || ((!apiKey && !keyConfigured) || !selectedModels.length || !selectedDefaultModel)" @click="saveProvider">保存并使用</button></div>
         <div class="provider-hint">已配置：{{ Object.entries(providerStatus.providers).filter(([, value]) => value).map(([key]) => key).join('、') || '暂无' }}</div>
       </section>
     </div>

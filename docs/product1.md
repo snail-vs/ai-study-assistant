@@ -834,7 +834,7 @@ STUDYCENTER_ENCRYPTION_KEY=由 secrets.token_bytes(32) 生成的 urlsafe base64 
 uv --project backend run alembic upgrade head
 ```
 
-用户在设置页面填写 Provider API Key 并点击“获取模型”“保存并使用”后，后端会加密保存 Key。`GET /settings/providers` 永远不会返回 Key，只返回脱敏的配置状态和模型列表。删除 Provider 会同时删除数据库中的密文。
+用户在设置页面填写 Provider API Key，获取模型后勾选可用模型，并从中指定一个默认模型；点击“保存并使用”后，后端会加密保存 Key、模型列表和默认模型。`GET /settings/providers` 永远不会返回 Key，只返回脱敏的配置状态、模型列表和默认模型。删除 Provider 会同时删除数据库中的密文。
 
 如果更换 `STUDYCENTER_ENCRYPTION_KEY`，已有 Key 将无法解密；生产环境应使用稳定的部署 Secret，并为密钥轮换保留 `encryption_key_version`。
 

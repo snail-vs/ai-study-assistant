@@ -283,6 +283,7 @@ export interface components {
         ConfigureProviderRequest: {
             apiKey?: string | null;
             models: string[];
+            defaultModel: string;
         };
         DiscoverModelsRequest: {
             apiKey?: string | null;

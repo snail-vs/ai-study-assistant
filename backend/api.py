@@ -118,6 +118,9 @@ async def discover_models(provider_name: str, payload: DiscoverModelsRequest, db
 
 @router.put("/settings/providers/{provider_name}", response_model=ProviderSettingsResponse)
 def configure_provider(provider_name: str, payload: ConfigureProviderRequest, db: Session = Depends(get_db)):
+    models = list(dict.fromkeys(payload.models))
+    if payload.default_model not in models:
+        raise HTTPException(status_code=400, detail="Default model must be one of the selected models")
     credential = db.get(ProviderCredential, provider_name)
     api_key = payload.api_key
     if not api_key:
@@ -130,7 +133,7 @@ def configure_provider(provider_name: str, payload: ConfigureProviderRequest, db
     try:
         if payload.api_key:
             ciphertext, nonce = encrypt_secret(api_key)
-        gateway.configure(create_named_text_provider(provider_name, api_key, payload.models[0]))
+        gateway.configure(create_named_text_provider(provider_name, api_key, payload.default_model))
     except (ValueError, EncryptionError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if credential is None:
@@ -139,8 +142,8 @@ def configure_provider(provider_name: str, payload: ConfigureProviderRequest, db
     if payload.api_key:
         credential.api_key_ciphertext = ciphertext
         credential.api_key_nonce = nonce
-    credential.models_json = json.dumps(list(dict.fromkeys(payload.models)))
-    credential.active_model = payload.models[0]
+    credential.models_json = json.dumps(models)
+    credential.active_model = payload.default_model
     credential.is_active = True
     for other in db.scalars(select(ProviderCredential).where(ProviderCredential.provider_name != provider_name)):
         other.is_active = False
