@@ -154,6 +154,18 @@ async function openHistory(item) {
   }
 }
 
+function goHome() {
+  space.value = null
+  card.value = null
+  rootCard.value = null
+  activeConversation.value = null
+  conversations.value = []
+  messages.value = []
+  proposal.value = null
+  error.value = ''
+  loadHistory()
+}
+
 async function openSideConversation() {
   if (!card.value || !input.value.trim()) return
   const question = input.value.trim()
@@ -235,7 +247,7 @@ async function saveNote() {
 <template>
   <main class="shell">
     <header class="topbar">
-      <div class="brand">Study<span>Center</span></div>
+      <button class="brand" @click="goHome" title="返回首页">Study<span>Center</span></button>
       <div v-if="space" class="crumb">学习空间 / {{ card?.title }} / {{ section?.title || '未开始' }}</div>
       <div class="status">{{ loading ? 'AI 正在准备内容…' : `当前模型：${providerStatus.activeProvider}` }}</div>
       <button class="settings-button" @click="openSettings">设置</button>
