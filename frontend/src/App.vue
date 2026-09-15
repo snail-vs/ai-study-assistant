@@ -20,6 +20,7 @@ const showSettings = ref(false)
 const selectedProvider = ref('deepseek')
 const apiKey = ref('')
 const providerStatus = ref({ activeProvider: 'mock', providers: {} })
+const selectedModel = ref('')
 const proposal = ref(null)
 const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
 
@@ -41,6 +42,8 @@ async function request(path, options = {}) {
 
 async function openSettings() {
   providerStatus.value = await request('/settings/providers')
+  selectedProvider.value = providerStatus.value.activeProvider === 'mock' ? 'deepseek' : providerStatus.value.activeProvider
+  selectedModel.value = providerStatus.value.activeModel || providerStatus.value.models?.[selectedProvider.value]?.[0] || ''
   showSettings.value = true
 }
 
@@ -51,9 +54,15 @@ async function saveProvider() {
     providerStatus.value = await request(`/settings/providers/${selectedProvider.value}`, {
       method: 'PUT', body: JSON.stringify({ apiKey: apiKey.value.trim() }),
     })
+    selectedModel.value = providerStatus.value.activeModel || ''
     apiKey.value = ''
     showSettings.value = false
   } catch (err) { error.value = err.message } finally { loading.value = false }
+}
+
+async function selectModel() {
+  if (!selectedModel.value || providerStatus.value.activeProvider === 'mock') return
+  providerStatus.value = await request('/settings/model', { method: 'PUT', body: JSON.stringify({ model: selectedModel.value }) })
 }
 
 async function useMock() {
@@ -68,6 +77,7 @@ async function startLearning() {
   loading.value = true
   error.value = ''
   try {
+    if (selectedModel.value && providerStatus.value.activeProvider !== 'mock') await selectModel()
     space.value = await request('/learning-spaces', {
       method: 'POST',
       body: JSON.stringify({ title: goal.value.trim(), learningGoal: goal.value.trim() }),
@@ -207,8 +217,8 @@ async function saveNote() {
       <h1>从一个问题，开始一条属于你的学习路径。</h1>
       <p class="lead">主 Agent 会先生成一张知识卡。之后的提问、旁支和笔记，都围绕它展开。</p>
       <form @submit.prevent="startLearning" class="start-form">
-        <input v-model="goal" placeholder="例如：我想理解 Kubernetes 容器隔离" autofocus />
-        <button :disabled="loading">创建知识卡</button>
+        <textarea v-model="goal" placeholder="例如：我想系统理解 Kubernetes 容器隔离，并能看懂 Namespace 和 cgroups 的关系" autofocus></textarea>
+        <div class="start-options"><label>模型<select v-model="selectedModel" :disabled="providerStatus.activeProvider === 'mock'"><option v-if="providerStatus.activeProvider === 'mock'" value="">Mock（请先配置模型）</option><option v-for="model in (providerStatus.models?.[providerStatus.activeProvider] || [])" :key="model" :value="model">{{ model }}</option></select></label><button :disabled="loading">创建知识卡</button></div>
       </form>
       <div v-if="history.length" class="history">
         <div class="history-title">最近的学习空间</div>

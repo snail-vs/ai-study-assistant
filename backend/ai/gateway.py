@@ -12,6 +12,11 @@ class AIGateway:
     def configure(self, provider: TextProvider) -> None:
         self.provider = provider
 
+    def select_model(self, model: str) -> None:
+        if not hasattr(self.provider, "model"):
+            raise ValueError("Current provider does not expose model selection")
+        self.provider.model = model
+
     def stream_text(
         self, messages: Sequence[dict[str, str]], *, task: str
     ) -> AsyncIterator[str]:

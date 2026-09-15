@@ -37,6 +37,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProviderSettings'
+  /settings/model:
+    put:
+      operationId: selectModel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model]
+              properties:
+                model: { type: string }
+      responses:
+        '200':
+          description: Model selected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderSettings'
     delete:
       operationId: clearProvider
       responses:

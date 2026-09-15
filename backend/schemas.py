@@ -21,11 +21,17 @@ class ErrorResponse(ApiModel):
 
 class ProviderSettingsResponse(ApiModel):
     active_provider: str = Field(alias="activeProvider")
+    active_model: str | None = Field(alias="activeModel")
     providers: dict[str, bool]
+    models: dict[str, list[str]]
 
 
 class ConfigureProviderRequest(ApiModel):
     api_key: str = Field(alias="apiKey", min_length=1)
+
+
+class SelectModelRequest(ApiModel):
+    model: str = Field(min_length=1)
 
 
 class CreateLearningSpaceRequest(ApiModel):

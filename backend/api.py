@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .ai.gateway import AIGateway
-from .ai.registry import create_named_text_provider
+from .ai.registry import create_named_text_provider, models_for_provider
 from .ai.providers.mock import MockTextProvider
 from .agents.bridge_agent import BridgeAgent
 from .agents.main_agent import MainAgent
@@ -37,6 +37,7 @@ from .schemas import (
     NoteResponse,
     ConfigureProviderRequest,
     ProviderSettingsResponse,
+    SelectModelRequest,
 )
 
 router = APIRouter()
@@ -44,12 +45,17 @@ gateway = AIGateway()
 side_agent = SideAgent(gateway)
 main_agent = MainAgent(gateway)
 bridge_agent = BridgeAgent(gateway)
-provider_state = {"active": "mock", "providers": {"deepseek": False, "opencode": False, "openrouter": False}}
+provider_state = {
+    "active": "mock",
+    "active_model": None,
+    "providers": {"deepseek": False, "opencode": False, "openrouter": False},
+    "models": {name: models_for_provider(name) for name in ("deepseek", "opencode", "openrouter")},
+}
 
 
 @router.get("/settings/providers", response_model=ProviderSettingsResponse)
 def get_provider_settings():
-    return {"activeProvider": provider_state["active"], "providers": provider_state["providers"]}
+    return {"activeProvider": provider_state["active"], "activeModel": provider_state["active_model"], "providers": provider_state["providers"], "models": provider_state["models"]}
 
 
 @router.put("/settings/providers/{provider_name}", response_model=ProviderSettingsResponse)
@@ -59,8 +65,19 @@ def configure_provider(provider_name: str, payload: ConfigureProviderRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     provider_state["active"] = provider_name
+    provider_state["active_model"] = models_for_provider(provider_name)[0]
     provider_state["providers"][provider_name] = True
-    return {"activeProvider": provider_state["active"], "providers": provider_state["providers"]}
+    return get_provider_settings()
+
+
+@router.put("/settings/model", response_model=ProviderSettingsResponse)
+def select_model(payload: SelectModelRequest):
+    active = provider_state["active"]
+    if active == "mock" or payload.model not in provider_state["models"].get(active, []):
+        raise HTTPException(status_code=400, detail="Model is not available for the active provider")
+    gateway.select_model(payload.model)
+    provider_state["active_model"] = payload.model
+    return get_provider_settings()
 
 
 @router.delete("/settings/providers/{provider_name}", response_model=ProviderSettingsResponse)
@@ -71,7 +88,8 @@ def clear_provider(provider_name: str):
     if provider_state["active"] == provider_name:
         gateway.configure(MockTextProvider())
         provider_state["active"] = "mock"
-    return {"activeProvider": provider_state["active"], "providers": provider_state["providers"]}
+        provider_state["active_model"] = None
+    return get_provider_settings()
 
 
 @router.get("/health")

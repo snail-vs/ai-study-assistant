@@ -32,6 +32,22 @@ export interface paths {
         get?: never;
         put: operations["configureProvider"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["selectModel"];
+        post?: never;
         delete: operations["clearProvider"];
         options?: never;
         head?: never;
@@ -400,13 +416,37 @@ export interface operations {
             };
         };
     };
+    selectModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    model: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Model selected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderSettings"];
+                };
+            };
+        };
+    };
     clearProvider: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                providerName: "deepseek" | "opencode" | "openrouter";
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
