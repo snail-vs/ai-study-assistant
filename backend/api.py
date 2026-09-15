@@ -150,6 +150,19 @@ def get_learning_space(space_id: str, db: Session = Depends(get_db)):
     return space
 
 
+@router.get("/learning-spaces/{space_id}/cards", response_model=list[KnowledgeCardResponse])
+def list_cards(space_id: str, db: Session = Depends(get_db)):
+    if not db.get(LearningSpace, space_id):
+        raise HTTPException(status_code=404, detail="Learning space not found")
+    return list(
+        db.scalars(
+            select(KnowledgeCard)
+            .where(KnowledgeCard.space_id == space_id)
+            .order_by(KnowledgeCard.card_type, KnowledgeCard.title)
+        )
+    )
+
+
 @router.post("/learning-spaces/{space_id}/cards", response_model=KnowledgeCardResponse, status_code=201)
 def create_card(space_id: str, payload: CreateKnowledgeCardRequest, db: Session = Depends(get_db)):
     if not db.get(LearningSpace, space_id):
@@ -183,6 +196,19 @@ def create_conversation(card_id: str, payload: CreateConversationRequest, db: Se
 @router.get("/cards/{card_id}/conversations", response_model=list[ConversationResponse])
 def list_conversations(card_id: str, db: Session = Depends(get_db)):
     return list(db.scalars(select(Conversation).where(Conversation.card_id == card_id)))
+
+
+@router.get("/conversations/{conversation_id}/messages", response_model=list[MessageResponse])
+def list_messages(conversation_id: str, db: Session = Depends(get_db)):
+    if not db.get(Conversation, conversation_id):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return list(
+        db.scalars(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at, Message.id)
+        )
+    )
 
 
 @router.post("/conversations/{conversation_id}/messages/stream")

@@ -152,6 +152,19 @@ paths:
   /learning-spaces/{spaceId}/cards:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: listKnowledgeCards
+      responses:
+        '200':
+          description: Knowledge cards in the learning space
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KnowledgeCard'
+        '404':
+          $ref: '#/components/responses/NotFound'
     post:
       operationId: createKnowledgeCard
       requestBody:
@@ -216,6 +229,22 @@ paths:
             text/event-stream:
               schema:
                 type: string
+  /conversations/{conversationId}/messages:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
+    get:
+      operationId: listConversationMessages
+      responses:
+        '200':
+          description: Persisted messages in the conversation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /proposals/{proposalId}/accept:
     parameters:
       - name: proposalId
@@ -425,6 +454,16 @@ components:
       properties:
         content: { type: string, minLength: 1 }
         clientMessageId: { type: string, nullable: true }
+    Message:
+      type: object
+      required: [id, conversationId, role, content, messageType, createdAt]
+      properties:
+        id: { type: string }
+        conversationId: { type: string }
+        role: { type: string, enum: [user, assistant, system] }
+        content: { type: string }
+        messageType: { type: string }
+        createdAt: { type: string, format: date-time }
     CreateNoteRequest:
       type: object
       required: [content]

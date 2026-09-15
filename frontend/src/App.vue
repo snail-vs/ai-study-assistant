@@ -5,9 +5,11 @@ import MarkdownIt from 'markdown-it'
 const base = '/api/v1'
 const goal = ref('')
 const history = ref([])
+const historyCards = ref({})
 const space = ref(null)
 const card = ref(null)
 const rootCard = ref(null)
+const relatedCards = ref([])
 const activeSection = ref(0)
 const conversations = ref([])
 const activeConversation = ref(null)
@@ -113,6 +115,7 @@ async function startLearning() {
     })
     card.value = await request(`/cards/${space.value.rootCardId}`)
     rootCard.value = card.value
+    relatedCards.value = (await request(`/learning-spaces/${space.value.id}/cards`)).filter((item) => item.cardType === 'related')
     const main = await request(`/cards/${card.value.id}/conversations`, {
       method: 'POST',
       body: JSON.stringify({ conversationType: 'main', title: '主线导师', rootQuestion: goal.value }),
@@ -131,6 +134,14 @@ async function startLearning() {
 async function loadHistory() {
   try {
     history.value = (await request('/learning-spaces')).items || []
+    const entries = await Promise.all(history.value.map(async (item) => {
+      try {
+        return [item.id, await request(`/learning-spaces/${item.id}/cards`)]
+      } catch (_) {
+        return [item.id, []]
+      }
+    }))
+    historyCards.value = Object.fromEntries(entries)
   } catch (_) {
     // The empty state remains usable if the API is temporarily unavailable.
   }
@@ -143,10 +154,11 @@ async function openHistory(item) {
     space.value = item
     card.value = await request(`/cards/${item.rootCardId}`)
     rootCard.value = card.value
+    relatedCards.value = (await request(`/learning-spaces/${item.id}/cards`)).filter((item) => item.cardType === 'related')
     activeSection.value = 0
     conversations.value = await request(`/cards/${card.value.id}/conversations`)
     activeConversation.value = conversations.value[0] || null
-    messages.value = []
+    await loadConversationMessages(activeConversation.value)
   } catch (err) {
     error.value = err.message
   } finally {
@@ -158,6 +170,7 @@ function goHome() {
   space.value = null
   card.value = null
   rootCard.value = null
+  relatedCards.value = []
   activeConversation.value = null
   conversations.value = []
   messages.value = []
@@ -182,6 +195,15 @@ async function openSideConversation() {
   activeConversation.value = side
   messages.value = []
   await sendMessage(question)
+}
+
+async function loadConversationMessages(conversation) {
+  if (!conversation) {
+    messages.value = []
+    return
+  }
+  const stored = await request(`/conversations/${conversation.id}/messages`)
+  messages.value = stored.map((message) => ({ role: message.role, content: message.content }))
 }
 
 async function sendMessage(text = input.value) {
@@ -218,20 +240,28 @@ async function acceptProposal() {
   loading.value = true
   try {
     card.value = await request(`/proposals/${proposal.value.proposalId}/accept`, { method: 'POST' })
+    relatedCards.value = [...relatedCards.value.filter((item) => item.id !== card.value.id), card.value]
     activeSection.value = 0
     proposal.value = null
   } catch (err) { error.value = err.message } finally { loading.value = false }
 }
 
+async function openCard(target) {
+  card.value = target
+  activeSection.value = 0
+  conversations.value = await request(`/cards/${target.id}/conversations`)
+  activeConversation.value = conversations.value[0] || null
+  await loadConversationMessages(activeConversation.value)
+}
+
 function returnToMain() {
   if (!rootCard.value) return
-  card.value = rootCard.value
-  activeSection.value = 0
+  openCard(rootCard.value)
 }
 
 async function selectConversation(item) {
   activeConversation.value = item
-  messages.value = []
+  await loadConversationMessages(item)
 }
 
 async function saveNote() {
@@ -264,7 +294,12 @@ async function saveNote() {
       <div v-if="history.length" class="history">
         <div class="history-title">最近的学习空间</div>
         <button v-for="item in history" :key="item.id" class="history-item" @click="openHistory(item)">
-          <span>{{ item.title }}</span>
+          <span>
+            {{ item.title }}
+            <small v-if="(historyCards[item.id] || []).some((card) => card.cardType === 'related')">
+              · {{ (historyCards[item.id] || []).filter((card) => card.cardType === 'related').length }} 张关联知识卡
+            </small>
+          </span>
           <small>{{ new Date(item.createdAt).toLocaleDateString('zh-CN') }} · 继续学习 →</small>
         </button>
       </div>
@@ -294,7 +329,10 @@ async function saveNote() {
           <span>{{ String(index + 1).padStart(2, '0') }}</span>{{ item.title }}
         </button>
         <div class="tree-label related">关联知识卡</div>
-        <div class="empty-related">从旁支问题中生成<br />新的学习分支</div>
+        <button v-for="related in relatedCards" :key="related.id" class="related-card" :class="{ active: card.id === related.id }" @click="openCard(related)">
+          <span>↳</span>{{ related.title }}
+        </button>
+        <div v-if="!relatedCards.length" class="empty-related">从旁支问题中生成<br />新的学习分支</div>
       </aside>
 
       <section class="board panel">

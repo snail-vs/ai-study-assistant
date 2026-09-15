@@ -149,7 +149,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
+        get: operations["listKnowledgeCards"];
         put?: never;
         post: operations["createKnowledgeCard"];
         delete?: never;
@@ -188,6 +188,24 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["streamConversationMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/conversations/{conversationId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: components["parameters"]["ConversationId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listConversationMessages"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -344,6 +362,16 @@ export interface components {
         CreateMessageRequest: {
             content: string;
             clientMessageId?: string | null;
+        };
+        Message: {
+            id: string;
+            conversationId: string;
+            /** @enum {string} */
+            role: "user" | "assistant" | "system";
+            content: string;
+            messageType: string;
+            /** Format: date-time */
+            createdAt: string;
         };
         CreateNoteRequest: {
             sectionId?: string | null;
@@ -629,6 +657,29 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listKnowledgeCards: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: components["parameters"]["SpaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Knowledge cards in the learning space */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeCard"][];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
     createKnowledgeCard: {
         parameters: {
             query?: never;
@@ -728,6 +779,29 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
+        };
+    };
+    listConversationMessages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: components["parameters"]["ConversationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persisted messages in the conversation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Message"][];
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     acceptRelatedCardProposal: {
