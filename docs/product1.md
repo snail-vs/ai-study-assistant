@@ -828,3 +828,15 @@ uv --project backend run uvicorn backend.main:app --reload
 当前实施优先级是 Phase 0 → Phase 1 → Phase 2，先建立可以稳定迭代的契约和运行骨架，再实现完整学习闭环。
 
 Phase 2 当前已实现 Provider、主 Agent、旁支诊断、SSE 和关联知识卡提议闭环；真实多模态 Provider、互动展示和多 Agent 角色聊天仍按第二版范围保留。
+
+### 16.1 Provider 配置
+
+后端从 `backend/.env` 读取文本模型配置。复制 `backend/.env.example` 为 `backend/.env`，至少填写：
+
+```env
+OPENAI_API_KEY=your-api-key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
+```
+
+`OPENAI_BASE_URL` 可以替换为任意兼容 Chat Completions 的服务地址；未配置 `OPENAI_API_KEY` 时自动使用 Mock Provider。图片、音频和视频 Provider 目前只有抽象接口，尚未接入实际调用。
