@@ -8,9 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .ai.gateway import AIGateway
+from .agents.main_agent import MainAgent
 from .agents.side_agent import SideAgent
 from .db import get_db
-from .models import Conversation, KnowledgeCard, LearningSpace, Message, Note
+from .models import CardSection, Conversation, KnowledgeCard, LearningSpace, Message, Note
 from .schemas import (
     ConversationResponse,
     CreateKnowledgeCardRequest,
@@ -28,6 +29,7 @@ from .schemas import (
 router = APIRouter()
 gateway = AIGateway()
 side_agent = SideAgent(gateway)
+main_agent = MainAgent(gateway)
 
 
 @router.get("/health")
@@ -36,9 +38,24 @@ def health() -> dict[str, str]:
 
 
 @router.post("/learning-spaces", response_model=LearningSpaceResponse, status_code=status.HTTP_201_CREATED)
-def create_learning_space(payload: CreateLearningSpaceRequest, db: Session = Depends(get_db)):
+async def create_learning_space(payload: CreateLearningSpaceRequest, db: Session = Depends(get_db)):
     space = LearningSpace(title=payload.title, learning_goal=payload.learning_goal)
     db.add(space)
+    db.flush()
+    draft = await main_agent.create_card(payload.learning_goal)
+    card = KnowledgeCard(space_id=space.id, title=draft.title, card_type="root", status="active")
+    db.add(card)
+    db.flush()
+    for index, section in enumerate(draft.sections):
+        db.add(
+            CardSection(
+                card_id=card.id,
+                title=section.get("title", f"第 {index + 1} 节"),
+                order_index=index,
+                content_markdown=section.get("content_markdown", ""),
+            )
+        )
+    space.root_card_id = card.id
     db.commit()
     db.refresh(space)
     return space
