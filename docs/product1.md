@@ -263,18 +263,9 @@ DEEPSEEK_API_KEY=
 OLLAMA_BASE_URL=http://localhost:11434
 ```
 
-配置文件只保存：
+配置文件保存非敏感的默认配置；运行时在设置页面输入的 API Key 持久化在后端数据库中，但使用应用层 AES-GCM 加密，数据库不保存明文 Key。加密主密钥通过环境变量 `STUDYCENTER_ENCRYPTION_KEY` 注入，不能提交到代码仓库。
 
-- Provider 名称；
-- Base URL；
-- 模型名称；
-- 能力；
-- 默认路由；
-- 是否启用。
-
-API Key 只从环境变量或安全配置读取，不进入数据库，也不发送给前端。
-
-前端只能看到：
+前端不保存、不回显 API Key。刷新后只从后端读取 Provider 是否已配置、可用模型列表、当前 Provider 和当前模型：
 
 ```text
 当前可用模型：GPT / DeepSeek / Ollama
@@ -831,15 +822,22 @@ Phase 2 当前已实现 Provider、主 Agent、旁支诊断、SSE 和关联知�
 
 ### 16.1 Provider 配置
 
-后端从 `backend/.env` 读取文本模型配置。复制 `backend/.env.example` 为 `backend/.env`，至少填写：
+首次部署需要复制 `backend/.env.example` 为 `backend/.env`，并配置用于加密 Provider Key 的主密钥：
 
 ```env
-AI_PROVIDER=auto
-OPENAI_API_KEY=your-api-key
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4o-mini
+STUDYCENTER_ENCRYPTION_KEY=由 secrets.token_bytes(32) 生成的 urlsafe base64 字符串
 ```
 
-`OPENAI_BASE_URL` 可以替换为任意兼容 Chat Completions 的服务地址；未配置 `OPENAI_API_KEY` 时自动使用 Mock Provider。图片、音频和视频 Provider 目前只有抽象接口，尚未接入实际调用。
+然后执行数据库迁移：
+
+```bash
+uv --project backend run alembic upgrade head
+```
+
+用户在设置页面填写 Provider API Key 并点击“获取模型”“保存并使用”后，后端会加密保存 Key。`GET /settings/providers` 永远不会返回 Key，只返回脱敏的配置状态和模型列表。删除 Provider 会同时删除数据库中的密文。
+
+如果更换 `STUDYCENTER_ENCRYPTION_KEY`，已有 Key 将无法解密；生产环境应使用稳定的部署 Secret，并为密钥轮换保留 `encryption_key_version`。
+
+图片、音频和视频 Provider 目前只有抽象接口，尚未接入实际调用。
 
 本地离线验证时可以设置 `AI_PROVIDER=mock`；使用真实模型时设置 `AI_PROVIDER=auto` 或 `AI_PROVIDER=openai` 并填写 API Key。

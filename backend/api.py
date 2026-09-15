@@ -21,6 +21,7 @@ from .models import (
     LearningSpace,
     Message,
     Note,
+    ProviderCredential,
     RelatedCardProposal,
 )
 from .schemas import (
@@ -41,6 +42,7 @@ from .schemas import (
     ProviderSettingsResponse,
     SelectModelRequest,
 )
+from .security.encryption import EncryptionError, decrypt_secret, encrypt_secret
 
 router = APIRouter()
 gateway = AIGateway()
@@ -55,9 +57,42 @@ provider_state = {
 }
 
 
+def restore_active_provider(db: Session) -> None:
+    credential = db.scalar(select(ProviderCredential).where(ProviderCredential.is_active.is_(True)))
+    if not credential:
+        gateway.configure(MockTextProvider())
+        provider_state["active"] = "mock"
+        provider_state["active_model"] = None
+        return
+    try:
+        api_key = decrypt_secret(credential.api_key_ciphertext, credential.api_key_nonce)
+    except EncryptionError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    gateway.configure(create_named_text_provider(credential.provider_name, api_key, credential.active_model))
+    provider_state["active"] = credential.provider_name
+    provider_state["active_model"] = credential.active_model
+
+
+def provider_settings(db: Session) -> dict:
+    credentials = list(db.scalars(select(ProviderCredential)))
+    providers = {name: False for name in provider_state["providers"]}
+    models = {name: [] for name in provider_state["providers"]}
+    active = db.scalar(select(ProviderCredential).where(ProviderCredential.is_active.is_(True)))
+    for credential in credentials:
+        providers[credential.provider_name] = True
+        models[credential.provider_name] = json.loads(credential.models_json)
+    return {
+        "activeProvider": active.provider_name if active else "mock",
+        "activeModel": active.active_model if active else None,
+        "providers": providers,
+        "models": models,
+    }
+
+
 @router.get("/settings/providers", response_model=ProviderSettingsResponse)
-def get_provider_settings():
-    return {"activeProvider": provider_state["active"], "activeModel": provider_state["active_model"], "providers": provider_state["providers"], "models": provider_state["models"]}
+def get_provider_settings(db: Session = Depends(get_db)):
+    restore_active_provider(db)
+    return provider_settings(db)
 
 
 @router.post("/settings/providers/{provider_name}/models", response_model=DiscoverModelsResponse)
@@ -73,39 +108,56 @@ async def discover_models(provider_name: str, payload: DiscoverModelsRequest):
 
 
 @router.put("/settings/providers/{provider_name}", response_model=ProviderSettingsResponse)
-def configure_provider(provider_name: str, payload: ConfigureProviderRequest):
+def configure_provider(provider_name: str, payload: ConfigureProviderRequest, db: Session = Depends(get_db)):
     try:
+        ciphertext, nonce = encrypt_secret(payload.api_key)
         gateway.configure(create_named_text_provider(provider_name, payload.api_key, payload.models[0]))
-    except ValueError as exc:
+    except (ValueError, EncryptionError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    provider_state["active"] = provider_name
-    provider_state["active_model"] = payload.models[0]
-    provider_state["providers"][provider_name] = True
-    provider_state["models"][provider_name] = list(dict.fromkeys(payload.models))
-    return get_provider_settings()
+    credential = db.get(ProviderCredential, provider_name)
+    if credential is None:
+        credential = ProviderCredential(provider_name=provider_name)
+        db.add(credential)
+    credential.api_key_ciphertext = ciphertext
+    credential.api_key_nonce = nonce
+    credential.models_json = json.dumps(list(dict.fromkeys(payload.models)))
+    credential.active_model = payload.models[0]
+    credential.is_active = True
+    for other in db.scalars(select(ProviderCredential).where(ProviderCredential.provider_name != provider_name)):
+        other.is_active = False
+    db.commit()
+    return provider_settings(db)
 
 
 @router.put("/settings/model", response_model=ProviderSettingsResponse)
-def select_model(payload: SelectModelRequest):
+def select_model(payload: SelectModelRequest, db: Session = Depends(get_db)):
     active = provider_state["active"]
     if active == "mock" or payload.model not in provider_state["models"].get(active, []):
         raise HTTPException(status_code=400, detail="Model is not available for the active provider")
     gateway.select_model(payload.model)
+    credential = db.get(ProviderCredential, active)
+    credential.active_model = payload.model
+    db.commit()
     provider_state["active_model"] = payload.model
-    return get_provider_settings()
+    return provider_settings(db)
 
 
 @router.delete("/settings/providers/{provider_name}", response_model=ProviderSettingsResponse)
-def clear_provider(provider_name: str):
+def clear_provider(provider_name: str, db: Session = Depends(get_db)):
     if provider_name not in provider_state["providers"]:
         raise HTTPException(status_code=404, detail="Provider not found")
-    provider_state["providers"][provider_name] = False
-    provider_state["models"][provider_name] = []
-    if provider_state["active"] == provider_name:
+    credential = db.get(ProviderCredential, provider_name)
+    if credential:
+        was_active = credential.is_active
+        db.delete(credential)
+    else:
+        was_active = False
+    if was_active:
         gateway.configure(MockTextProvider())
         provider_state["active"] = "mock"
         provider_state["active_model"] = None
-    return get_provider_settings()
+    db.commit()
+    return provider_settings(db)
 
 
 @router.get("/health")
@@ -115,6 +167,7 @@ def health() -> dict[str, str]:
 
 @router.post("/learning-spaces", response_model=LearningSpaceResponse, status_code=status.HTTP_201_CREATED)
 async def create_learning_space(payload: CreateLearningSpaceRequest, db: Session = Depends(get_db)):
+    restore_active_provider(db)
     space = LearningSpace(title=payload.title, learning_goal=payload.learning_goal)
     db.add(space)
     db.flush()

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -103,3 +103,16 @@ class BridgeNote(Base):
     related_card_id: Mapped[str] = mapped_column(ForeignKey("knowledge_cards.id"))
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class ProviderCredential(Base):
+    __tablename__ = "provider_credentials"
+    provider_name: Mapped[str] = mapped_column(String(50), primary_key=True)
+    api_key_ciphertext: Mapped[str] = mapped_column(Text)
+    api_key_nonce: Mapped[str] = mapped_column(String(50))
+    encryption_key_version: Mapped[int] = mapped_column(Integer, default=1)
+    models_json: Mapped[str] = mapped_column(Text, default="[]")
+    active_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
