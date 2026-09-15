@@ -39,6 +39,7 @@ const editingKey = ref(false)
 const proposal = ref(null)
 const chatWidth = ref(Math.min(560, Math.max(280, Number(localStorage.getItem('studycenter.chatWidth')) || 360)))
 let resizingChat = false
+let conversationLoadVersion = 0
 const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
 
 onMounted(() => Promise.all([loadHistory(), loadProviderSettings()]))
@@ -386,11 +387,13 @@ async function openSideConversation() {
 }
 
 async function loadConversationMessages(conversation) {
+  const version = ++conversationLoadVersion
   if (!conversation) {
     messages.value = []
     return
   }
   const stored = await request(`/conversations/${conversation.id}/messages`)
+  if (version !== conversationLoadVersion || activeConversation.value?.id !== conversation.id) return
   messages.value = stored.map((message) => ({ role: message.role, content: message.content }))
 }
 
@@ -467,6 +470,7 @@ function returnToMain() {
 
 async function selectConversation(item) {
   activeConversation.value = item
+  messages.value = []
   await loadConversationMessages(item)
 }
 
