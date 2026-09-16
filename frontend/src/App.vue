@@ -160,6 +160,12 @@ function resizeComposer(event) {
   textarea.style.overflowY = textarea.scrollHeight > 180 ? 'auto' : 'hidden'
 }
 
+function handleComposerKeydown(event) {
+  if (event.key !== 'Enter' || (!event.shiftKey && !event.ctrlKey && !event.metaKey)) return
+  event.preventDefault()
+  sendMessage()
+}
+
 async function request(path, options = {}) {
   const response = await fetch(`${base}${path}`, {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
@@ -869,7 +875,7 @@ function nextSection() {
         <div v-if="sideRun.active" class="chat-run-status"><i class="status-spinner"></i>{{ sideRun.label }}</div>
         <p v-if="error" class="error chat-error">{{ error }}</p>
         <form class="composer" @submit.prevent="activeConversation ? sendMessage() : openSideConversation()">
-          <textarea ref="composerInput" v-model="input" :disabled="sideRun.active" placeholder="问问当前内容…（Shift+Enter 发送）" @input="resizeComposer" @keydown.enter.shift.prevent="sendMessage()"></textarea>
+          <textarea ref="composerInput" v-model="input" :disabled="sideRun.active" placeholder="问问当前内容…（Shift / Ctrl / ⌘ + Enter 发送）" @input="resizeComposer" @keydown="handleComposerKeydown"></textarea>
           <button :disabled="sideRun.active">{{ sideRun.active ? '回答中…' : '发送 ↗' }}</button>
         </form>
       </aside>
