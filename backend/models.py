@@ -31,6 +31,7 @@ class KnowledgeCard(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     space_id: Mapped[str] = mapped_column(ForeignKey("learning_spaces.id"))
     parent_card_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    parent_section_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     source_conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     title: Mapped[str] = mapped_column(String(200))
     card_type: Mapped[str] = mapped_column(String(20), default="root")

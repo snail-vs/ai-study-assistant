@@ -610,6 +610,7 @@ async def accept_proposal(proposal_id: str, db: Session = Depends(get_db)):
     card = KnowledgeCard(
         space_id=source_card.space_id,
         parent_card_id=source_card.id,
+        parent_section_id=proposal.section_id,
         source_conversation_id=proposal.conversation_id,
         title=draft.title or proposal.title,
         card_type="related",

@@ -463,6 +463,7 @@ export interface components {
             id: string;
             spaceId: string;
             parentCardId?: string | null;
+            parentSectionId?: string | null;
             sourceConversationId?: string | null;
             title: string;
             /** @enum {string} */
@@ -479,6 +480,7 @@ export interface components {
              */
             cardType: "root" | "related";
             parentCardId?: string | null;
+            parentSectionId?: string | null;
             sourceConversationId?: string | null;
         };
         CardSection: {

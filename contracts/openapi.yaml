@@ -578,6 +578,7 @@ components:
         id: { type: string }
         spaceId: { type: string }
         parentCardId: { type: string, nullable: true }
+        parentSectionId: { type: string, nullable: true }
         sourceConversationId: { type: string, nullable: true }
         title: { type: string }
         cardType: { type: string, enum: [root, related] }
@@ -592,6 +593,7 @@ components:
         title: { type: string, minLength: 1 }
         cardType: { type: string, enum: [root, related], default: root }
         parentCardId: { type: string, nullable: true }
+        parentSectionId: { type: string, nullable: true }
         sourceConversationId: { type: string, nullable: true }
     CardSection:
       type: object

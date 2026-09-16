@@ -10,6 +10,7 @@ const space = ref(null)
 const card = ref(null)
 const rootCard = ref(null)
 const relatedCards = ref([])
+const cardNavigationContext = ref(null)
 const activeSection = ref(0)
 const showKnowledgeSidebar = ref(localStorage.getItem('studycenter.knowledgeSidebar') !== 'false')
 const teacherGuidance = ref([])
@@ -76,7 +77,7 @@ onUnmounted(() => stopChatResize())
 
 const section = computed(() => card.value?.sections?.[activeSection.value] || null)
 const renderedContent = computed(() => md.render(section.value?.contentMarkdown || '本节内容正在生成。'))
-const isRelatedCard = computed(() => card.value?.cardType === 'related')
+const isRelatedCard = computed(() => Boolean(cardNavigationContext.value))
 const keyConfigured = computed(() => Boolean(providerStatus.value.providers?.[selectedProvider.value]))
 const knowledgeCardModel = computed(() => providerStatus.value.taskRoutes?.knowledge_card
   || (providerStatus.value.activeModel ? `${providerStatus.value.activeProvider}:${providerStatus.value.activeModel}` : 'Mock'))
@@ -342,7 +343,7 @@ async function startLearning() {
     rootCard.value = card.value
     await loadTeacherGuidance()
     await loadRecommendations()
-    relatedCards.value = (await request(`/learning-spaces/${space.value.id}/cards`)).filter((item) => item.cardType === 'related')
+    await loadRelatedCards()
     const main = await request(`/cards/${card.value.id}/conversations`, {
       method: 'POST',
       body: JSON.stringify({ conversationType: 'main', title: '主线导师', rootQuestion: goal.value }),
@@ -386,7 +387,7 @@ async function openHistory(item) {
     activeSection.value = 0
     await loadTeacherGuidance()
     await loadRecommendations()
-    relatedCards.value = (await request(`/learning-spaces/${item.id}/cards`)).filter((item) => item.cardType === 'related')
+    await loadRelatedCards()
     conversations.value = await request(`/cards/${card.value.id}/conversations`)
     activeConversation.value = conversations.value[0] || null
     await loadConversationMessages(activeConversation.value)
@@ -403,6 +404,7 @@ function goHome() {
   card.value = null
   rootCard.value = null
   relatedCards.value = []
+  cardNavigationContext.value = null
   activeConversation.value = null
   showConversationList.value = false
   teacherGuidance.value = []
@@ -524,7 +526,7 @@ async function acceptProposal(item = proposal.value) {
   loading.value = true
   try {
     card.value = await request(`/proposals/${item.proposalId || item.id}/accept`, { method: 'POST' })
-    relatedCards.value = [...relatedCards.value.filter((item) => item.id !== card.value.id), card.value]
+    await loadRelatedCards()
     recommendations.value = recommendations.value.filter((recommendation) => recommendation.id !== item.id && recommendation.proposalId !== item.proposalId)
     activeSection.value = 0
     await loadTeacherGuidance()
@@ -557,14 +559,27 @@ async function deleteRecommendation(item) {
   } catch (err) { error.value = err.message }
 }
 
-async function openCard(target) {
+async function loadRelatedCards() {
+  if (!space.value || !card.value || !section.value) {
+    relatedCards.value = []
+    return
+  }
+  const cards = await request(`/learning-spaces/${space.value.id}/cards`)
+  relatedCards.value = cards.filter((item) => item.cardType === 'related'
+    && item.parentCardId === card.value.id
+    && item.parentSectionId === section.value.id)
+}
+
+async function openCard(target, navigationContext = null) {
   card.value = target
+  cardNavigationContext.value = navigationContext
   showConversationList.value = false
   selectedRecommendation.value = null
   proposal.value = null
   activeSection.value = 0
   await loadTeacherGuidance()
   await loadRecommendations()
+  await loadRelatedCards()
   conversations.value = await request(`/cards/${target.id}/conversations`)
   activeConversation.value = conversations.value[0] || null
   await loadConversationMessages(activeConversation.value)
@@ -572,7 +587,7 @@ async function openCard(target) {
 
 async function openHistoryCard(spaceItem, target) {
   await openHistory(spaceItem)
-  await openCard(target)
+  await openCard(target, null)
 }
 
 function openHomeCard(item) {
@@ -584,8 +599,14 @@ function openHomeCard(item) {
 }
 
 function returnToMain() {
-  if (!rootCard.value) return
-  openCard(rootCard.value)
+  if (!cardNavigationContext.value) return
+  const context = cardNavigationContext.value
+  cardNavigationContext.value = null
+  openCard(context.card, null).then(() => {
+    activeSection.value = context.sectionIndex
+    loadTeacherGuidance()
+    loadRelatedCards()
+  })
 }
 
 async function selectConversation(item) {
@@ -628,6 +649,7 @@ async function loadRecommendations() {
 
 async function selectSection(index) {
   activeSection.value = index
+  await loadRelatedCards()
   await loadTeacherGuidance()
 }
 
@@ -729,7 +751,7 @@ function nextSection() {
           <span>{{ String(index + 1).padStart(2, '0') }}</span>{{ item.title }}
         </button>
         <div class="tree-label related">关联知识卡</div>
-        <button v-for="related in relatedCards" :key="related.id" class="related-card" :class="{ active: card.id === related.id }" @click="openCard(related)">
+        <button v-for="related in relatedCards" :key="related.id" class="related-card" :class="{ active: card.id === related.id }" @click="openCard(related, { card, sectionIndex: activeSection })">
           <span>↳</span>{{ related.title }}
         </button>
         <div v-if="!relatedCards.length" class="empty-related">从旁支问题中生成<br />新的学习分支</div>

@@ -107,6 +107,7 @@ class KnowledgeCardResponse(ApiModel):
     id: str
     space_id: str = Field(alias="spaceId")
     parent_card_id: str | None = Field(default=None, alias="parentCardId")
+    parent_section_id: str | None = Field(default=None, alias="parentSectionId")
     source_conversation_id: str | None = Field(default=None, alias="sourceConversationId")
     title: str
     card_type: str = Field(alias="cardType")
@@ -118,6 +119,7 @@ class CreateKnowledgeCardRequest(ApiModel):
     title: str
     card_type: Literal["root", "related"] = Field(default="root", alias="cardType")
     parent_card_id: str | None = Field(default=None, alias="parentCardId")
+    parent_section_id: str | None = Field(default=None, alias="parentSectionId")
     source_conversation_id: str | None = Field(default=None, alias="sourceConversationId")
 
 
