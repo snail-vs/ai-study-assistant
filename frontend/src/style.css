@@ -104,3 +104,76 @@ button { cursor: pointer; }
 .message-markdown li > p { margin: 0; }
 .message-markdown > ul, .message-markdown > ol { padding-left: 18px; }
 .message-markdown > ul > li + li, .message-markdown > ol > li + li { margin-top: 0; }
+
+/* 浅色主题：学习内容以纸面为主，保留低对比度边框和绿色强调色。 */
+.shell.theme-light { color: #263342; background: radial-gradient(circle at 45% -15%, #e6f1f4, transparent 45%), #f6f8fa; }
+.theme-light .topbar { border-color: #dce3e9; }
+.theme-light .brand { color: #1f2b38; }
+.theme-light .brand span, .theme-light .brand:hover { color: #187c68; }
+.theme-light .crumb { color: #68788a; }
+.theme-light .status { color: #7b8997; }
+.theme-light .notes-button, .theme-light .settings-button, .theme-light .theme-button { color: #536477; border-color: #cbd6df; }
+.theme-light .theme-button { background: #fff; border: 1px solid #cbd6df; border-radius: 6px; padding: 6px 11px; font-size: 12px; }
+.theme-light .notes-button:hover, .theme-light .settings-button:hover, .theme-light .theme-button:hover { color: #187c68; border-color: #78b9aa; background: #f2fbf8; }
+.theme-light .eyebrow, .theme-light .route-hint { color: #187c68; }
+.theme-light .lead { color: #657485; }
+.theme-light .start-form textarea, .theme-light .history-item { background: #fff; border-color: #d6dfe6; color: #263342; }
+.theme-light .start-form textarea:focus { border-color: #51a994; }
+.theme-light .history { border-color: #dce3e9; }
+.theme-light .history-title { color: #83909d; }
+.theme-light .history-item:hover { border-color: #6bb5a4; }
+.theme-light .history-item small, .theme-light .history-delete { color: #7b8997; }
+.theme-light .history-delete:hover { color: #b85f5f; }
+.theme-light .panel { background: rgba(255, 255, 255, .9); border-color: #d9e1e7; }
+.theme-light .tree-label { color: #8794a1; }
+.theme-light .tree-item { color: #627284; }
+.theme-light .tree-item span { color: #9aa7b3; }
+.theme-light .tree-item.active { color: #145d50; background: #e4f4ef; }
+.theme-light .empty-related, .theme-light .chat-empty { color: #8a98a5; }
+.theme-light .board-meta, .theme-light .section-navigation { color: #82909d; }
+.theme-light .markdown h2, .theme-light .content h1, .theme-light .content h2, .theme-light .content h3 { color: #263342; }
+.theme-light .content { color: #536273; }
+.theme-light .content code, .theme-light .message-markdown code { background: #e8f3f1; color: #176c5b; }
+.theme-light .content pre, .theme-light .message-markdown pre { background: #f1f5f7; border-color: #d5e0e5; }
+.theme-light .content th, .theme-light .content td, .theme-light .message-markdown th, .theme-light .message-markdown td { border-color: #d5e0e5; }
+.theme-light .back-main, .theme-light .section-navigation button { color: #187c68; }
+.theme-light .chat-head, .theme-light .conversation-list, .theme-light .composer { border-color: #e0e6eb; }
+.theme-light .conversation-trigger, .theme-light .message { color: #344454; }
+.theme-light .conversation-trigger-icon, .theme-light .new-chat, .theme-light .message span { color: #187c68; }
+.theme-light .message.user, .theme-light .message.user span { color: #795d22; }
+.theme-light .conversation-list button { color: #68788a; }
+.theme-light .conversation-list button.selected { background: #e7f1f3; color: #263342; }
+.theme-light .conversation-menu-backdrop .conversation-list { background: #fff; border-color: #d1dce3; box-shadow: 0 16px 36px #26334222; }
+.theme-light .composer textarea { background: #fff; border-color: #cfdbe3; color: #263342; }
+.theme-light .chat-error { background: #fff1f1; border-color: #e7bcbc; color: #985050; }
+.theme-light .chat-run-status { color: #5c8076; }
+.theme-light .teacher-guidance { background: #f0f8f7; border-color: #c9e0db; }
+.theme-light .teacher-guidance-head { border-color: #d5e8e4; }
+.theme-light .teacher-label, .theme-light .teacher-guidance-trigger { color: #187c68; }
+.theme-light .teacher-count, .theme-light .teacher-guidance-head button { color: #718b88; }
+.theme-light .teacher-guidance-item { border-color: #d5e8e4; }
+.theme-light .teacher-guidance-item p { color: #526b6a; }
+.theme-light .teacher-guidance-empty { color: #718b88; }
+.theme-light .related-card { background: #f1f7f7; border-color: #d5e5e4; color: #55706f; }
+.theme-light .related-card:hover, .theme-light .related-card.active { background: #e4f4ef; border-color: #88c4b7; color: #145d50; }
+.theme-light .proposal-card { background: #eef8f1; border-color: #b6d8c1; color: #315e44; }
+.theme-light .proposal-card p { color: #5e7d68; }
+.theme-light .recommendation-modal, .theme-light .settings-modal, .theme-light .notes-drawer { background: #fff; border-color: #d3dee5; color: #263342; box-shadow: 0 20px 70px #26334224; }
+.theme-light .modal-backdrop, .theme-light .recommendation-backdrop, .theme-light .notes-backdrop { background: rgba(38, 51, 66, .28); }
+.theme-light .settings-head p, .theme-light .notes-drawer-head p, .theme-light .recommendation-source { color: #7b8997; }
+.theme-light .settings-modal label, .theme-light .note-target-fields label { color: #627284; }
+.theme-light .settings-modal input, .theme-light .settings-modal select, .theme-light .note-editor input, .theme-light .note-editor textarea, .theme-light .note-target-fields select, .theme-light .masked-key { background: #f8fafb; border-color: #cfdbe3; color: #263342; }
+.theme-light .model-catalog, .theme-light .task-routes, .theme-light .default-model-setting { background: #f5f8fa; border-color: #d5e0e6; }
+.theme-light .catalog-title, .theme-light .provider-hint { color: #7b8997; }
+.theme-light .model-check, .theme-light .task-route span { color: #526273; }
+.theme-light .note-item { border-color: #e0e6eb; }
+.theme-light .note-item-head strong { color: #263342; }
+.theme-light .note-item p { color: #536273; }
+.theme-light .note-item small, .theme-light .notes-empty { color: #8794a1; }
+.theme-light .recommendation-modal-head h3 { color: #263342; }
+.theme-light .recommendation-modal > p { color: #536273; }
+.theme-light .recommendation-actions .secondary { color: #627284; border-color: #cbd6df; }
+.theme-light .recommendation-actions .danger { color: #b85f5f; border-color: #e0bcbc; }
+.theme-light * { scrollbar-color: #b6c3cc transparent; }
+.theme-light *::-webkit-scrollbar-thumb { background: #b6c3cc; background-clip: content-box; }
+.theme-light *:hover::-webkit-scrollbar-thumb { background: #8fa2ae; }

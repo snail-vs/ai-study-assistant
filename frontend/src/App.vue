@@ -33,6 +33,7 @@ const noteTargetCardId = ref('')
 const noteTargetSectionId = ref('')
 const loading = ref(false)
 const error = ref('')
+const theme = ref(localStorage.getItem('studycenter.theme') || 'light')
 const showSettings = ref(false)
 const selectedProvider = ref('deepseek')
 const apiKey = ref('')
@@ -133,6 +134,11 @@ function stopChatResize() {
   document.body.style.userSelect = ''
   window.removeEventListener('pointermove', resizeChat)
   window.removeEventListener('pointerup', stopChatResize)
+}
+
+function toggleTheme() {
+  theme.value = theme.value === 'light' ? 'dark' : 'light'
+  localStorage.setItem('studycenter.theme', theme.value)
 }
 
 function adjustChatWidth(delta) {
@@ -700,12 +706,13 @@ function nextSection() {
 </script>
 
 <template>
-  <main class="shell">
+  <main class="shell" :class="`theme-${theme}`">
     <header class="topbar">
       <button class="brand" @click="goHome" title="返回首页">Study<span>Center</span></button>
       <div v-if="space" class="crumb">学习空间 / {{ card?.title }} / {{ section?.title || '未开始' }}</div>
       <div class="status">{{ loading ? 'AI 正在准备内容…' : `课程生成：${knowledgeCardModel}` }}</div>
       <button class="notes-button" @click="openNotes">笔记</button>
+      <button class="theme-button" @click="toggleTheme" :title="theme === 'light' ? '切换到深色主题' : '切换到浅色主题'">{{ theme === 'light' ? '深色' : '浅色' }}</button>
       <button class="settings-button" @click="openSettings">设置</button>
     </header>
 
