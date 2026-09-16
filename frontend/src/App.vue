@@ -861,7 +861,7 @@ function nextSection() {
         <div v-if="sideRun.active" class="chat-run-status"><i class="status-spinner"></i>{{ sideRun.label }}</div>
         <p v-if="error" class="error chat-error">{{ error }}</p>
         <form class="composer" @submit.prevent="activeConversation ? sendMessage() : openSideConversation()">
-          <textarea ref="composerInput" v-model="input" :disabled="sideRun.active" placeholder="问问当前内容…" @input="resizeComposer"></textarea>
+          <textarea ref="composerInput" v-model="input" :disabled="sideRun.active" placeholder="问问当前内容…（Shift+Enter 发送）" @input="resizeComposer" @keydown.enter.shift.prevent="sendMessage()"></textarea>
           <button :disabled="sideRun.active">{{ sideRun.active ? '回答中…' : '发送 ↗' }}</button>
         </form>
       </aside>
