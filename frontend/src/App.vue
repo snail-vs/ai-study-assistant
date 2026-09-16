@@ -44,11 +44,12 @@ const selectedDefaultModel = ref('')
 const taskRoutes = ref({})
 const taskDefinitions = [
   { id: 'knowledge_card', label: '生成知识卡' },
-  { id: 'teacher_guidance', label: '教师引导' },
-  { id: 'side_agent', label: '旁支问答与断层诊断' },
-  { id: 'bridge_note', label: '知识卡连接说明' },
+  { id: 'teacher_guidance', label: '导师引导' },
+  { id: 'side_answer', label: '答疑回复' },
+  { id: 'gap_diagnosis', label: '知识断层诊断' },
+  { id: 'bridge_note', label: '知识桥接' },
   { id: 'conversation_title', label: '会话标题' },
-  { id: 'group_director', label: '多 Agent 调度' },
+  { id: 'group_director', label: '多角色调度' },
 ]
 const allModelOptions = computed(() => {
   const options = Object.entries(providerStatus.value.models || {}).flatMap(([provider, models]) => (
@@ -419,7 +420,7 @@ async function startLearning() {
     await loadRelatedCards()
     const main = await request(`/cards/${card.value.id}/conversations`, {
       method: 'POST',
-      body: JSON.stringify({ conversationType: 'main', title: '主线导师', rootQuestion: goal.value }),
+      body: JSON.stringify({ conversationType: 'main', title: '课程导师', rootQuestion: goal.value }),
     })
     conversations.value = [main]
     activeConversation.value = main
@@ -545,7 +546,7 @@ async function loadConversationMessages(conversation) {
         content: '',
         pending: true,
         senderId: 'side_tutor',
-        senderName: '旁支助教',
+        senderName: '答疑助教',
         senderRole: 'assistant',
       })
     }
@@ -562,7 +563,7 @@ async function sendMessage(text = input.value) {
   await nextTick()
   resizeComposer()
   messages.value.push({ role: 'user', content: text })
-  const assistant = { role: 'assistant', content: '', pending: true, senderId: 'side_tutor', senderName: '旁支助教', senderRole: 'assistant' }
+  const assistant = { role: 'assistant', content: '', pending: true, senderId: 'side_tutor', senderName: '答疑助教', senderRole: 'assistant' }
   messages.value.push(assistant)
   try {
     const response = await fetch(`${base}/conversations/${activeConversation.value.id}/messages/stream`, {
@@ -598,7 +599,7 @@ async function sendMessage(text = input.value) {
           }
           if (block.includes('message.delta')) {
             assistant.pending = false
-            sideRun.value = { active: true, phase: 'answering', label: '旁支助教正在回答' }
+            sideRun.value = { active: true, phase: 'answering', label: '答疑助教正在回答' }
             assistant.content += data.delta || ''
           }
           if (block.includes('related_card.proposed')) {
@@ -606,7 +607,7 @@ async function sendMessage(text = input.value) {
             recommendations.value = [data, ...recommendations.value.filter((item) => item.proposalId !== data.proposalId)]
           }
           if (block.includes('guidance.updated')) teacherGuidance.value = [...teacherGuidance.value, data]
-          if (block.includes('guidance.failed')) error.value = `主线老师引导失败：${data.message || '未知错误'}`
+          if (block.includes('guidance.failed')) error.value = `课程导师引导失败：${data.message || '未知错误'}`
           if (block.includes('run.failed')) {
             error.value = data.message || 'AI 服务调用失败'
             if (!assistant.content) messages.value = messages.value.filter((message) => message !== assistant)
@@ -651,7 +652,7 @@ async function continueRecommendation(item) {
     messages.value = []
     proposal.value = null
     selectedRecommendation.value = null
-    await sendMessage(`我想先了解“${item.title}”，请先说明它和当前章节的关系，以及我是否需要为它创建关联知识卡。`)
+    await sendMessage(`我想先了解“${item.title}”，请先说明它和当前章节的关系，以及我是否需要为它创建学习分支。`)
     await loadRecommendations()
   } catch (err) { error.value = err.message } finally { loading.value = false }
 }
@@ -708,7 +709,7 @@ async function openHistoryCard(spaceItem, target) {
 }
 
 async function deleteHomeCard(item) {
-  if (!window.confirm(`确定删除“${item.card.title}”吗？\n\n知识卡会从首页隐藏，但会话、消息、笔记和关联知识卡都会保留。`)) return
+  if (!window.confirm(`确定删除“${item.card.title}”吗？\n\n知识卡会从首页隐藏，但讨论、消息、笔记和学习分支都会保留。`)) return
   try {
     await request(`/cards/${item.card.id}`, { method: 'DELETE' })
     historyCards.value = {
@@ -812,7 +813,7 @@ function nextSection() {
     <section v-if="!space" class="welcome">
       <p class="eyebrow">AI LEARNING SPACE</p>
       <h1>从一个问题，开始一条属于你的学习路径。</h1>
-      <p class="lead">主 Agent 会先生成一张知识卡。之后的提问、旁支和笔记，都围绕它展开。</p>
+      <p class="lead">课程设计 Agent 会先生成一张知识卡。之后的课程内容、问题讨论和学习笔记，都围绕它展开。</p>
       <form @submit.prevent="startLearning" class="start-form">
         <textarea v-model="goal" placeholder="例如：我想系统理解 Kubernetes 容器隔离，并能看懂 Namespace 和 cgroups 的关系" autofocus></textarea>
         <div class="start-options"><span class="route-hint">课程生成使用：{{ knowledgeCardModel }}</span><button :disabled="loading">创建知识卡</button></div>
@@ -872,7 +873,7 @@ function nextSection() {
         <div class="recommendation-modal-head"><div><span class="recommendation-kicker">学习建议</span><h3>{{ selectedRecommendation.title }}</h3></div><button @click="selectedRecommendation = null">×</button></div>
         <p>{{ selectedRecommendation.reason }}</p>
         <div class="recommendation-source">来自：当前知识卡 · {{ section?.title }}</div>
-        <div class="recommendation-actions"><button class="danger" @click="deleteRecommendation(selectedRecommendation)">删除推荐</button><button class="secondary" @click="continueRecommendation(selectedRecommendation)">继续讨论</button><button class="primary" @click="acceptProposal(selectedRecommendation)">创建关联知识卡</button></div>
+        <div class="recommendation-actions"><button class="danger" @click="deleteRecommendation(selectedRecommendation)">删除建议</button><button class="secondary" @click="continueRecommendation(selectedRecommendation)">继续讨论</button><button class="primary" @click="acceptProposal(selectedRecommendation)">创建学习分支</button></div>
       </section>
     </div>
 
@@ -882,26 +883,26 @@ function nextSection() {
 
     <section v-if="space && card" class="workspace" :class="{ 'sidebar-collapsed': !showKnowledgeSidebar }" :style="{ '--chat-width': `${chatWidth}px` }">
       <aside class="sidebar panel">
-        <div class="sidebar-head"><div class="panel-title">知识结构</div><button class="sidebar-toggle" title="收起知识结构" @click="toggleKnowledgeSidebar">‹</button></div>
-        <div class="tree-label">主知识卡</div>
+        <div class="sidebar-head"><div class="panel-title">学习导航</div><button class="sidebar-toggle" title="收起学习导航" @click="toggleKnowledgeSidebar">‹</button></div>
+        <div class="tree-label">章节目录</div>
         <button v-for="(item, index) in card.sections" :key="item.id" class="tree-item" :class="{ active: index === activeSection }" @click="selectSection(index)">
           <span>{{ String(index + 1).padStart(2, '0') }}</span>{{ item.title }}
         </button>
-        <div class="tree-label related">关联知识卡</div>
+        <div class="tree-label related">本节学习分支</div>
         <button v-for="related in relatedCards" :key="related.id" class="related-card" :class="{ active: card.id === related.id }" @click="openCard(related, { card, sectionIndex: activeSection })">
           <span>↳</span>{{ related.title }}
         </button>
-        <div v-if="!relatedCards.length" class="empty-related">从旁支问题中生成<br />新的学习分支</div>
-        <div v-if="recommendations.length" class="tree-label related">待处理推荐</div>
+        <div v-if="!relatedCards.length" class="empty-related">从问题讨论中生成<br />新的学习分支</div>
+        <div v-if="recommendations.length" class="tree-label related">前置知识建议</div>
         <button v-for="item in recommendations" :key="item.id || item.proposalId" class="recommendation-link" @click="selectedRecommendation = item">
           <span>＋</span>{{ item.title }}
         </button>
       </aside>
 
       <section class="board panel">
-        <div class="board-meta"><div class="board-location"><button v-if="!showKnowledgeSidebar" class="sidebar-toggle collapsed-toggle" title="展开知识结构" @click="toggleKnowledgeSidebar">› <span>知识结构</span></button><span>第 {{ activeSection + 1 }} 节</span></div><div class="board-actions"><span>Markdown 白板</span><button @click="startNote">＋ 记笔记</button></div></div>
+        <div class="board-meta"><div class="board-location"><button v-if="!showKnowledgeSidebar" class="sidebar-toggle collapsed-toggle" title="展开学习导航" @click="toggleKnowledgeSidebar">› <span>学习导航</span></button><span>第 {{ activeSection + 1 }} 节</span></div><div class="board-actions"><span>课程内容</span><button @click="startNote">＋ 记笔记</button></div></div>
         <div class="board-scroll">
-          <button v-if="isRelatedCard" class="back-main" @click="returnToMain">← 返回主知识卡</button>
+          <button v-if="isRelatedCard" class="back-main" @click="returnToMain">← 返回来源知识卡</button>
           <article class="markdown">
             <h2>{{ section?.title }}</h2>
             <div class="content" v-html="renderedContent"></div>
@@ -914,12 +915,12 @@ function nextSection() {
         </nav>
         <section class="teacher-guidance" :class="{ collapsed: !showTeacherGuidance }">
           <div class="teacher-guidance-head">
-            <div><span class="teacher-label">老师引导</span><span v-if="teacherGuidance.length" class="teacher-count">{{ teacherGuidance.length }} 条</span></div>
+            <div><span class="teacher-label">导师引导</span><span v-if="teacherGuidance.length" class="teacher-count">{{ teacherGuidance.length }} 条</span></div>
             <button @click="showTeacherGuidance = !showTeacherGuidance">{{ showTeacherGuidance ? '收起' : '展开' }}</button>
           </div>
           <div v-if="showTeacherGuidance" class="teacher-guidance-body">
             <article v-for="item in teacherGuidance" :key="item.id" class="teacher-guidance-item">
-              <span class="teacher-guidance-trigger">{{ item.trigger === 'section_enter' ? '进入本节' : '针对旁支问题' }}</span>
+              <span class="teacher-guidance-trigger">{{ item.trigger === 'section_enter' ? '进入本节' : '讨论后归位' }}</span>
               <p>{{ item.content }}</p>
             </article>
             <div v-if="!teacherGuidance.length" class="teacher-guidance-empty">正在准备本节的学习引导…</div>
@@ -931,16 +932,14 @@ function nextSection() {
 
       <aside class="chat panel">
         <div class="chat-head">
-          <button class="conversation-trigger" :disabled="sideRun.active" @click="showConversationList = !showConversationList" :aria-expanded="showConversationList">
-            <span class="panel-title">{{ activeConversation?.title || '新旁支会话' }}</span><span class="conversation-trigger-icon">⌄</span>
-          </button>
-          <button class="new-chat" :disabled="sideRun.active" @click="activeConversation = null; messages = []; showConversationList = false">＋ 新旁支</button>
+          <div class="chat-heading"><span class="chat-region-label">讨论区</span><button class="conversation-trigger" :disabled="sideRun.active" @click="showConversationList = !showConversationList" :aria-expanded="showConversationList"><span class="panel-title">{{ activeConversation?.title || '新问题讨论' }}</span><span class="conversation-trigger-icon">⌄</span></button></div>
+          <button class="new-chat" :disabled="sideRun.active" @click="activeConversation = null; messages = []; showConversationList = false">＋ 新建讨论</button>
         </div>
         <div v-if="showConversationList" class="conversation-menu-backdrop" @click="showConversationList = false">
           <div class="conversation-list" @click.stop>
             <div class="conversation-list-title">历史会话</div>
             <button v-for="item in conversations" :key="item.id" @click="selectConversation(item)" :class="{ selected: activeConversation?.id === item.id }">
-              <small>{{ item.conversationType === 'main' ? '主线' : '旁支' }}</small>{{ item.title }}
+              <small>{{ item.conversationType === 'main' ? '导师' : '讨论' }}</small>{{ item.title }}
             </button>
             <div v-if="!conversations.length" class="conversation-list-empty">暂无历史会话</div>
           </div>
@@ -951,12 +950,12 @@ function nextSection() {
             <div v-if="message.role === 'assistant'" class="message-markdown" v-html="renderMessage(message.content)"></div>
             <div v-else class="message-plain">{{ message.content }}</div>
           </div>
-          <div v-if="!messages.length" class="chat-empty">从当前章节提出一个问题，开始旁支探索。</div>
+          <div v-if="!messages.length" class="chat-empty">从当前章节提出一个问题，开始独立讨论。</div>
           <div v-if="proposal" class="proposal-card">
-            <div class="proposal-kicker">检测到一个知识断层</div>
+            <div class="proposal-kicker">发现一个前置知识缺口</div>
             <strong>{{ proposal.title }}</strong>
             <p>{{ proposal.reason }}</p>
-            <div class="proposal-actions"><button @click="selectedRecommendation = proposal">查看推荐</button><button @click="acceptProposal">创建关联知识卡</button></div>
+            <div class="proposal-actions"><button @click="selectedRecommendation = proposal">查看建议</button><button @click="acceptProposal">创建学习分支</button></div>
           </div>
         </div>
         <div v-if="sideRun.active" class="chat-run-status"><i class="status-spinner"></i>{{ sideRun.label }}</div>

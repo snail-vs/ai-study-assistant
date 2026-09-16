@@ -14,7 +14,7 @@ class MockTextProvider:
     async def structured(
         self, messages: Sequence[dict[str, str]], *, task: str, schema: dict[str, Any]
     ) -> dict[str, Any]:
-        if task == "side_agent":
+        if task == "gap_diagnosis":
             question = messages[-1]["content"] if messages else ""
             gap = any(word in question for word in ("进程", "内核", "隔离", "namespace"))
             return {

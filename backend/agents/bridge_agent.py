@@ -11,7 +11,7 @@ class BridgeAgent:
         result = await self.gateway.structured(
             [
                 {"role": "system", "content": BRIDGE_AGENT_SYSTEM},
-                {"role": "user", "content": f"主知识卡：{main_title}\n关联知识卡：{related_title}"},
+                {"role": "user", "content": f"来源知识卡：{main_title}\n学习分支知识卡：{related_title}"},
             ],
             task="bridge_note",
             schema=BridgeNoteDraft.model_json_schema(),

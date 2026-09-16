@@ -17,11 +17,14 @@ class TaskDefinition:
 
 TASKS = (
     TaskDefinition("knowledge_card", "生成知识卡", "generation"),
-    TaskDefinition("teacher_guidance", "教师引导", "teaching"),
-    TaskDefinition("side_agent", "旁支问答与断层诊断", "conversation"),
-    TaskDefinition("bridge_note", "知识卡连接说明", "generation"),
+    TaskDefinition("teacher_guidance", "导师引导", "teaching"),
+    TaskDefinition("side_answer", "答疑回复", "conversation"),
+    TaskDefinition("gap_diagnosis", "知识断层诊断", "diagnosis"),
+    # Legacy route kept so existing settings can be migrated at runtime.
+    TaskDefinition("side_agent", "旧版答疑与诊断", "compatibility"),
+    TaskDefinition("bridge_note", "知识桥接", "generation"),
     TaskDefinition("conversation_title", "会话标题", "utility"),
-    TaskDefinition("group_director", "多 Agent 调度", "orchestration"),
+    TaskDefinition("group_director", "多角色调度", "orchestration"),
 )
 
 TASK_BY_ID = {task.id: task for task in TASKS}

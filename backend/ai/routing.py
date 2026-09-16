@@ -1,6 +1,8 @@
 TASK_PROVIDER = {
     "main_agent": "text",
     "side_agent": "text",
+    "side_answer": "text",
+    "gap_diagnosis": "text",
     "knowledge_card": "text",
     "bridge_note": "text",
     "note_organizer": "text",

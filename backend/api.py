@@ -16,6 +16,7 @@ from .agents.bridge_agent import BridgeAgent
 from .agents.main_agent import MainAgent
 from .agents.side_agent import SideAgent
 from .agents.teacher_agent import TeacherAgent
+from .agents.prompts import QA_TUTOR_SYSTEM
 from .agents.registry import default_participants, get_agent, AGENTS
 from .db import get_db
 from .models import (
@@ -109,7 +110,12 @@ def restore_active_provider(db: Session) -> None:
             route_key = decrypt_secret(route_credential.api_key_ciphertext, route_credential.api_key_nonce)
             selected_models = json.loads(route_credential.models_json or "[]")
             if route.model_id in selected_models:
-                task_providers[route.task] = create_named_text_provider(route.provider_name, route_key, route.model_id)
+                task_provider = create_named_text_provider(route.provider_name, route_key, route.model_id)
+                if route.task == "side_agent":
+                    task_providers.setdefault("side_answer", task_provider)
+                    task_providers.setdefault("gap_diagnosis", task_provider)
+                else:
+                    task_providers[route.task] = task_provider
         except (EncryptionError, ValueError):
             continue
     gateway.configure(default_provider, task_providers)
@@ -128,10 +134,14 @@ def provider_settings(db: Session) -> dict:
     for credential in credentials:
         providers[credential.provider_name] = True
         models[credential.provider_name] = json.loads(credential.models_json)
-    routes = {
-        route.task: f"{route.provider_name}:{route.model_id}"
-        for route in db.scalars(select(TaskModelRoute))
-    }
+    routes = {}
+    for route in db.scalars(select(TaskModelRoute)):
+        model_ref = f"{route.provider_name}:{route.model_id}"
+        if route.task == "side_agent":
+            routes.setdefault("side_answer", model_ref)
+            routes.setdefault("gap_diagnosis", model_ref)
+        else:
+            routes[route.task] = model_ref
     return {
         "activeProvider": preference.provider_name if preference else (active.provider_name if active else "mock"),
         "activeModel": preference.model_id if preference else (active.active_model if active else None),
@@ -526,7 +536,7 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         .order_by(AIRun.created_at.desc())
     )
     if active_run:
-        raise HTTPException(status_code=409, detail="该旁支会话正在处理上一条问题，请稍候")
+        raise HTTPException(status_code=409, detail="该问题讨论正在处理上一条消息，请稍候")
 
     primary_agent_id = conversation.participant_ids[0] if conversation.participant_ids else (
         "teacher" if conversation.conversation_type == "main" else "side_tutor"
@@ -550,16 +560,34 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         message_id = str(uuid4())
         yield f"event: run.started\ndata: {json.dumps({'conversationId': conversation_id, 'runId': run.id, 'phase': 'waiting', 'label': '正在等待 AI 响应'}, ensure_ascii=False)}\n\n"
         yield f"event: message.started\ndata: {json.dumps({'conversationId': conversation_id, 'messageId': message_id, 'senderId': primary_agent_id, 'senderName': primary_agent.name if primary_agent else primary_agent_id, 'senderRole': primary_agent.role if primary_agent else 'assistant'}, ensure_ascii=False)}\n\n"
-        yield f"event: run.phase\ndata: {json.dumps({'phase': 'answering', 'label': '旁支助教正在回答'}, ensure_ascii=False)}\n\n"
+        yield f"event: run.phase\ndata: {json.dumps({'phase': 'answering', 'label': '答疑助教正在回答'}, ensure_ascii=False)}\n\n"
         run.phase = "answering"
         db.commit()
-        messages = []
+        answer_section = db.get(CardSection, conversation.section_id) if conversation.section_id else None
+        if not answer_section and payload.section_id:
+            candidate = db.get(CardSection, payload.section_id)
+            if candidate and candidate.card_id == conversation.card_id:
+                answer_section = candidate
+        messages = [{"role": "system", "content": QA_TUTOR_SYSTEM}]
+        if answer_section:
+            messages.append({
+                "role": "system",
+                "content": (
+                    f"当前知识卡：{card.title}\n当前章节：{answer_section.title}\n"
+                    f"课程内容：{answer_section.content_markdown[:6000]}"
+                ),
+            })
         if conversation.root_question:
-            messages.append({"role": "system", "content": conversation.root_question})
-        messages.append({"role": "user", "content": payload.content})
+            messages.append({"role": "system", "content": f"本讨论的起始问题：{conversation.root_question}"})
+        history = list(db.scalars(
+            select(Message)
+            .where(Message.conversation_id == conversation_id, Message.visibility == "user")
+            .order_by(Message.created_at, Message.id)
+        ))[-8:]
+        messages.extend({"role": item.role, "content": item.content} for item in history)
         response_parts: list[str] = []
         try:
-            async for delta in gateway.stream_text(messages, task="side_agent"):
+            async for delta in gateway.stream_text(messages, task="side_answer"):
                 response_parts.append(delta)
                 yield f"event: message.delta\ndata: {json.dumps({'messageId': message_id, 'senderId': primary_agent_id, 'delta': delta}, ensure_ascii=False)}\n\n"
         except Exception as exc:
@@ -598,7 +626,7 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         db.add(assistant)
         db.commit()
         try:
-            # 每次旁支回答后都由主线老师做一次归纳，帮助学生回到当前章节。
+            # 每次答疑后都由课程导师做一次归位，帮助学生回到当前章节。
             # 这一步不依赖知识断层诊断；诊断只负责后续的推荐知识卡。
             # 兼容历史上没有章节绑定的旁支会话：优先使用会话绑定章节，
             # 否则使用客户端发送的当前章节，并把绑定补回数据库。
@@ -625,7 +653,7 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                 )
             if section and source_card and section.card_id == conversation.card_id:
                 try:
-                    yield f"event: run.phase\ndata: {json.dumps({'phase': 'guiding', 'label': '主线老师正在总结引导'}, ensure_ascii=False)}\n\n"
+                    yield f"event: run.phase\ndata: {json.dumps({'phase': 'guiding', 'label': '课程导师正在引导归位'}, ensure_ascii=False)}\n\n"
                     run.phase = "guiding"
                     db.commit()
                     guidance_draft = await teacher_agent.create_side_followup(
@@ -661,7 +689,7 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
             diagnosis = await side_agent.diagnose(
                 payload.content,
                 context=(
-                    f"知识卡：{source_card.title}\n章节：{section.title}\n白板内容：{section.content_markdown}"
+                    f"知识卡：{source_card.title}\n章节：{section.title}\n课程内容：{section.content_markdown}"
                     if section and source_card else ""
                 ),
             )
@@ -716,7 +744,7 @@ async def accept_proposal(proposal_id: str, db: Session = Depends(get_db)):
     source_card = db.get(KnowledgeCard, proposal.card_id)
     if not source_card or source_card.status == "deleted":
         raise HTTPException(status_code=404, detail="Source card not found")
-    draft = await main_agent.create_card(f"生成关联知识卡：{proposal.title}\n学习原因：{proposal.reason}")
+    draft = await main_agent.create_card(f"生成学习分支知识卡：{proposal.title}\n学习原因：{proposal.reason}")
     card = KnowledgeCard(
         space_id=source_card.space_id,
         parent_card_id=source_card.id,
@@ -754,7 +782,7 @@ def start_proposal_discussion(proposal_id: str, db: Session = Depends(get_db)):
         root_question=(
             f"推荐学习主题：{proposal.title}\n"
             f"推荐原因：{proposal.reason}\n"
-            "请围绕这个推荐主题帮助我判断是否值得创建一张关联知识卡。"
+            "请围绕这个前置知识建议帮助我判断是否值得创建一条学习分支。"
         ),
     )
     db.add(conversation)

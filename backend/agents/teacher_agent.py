@@ -9,7 +9,7 @@ class TeacherAgent:
 
     async def create_section_intro(self, card_title: str, section_title: str, content: str) -> TeacherGuidanceDraft:
         return await self._create(
-            f"知识卡：{card_title}\n章节：{section_title}\n白板内容：{content}",
+            f"知识卡：{card_title}\n章节：{section_title}\n课程内容：{content}",
             "section_enter",
         )
 
@@ -17,8 +17,8 @@ class TeacherAgent:
         self, card_title: str, section_title: str, content: str, question: str, answer: str
     ) -> TeacherGuidanceDraft:
         return await self._create(
-            f"知识卡：{card_title}\n章节：{section_title}\n白板内容：{content}\n"
-            f"学生问题：{question}\n旁支回答：{answer}",
+            f"知识卡：{card_title}\n章节：{section_title}\n课程内容：{content}\n"
+            f"学生问题：{question}\n答疑助教回答：{answer}",
             "side_question",
         )
 
