@@ -101,3 +101,7 @@ button { cursor: pointer; }
 .message-markdown h1, .message-markdown h2, .message-markdown h3, .message-markdown h4 { margin: 10px 0 4px; }
 .message-markdown blockquote { margin: 6px 0; }
 .message-markdown pre { margin: 7px 0; }
+.message-markdown li { margin: 1px 0; }
+.message-markdown li > p { margin: 0; }
+.message-markdown > ul, .message-markdown > ol { padding-left: 18px; }
+.message-markdown > ul > li + li, .message-markdown > ol > li + li { margin-top: 1px; }

@@ -70,7 +70,8 @@ const chatWidth = ref(Math.min(560, Math.max(280, Number(localStorage.getItem('s
 let resizingChat = false
 let conversationLoadVersion = 0
 let guidanceLoadVersion = 0
-const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
+// 普通换行按 Markdown 语义处理，避免模型的排版换行被全部渲染成额外的 <br>。
+const md = new MarkdownIt({ html: false, breaks: false, linkify: true })
 
 onMounted(() => Promise.all([loadHistory(), loadProviderSettings()]))
 onUnmounted(() => stopChatResize())
