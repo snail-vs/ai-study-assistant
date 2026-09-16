@@ -74,8 +74,15 @@ let guidanceLoadVersion = 0
 // 普通换行按 Markdown 语义处理，避免模型的排版换行被全部渲染成额外的 <br>。
 const md = new MarkdownIt({ html: false, breaks: false, linkify: true })
 
-onMounted(() => Promise.all([loadHistory(), loadProviderSettings()]))
-onUnmounted(() => stopChatResize())
+onMounted(async () => {
+  window.addEventListener('popstate', restoreStudyRoute)
+  await Promise.all([loadHistory(), loadProviderSettings()])
+  await restoreStudyRoute()
+})
+onUnmounted(() => {
+  stopChatResize()
+  window.removeEventListener('popstate', restoreStudyRoute)
+})
 
 const section = computed(() => card.value?.sections?.[activeSection.value] || null)
 const renderedContent = computed(() => md.render(section.value?.contentMarkdown || '本节内容正在生成。'))
@@ -139,6 +146,51 @@ function stopChatResize() {
 function toggleTheme() {
   theme.value = theme.value === 'light' ? 'dark' : 'light'
   localStorage.setItem('studycenter.theme', theme.value)
+}
+
+function syncStudyUrl({ replace = false } = {}) {
+  if (!space.value || !card.value) return
+  const params = new URLSearchParams({ section: String(activeSection.value) })
+  if (activeConversation.value?.id) params.set('conversation', activeConversation.value.id)
+  const url = `/study/${space.value.id}/card/${card.value.id}?${params.toString()}`
+  window.history[replace ? 'replaceState' : 'pushState']({}, '', url)
+}
+
+async function restoreStudyRoute() {
+  const match = window.location.pathname.match(/^\/study\/([^/]+)\/card\/([^/]+)$/)
+  if (!match) {
+    if (space.value) goHome()
+    return
+  }
+  const [, spaceId, cardId] = match
+  const spaceItem = history.value.find((item) => item.id === spaceId)
+  if (!spaceItem) return
+  loading.value = true
+  error.value = ''
+  try {
+    space.value = spaceItem
+    const target = await request(`/cards/${cardId}`)
+    rootCard.value = target.cardType === 'root' ? target : null
+    await openCard(target, null)
+    const requestedSection = Number(new URLSearchParams(window.location.search).get('section'))
+    if (Number.isInteger(requestedSection) && requestedSection >= 0 && requestedSection < (card.value?.sections?.length || 0)) {
+      activeSection.value = requestedSection
+      await loadTeacherGuidance()
+      await loadRelatedCards()
+    }
+    const conversationId = new URLSearchParams(window.location.search).get('conversation')
+    const conversation = conversations.value.find((item) => item.id === conversationId)
+    if (conversation && activeConversation.value?.id !== conversation.id) {
+      await selectConversation(conversation)
+    }
+    syncStudyUrl({ replace: true })
+  } catch (err) {
+    error.value = err.message
+    window.history.replaceState({}, '', '/')
+    goHome()
+  } finally {
+    loading.value = false
+  }
 }
 
 function adjustChatWidth(delta) {
@@ -375,6 +427,7 @@ async function startLearning() {
     messages.value = []
     await loadNotes()
     await loadHistory()
+    syncStudyUrl({ replace: true })
   } catch (err) {
     error.value = err.message
   } finally {
@@ -413,6 +466,7 @@ async function openHistory(item) {
     activeConversation.value = conversations.value[0] || null
     await loadConversationMessages(activeConversation.value)
     await loadNotes()
+    syncStudyUrl({ replace: true })
   } catch (err) {
     error.value = err.message
   } finally {
@@ -435,6 +489,7 @@ function goHome() {
   messages.value = []
   proposal.value = null
   error.value = ''
+  window.history.replaceState({}, '', '/')
   loadHistory()
 }
 
@@ -454,6 +509,7 @@ async function openSideConversation() {
   activeConversation.value = side
   showConversationList.value = false
   messages.value = []
+  syncStudyUrl()
   await sendMessage(question)
 }
 
@@ -633,6 +689,7 @@ async function openCard(target, navigationContext = null) {
   conversations.value = await request(`/cards/${target.id}/conversations`)
   activeConversation.value = conversations.value[0] || null
   await loadConversationMessages(activeConversation.value)
+  syncStudyUrl({ replace: window.location.pathname.startsWith('/study/') })
 }
 
 async function openHistoryCard(spaceItem, target) {
@@ -687,6 +744,7 @@ async function selectConversation(item) {
   activeConversation.value = item
   showConversationList.value = false
   messages.value = []
+  syncStudyUrl({ replace: true })
   await loadConversationMessages(item)
 }
 
@@ -723,6 +781,7 @@ async function loadRecommendations() {
 
 async function selectSection(index) {
   activeSection.value = index
+  syncStudyUrl({ replace: true })
   await loadRelatedCards()
   await loadTeacherGuidance()
 }
