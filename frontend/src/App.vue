@@ -19,6 +19,7 @@ const activeConversation = ref(null)
 const showConversationList = ref(false)
 const messages = ref([])
 const input = ref('')
+const sideRun = ref({ active: false, phase: '', label: '' })
 const composerInput = ref(null)
 const notesList = ref([])
 const showNotes = ref(false)
@@ -451,53 +452,70 @@ async function loadConversationMessages(conversation) {
 }
 
 async function sendMessage(text = input.value) {
-  if (!activeConversation.value || !text.trim()) return
+  if (!activeConversation.value || !text.trim() || sideRun.value.active) return
   error.value = ''
+  sideRun.value = { active: true, phase: 'waiting', label: '正在等待 AI 响应' }
   input.value = ''
   await nextTick()
   resizeComposer()
   messages.value.push({ role: 'user', content: text })
-  const assistant = { role: 'assistant', content: '', senderId: 'side_tutor', senderName: '旁支助教', senderRole: 'assistant' }
+  const assistant = { role: 'assistant', content: '', pending: true, senderId: 'side_tutor', senderName: '旁支助教', senderRole: 'assistant' }
   messages.value.push(assistant)
-  const response = await fetch(`${base}/conversations/${activeConversation.value.id}/messages/stream`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content: text }),
-  })
-  if (!response.ok || !response.body) return
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  while (true) {
-    const { value, done } = await reader.read()
-    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
-    const blocks = buffer.split('\n\n')
-    buffer = blocks.pop() || ''
-    for (const block of blocks) {
-      const dataLine = block.split('\n').find((line) => line.startsWith('data:'))
-      if (!dataLine) continue
-      try {
-        const data = JSON.parse(dataLine.slice(5))
-        if (block.includes('message.started')) {
-          assistant.senderId = data.senderId || assistant.senderId
-          assistant.senderName = data.senderName || assistant.senderName
-          assistant.senderRole = data.senderRole || assistant.senderRole
-        }
-        if (block.includes('message.delta')) assistant.content += data.delta || ''
-        if (block.includes('related_card.proposed')) {
-          proposal.value = data
-          recommendations.value = [data, ...recommendations.value.filter((item) => item.proposalId !== data.proposalId)]
-        }
-        if (block.includes('guidance.updated')) teacherGuidance.value = [...teacherGuidance.value, data]
-        if (block.includes('run.failed')) {
-          error.value = data.message || 'AI 服务调用失败'
-          if (!assistant.content) {
-            messages.value = messages.value.filter((message) => message !== assistant)
+  try {
+    const response = await fetch(`${base}/conversations/${activeConversation.value.id}/messages/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: text }),
+    })
+    if (!response.ok || !response.body) throw new Error('无法建立 AI 流式连接')
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (true) {
+      const { value, done } = await reader.read()
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+      const blocks = buffer.split('\n\n')
+      buffer = blocks.pop() || ''
+      for (const block of blocks) {
+        const dataLine = block.split('\n').find((line) => line.startsWith('data:'))
+        if (!dataLine) continue
+        try {
+          const data = JSON.parse(dataLine.slice(5))
+          if (block.includes('run.phase') || block.includes('run.started')) {
+            sideRun.value = { active: true, phase: data.phase || 'waiting', label: data.label || 'AI 正在处理' }
           }
-        }
-      } catch (_) {}
+          if (block.includes('message.started')) {
+            assistant.senderId = data.senderId || assistant.senderId
+            assistant.senderName = data.senderName || assistant.senderName
+            assistant.senderRole = data.senderRole || assistant.senderRole
+          }
+          if (block.includes('message.delta')) {
+            assistant.pending = false
+            sideRun.value = { active: true, phase: 'answering', label: '旁支助教正在回答' }
+            assistant.content += data.delta || ''
+          }
+          if (block.includes('related_card.proposed')) {
+            proposal.value = data
+            recommendations.value = [data, ...recommendations.value.filter((item) => item.proposalId !== data.proposalId)]
+          }
+          if (block.includes('guidance.updated')) teacherGuidance.value = [...teacherGuidance.value, data]
+          if (block.includes('run.failed')) {
+            error.value = data.message || 'AI 服务调用失败'
+            if (!assistant.content) messages.value = messages.value.filter((message) => message !== assistant)
+          }
+          if (block.includes('run.completed') || block.includes('run.failed')) {
+            assistant.pending = false
+            sideRun.value = { active: false, phase: '', label: '' }
+          }
+        } catch (_) {}
+      }
+      if (done) break
     }
-    if (done) break
+  } catch (err) {
+    error.value = err.message
+    if (!assistant.content) messages.value = messages.value.filter((message) => message !== assistant)
+  } finally {
+    sideRun.value = { active: false, phase: '', label: '' }
   }
 }
 
@@ -754,10 +772,10 @@ function nextSection() {
 
       <aside class="chat panel">
         <div class="chat-head">
-          <button class="conversation-trigger" @click="showConversationList = !showConversationList" :aria-expanded="showConversationList">
+          <button class="conversation-trigger" :disabled="sideRun.active" @click="showConversationList = !showConversationList" :aria-expanded="showConversationList">
             <span class="panel-title">{{ activeConversation?.title || '新旁支会话' }}</span><span class="conversation-trigger-icon">⌄</span>
           </button>
-          <button class="new-chat" @click="activeConversation = null; messages = []; showConversationList = false">＋ 新旁支</button>
+          <button class="new-chat" :disabled="sideRun.active" @click="activeConversation = null; messages = []; showConversationList = false">＋ 新旁支</button>
         </div>
         <div v-if="showConversationList" class="conversation-menu-backdrop" @click="showConversationList = false">
           <div class="conversation-list" @click.stop>
@@ -769,7 +787,7 @@ function nextSection() {
           </div>
         </div>
         <div class="messages">
-          <div v-for="(message, index) in messages" :key="index" class="message" :class="message.role"><span>{{ message.senderName || (message.role === 'user' ? '你' : 'AI') }}</span>{{ message.content }}</div>
+          <div v-for="(message, index) in messages" :key="index" class="message" :class="[message.role, { pending: message.pending }]"><span>{{ message.senderName || (message.role === 'user' ? '你' : 'AI') }}</span><i v-if="message.pending" class="typing-dots"><b></b><b></b><b></b></i>{{ message.content }}</div>
           <div v-if="!messages.length" class="chat-empty">从当前章节提出一个问题，开始旁支探索。</div>
           <div v-if="proposal" class="proposal-card">
             <div class="proposal-kicker">检测到一个知识断层</div>
@@ -778,10 +796,11 @@ function nextSection() {
             <div class="proposal-actions"><button @click="selectedRecommendation = proposal">查看推荐</button><button @click="acceptProposal">创建关联知识卡</button></div>
           </div>
         </div>
+        <div v-if="sideRun.active" class="chat-run-status"><i class="status-spinner"></i>{{ sideRun.label }}</div>
         <p v-if="error" class="error chat-error">{{ error }}</p>
         <form class="composer" @submit.prevent="activeConversation ? sendMessage() : openSideConversation()">
-          <textarea ref="composerInput" v-model="input" placeholder="问问当前内容…" @input="resizeComposer"></textarea>
-          <button>发送 ↗</button>
+          <textarea ref="composerInput" v-model="input" :disabled="sideRun.active" placeholder="问问当前内容…" @input="resizeComposer"></textarea>
+          <button :disabled="sideRun.active">{{ sideRun.active ? '回答中…' : '发送 ↗' }}</button>
         </form>
       </aside>
     </section>

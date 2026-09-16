@@ -499,7 +499,9 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
 
     async def events() -> AsyncIterator[str]:
         message_id = str(uuid4())
+        yield f"event: run.started\ndata: {json.dumps({'conversationId': conversation_id, 'phase': 'waiting', 'label': '正在等待 AI 响应'}, ensure_ascii=False)}\n\n"
         yield f"event: message.started\ndata: {json.dumps({'conversationId': conversation_id, 'messageId': message_id, 'senderId': primary_agent_id, 'senderName': primary_agent.name if primary_agent else primary_agent_id, 'senderRole': primary_agent.role if primary_agent else 'assistant'}, ensure_ascii=False)}\n\n"
+        yield f"event: run.phase\ndata: {json.dumps({'phase': 'answering', 'label': '旁支助教正在回答'}, ensure_ascii=False)}\n\n"
         messages = []
         if conversation.root_question:
             messages.append({"role": "system", "content": conversation.root_question})
@@ -541,6 +543,7 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         db.add(assistant)
         db.commit()
         try:
+            yield f"event: run.phase\ndata: {json.dumps({'phase': 'diagnosing', 'label': '正在分析你的知识断层'}, ensure_ascii=False)}\n\n"
             diagnosis = await side_agent.diagnose(payload.content)
             if diagnosis.diagnosis.has_knowledge_gap:
                 yield f"event: diagnosis.updated\ndata: {json.dumps(diagnosis.diagnosis.model_dump(by_alias=True), ensure_ascii=False)}\n\n"
@@ -548,6 +551,7 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                 source_card = db.get(KnowledgeCard, conversation.card_id) if section else None
                 if section and source_card and section.card_id == conversation.card_id:
                     try:
+                        yield f"event: run.phase\ndata: {json.dumps({'phase': 'guiding', 'label': '老师正在补充学习引导'}, ensure_ascii=False)}\n\n"
                         guidance_draft = await teacher_agent.create_side_followup(
                             source_card.title,
                             section.title,
@@ -569,6 +573,7 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                     except Exception as exc:
                         yield f"event: run.failed\ndata: {json.dumps({'code': 'TEACHER_GUIDANCE_FAILED', 'message': str(exc)}, ensure_ascii=False)}\n\n"
                 if diagnosis.proposal:
+                    yield f"event: run.phase\ndata: {json.dumps({'phase': 'recommending', 'label': '正在整理相关学习建议'}, ensure_ascii=False)}\n\n"
                     proposal = diagnosis.proposal.model_dump()
                     stored = RelatedCardProposal(
                         conversation_id=conversation_id,
@@ -583,6 +588,7 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                     yield f"event: related_card.proposed\ndata: {json.dumps(proposal, ensure_ascii=False)}\n\n"
         except Exception as exc:
             yield f"event: run.failed\ndata: {json.dumps({'code': 'AI_DIAGNOSIS_FAILED', 'message': str(exc)})}\n\n"
+        yield f"event: run.completed\ndata: {json.dumps({'conversationId': conversation_id}, ensure_ascii=False)}\n\n"
         yield "event: message.completed\ndata: {}\n\n"
 
     return StreamingResponse(events(), media_type="text/event-stream")
