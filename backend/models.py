@@ -100,6 +100,18 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
+class AIRun(Base):
+    __tablename__ = "ai_runs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"))
+    run_type: Mapped[str] = mapped_column(String(30), default="side_message")
+    status: Mapped[str] = mapped_column(String(20), default="running")
+    phase: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
 class Note(Base):
     __tablename__ = "notes"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)

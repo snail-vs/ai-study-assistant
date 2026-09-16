@@ -472,6 +472,11 @@ async function loadConversationMessages(conversation) {
     senderName: message.senderName,
     senderRole: message.senderRole,
   }))
+  const activeRun = await request(`/conversations/${conversation.id}/runs/active`)
+  if (version !== conversationLoadVersion || activeConversation.value?.id !== conversation.id) return
+  sideRun.value = activeRun
+    ? { active: true, phase: activeRun.phase || 'waiting', label: activeRun.phase === 'guiding' ? '主线老师正在总结引导' : 'AI 正在处理中' }
+    : { active: false, phase: '', label: '' }
 }
 
 async function sendMessage(text = input.value) {
@@ -490,7 +495,11 @@ async function sendMessage(text = input.value) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: text, sectionId: section.value?.id || activeConversation.value.sectionId || null }),
     })
-    if (!response.ok || !response.body) throw new Error('无法建立 AI 流式连接')
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body?.error?.message || body?.detail || '无法建立 AI 流式连接')
+    }
+    if (!response.body) throw new Error('无法建立 AI 流式连接')
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''

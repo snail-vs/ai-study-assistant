@@ -30,6 +30,7 @@ from .models import (
     ProviderCredential,
     TaskModelRoute,
     DefaultModelPreference,
+    AIRun,
     RelatedCardProposal,
     TeacherGuidance,
 )
@@ -54,6 +55,7 @@ from .schemas import (
     ConfigureTaskRoutesRequest,
     TaskRouteResponse,
     AgentDefinitionResponse,
+    AIRunResponse,
     RelatedCardProposalResponse,
     TeacherGuidanceResponse,
 )
@@ -497,12 +499,29 @@ def list_messages(conversation_id: str, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/conversations/{conversation_id}/runs/active", response_model=AIRunResponse | None)
+def get_active_run(conversation_id: str, db: Session = Depends(get_db)):
+    run = db.scalar(
+        select(AIRun)
+        .where(AIRun.conversation_id == conversation_id, AIRun.status.in_(("queued", "running")))
+        .order_by(AIRun.created_at.desc())
+    )
+    return run
+
+
 @router.post("/conversations/{conversation_id}/messages/stream")
 async def stream_message(conversation_id: str, payload: CreateMessageRequest, db: Session = Depends(get_db)) -> StreamingResponse:
     conversation = db.get(Conversation, conversation_id)
     card = db.get(KnowledgeCard, conversation.card_id) if conversation else None
     if not conversation or not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Conversation not found")
+    active_run = db.scalar(
+        select(AIRun)
+        .where(AIRun.conversation_id == conversation_id, AIRun.status.in_(("queued", "running")))
+        .order_by(AIRun.created_at.desc())
+    )
+    if active_run:
+        raise HTTPException(status_code=409, detail="该旁支会话正在处理上一条问题，请稍候")
 
     primary_agent_id = conversation.participant_ids[0] if conversation.participant_ids else (
         "teacher" if conversation.conversation_type == "main" else "side_tutor"
@@ -518,13 +537,17 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         content=payload.content,
     )
     db.add(user_message)
+    run = AIRun(conversation_id=conversation_id, run_type="side_message", status="running", phase="waiting")
+    db.add(run)
     db.commit()
 
     async def events() -> AsyncIterator[str]:
         message_id = str(uuid4())
-        yield f"event: run.started\ndata: {json.dumps({'conversationId': conversation_id, 'phase': 'waiting', 'label': '正在等待 AI 响应'}, ensure_ascii=False)}\n\n"
+        yield f"event: run.started\ndata: {json.dumps({'conversationId': conversation_id, 'runId': run.id, 'phase': 'waiting', 'label': '正在等待 AI 响应'}, ensure_ascii=False)}\n\n"
         yield f"event: message.started\ndata: {json.dumps({'conversationId': conversation_id, 'messageId': message_id, 'senderId': primary_agent_id, 'senderName': primary_agent.name if primary_agent else primary_agent_id, 'senderRole': primary_agent.role if primary_agent else 'assistant'}, ensure_ascii=False)}\n\n"
         yield f"event: run.phase\ndata: {json.dumps({'phase': 'answering', 'label': '旁支助教正在回答'}, ensure_ascii=False)}\n\n"
+        run.phase = "answering"
+        db.commit()
         messages = []
         if conversation.root_question:
             messages.append({"role": "system", "content": conversation.root_question})
@@ -548,6 +571,10 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                     content="".join(response_parts),
                 ))
                 db.commit()
+            run.status = "failed"
+            run.phase = "answering"
+            run.error_message = str(exc)
+            db.commit()
             message = str(exc)
             if "MissingSessionID" in message or "only be used in OpenCode" in message:
                 message = "OpenCode 免费模型只能在 OpenCode 会话中使用，请改用 OpenCode 付费模型、DeepSeek 或 OpenRouter 模型。"
@@ -594,6 +621,8 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
             if section and source_card and section.card_id == conversation.card_id:
                 try:
                     yield f"event: run.phase\ndata: {json.dumps({'phase': 'guiding', 'label': '主线老师正在总结引导'}, ensure_ascii=False)}\n\n"
+                    run.phase = "guiding"
+                    db.commit()
                     guidance_draft = await teacher_agent.create_side_followup(
                         source_card.title,
                         section.title,
@@ -622,6 +651,8 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                     yield f"event: guidance.failed\ndata: {json.dumps({'code': 'TEACHER_GUIDANCE_FAILED', 'message': str(exc)}, ensure_ascii=False)}\n\n"
 
             yield f"event: run.phase\ndata: {json.dumps({'phase': 'diagnosing', 'label': '正在分析你的知识断层'}, ensure_ascii=False)}\n\n"
+            run.phase = "diagnosing"
+            db.commit()
             diagnosis = await side_agent.diagnose(
                 payload.content,
                 context=(
@@ -653,7 +684,15 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                     proposal["proposalId"] = stored.id
                     yield f"event: related_card.proposed\ndata: {json.dumps(proposal, ensure_ascii=False)}\n\n"
         except Exception as exc:
+            run.status = "failed"
+            run.phase = "diagnosing"
+            run.error_message = str(exc)
+            db.commit()
             yield f"event: run.failed\ndata: {json.dumps({'code': 'AI_DIAGNOSIS_FAILED', 'message': str(exc)})}\n\n"
+        if run.status != "failed":
+            run.status = "completed"
+            run.phase = "completed"
+            db.commit()
         yield f"event: run.completed\ndata: {json.dumps({'conversationId': conversation_id}, ensure_ascii=False)}\n\n"
         yield "event: message.completed\ndata: {}\n\n"
 

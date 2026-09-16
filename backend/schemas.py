@@ -143,6 +143,17 @@ class MessageResponse(ApiModel):
     created_at: datetime = Field(alias="createdAt")
 
 
+class AIRunResponse(ApiModel):
+    id: str
+    conversation_id: str = Field(alias="conversationId")
+    run_type: str = Field(alias="runType")
+    status: str
+    phase: str | None = None
+    error_message: str | None = Field(default=None, alias="errorMessage")
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+
 class CreateConversationRequest(ApiModel):
     section_id: str | None = Field(default=None, alias="sectionId")
     conversation_type: Literal["main", "side"] = Field(alias="conversationType")
