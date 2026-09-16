@@ -90,3 +90,14 @@ button { cursor: pointer; }
 .recommendation-actions .primary { color: #0c1717; background: #74d2b4; border: 0; font-weight: 700; }
 .teacher-guidance.collapsed .teacher-guidance-head { border-bottom: 0; }
 .related-card { display: block; width: 100%; padding: 10px; border: 1px solid #263f4a; border-radius: 7px; background: #13232d; color: #b8cbd0; text-align: left; font-size: 12px; line-height: 1.45; }.related-card span { color: #6fae9f; margin-right: 8px; }.related-card:hover { border-color: #427467; background: #18302f; color: #e8fff7; }.related-card.active { border-color: #4b806f; background: #1b3b3b; color: #e8fff7; }
+
+/* 旁支 Markdown：保持信息密度，避免连续空白把可视内容推得过长。 */
+.message { line-height: 1.55; margin-bottom: 14px; }
+.message span { margin-bottom: 4px; }
+.message-markdown { line-height: 1.55; }
+.message-markdown p { margin: 4px 0; }
+.message-markdown ul, .message-markdown ol { margin: 4px 0; }
+.message-markdown li { margin: 2px 0; }
+.message-markdown h1, .message-markdown h2, .message-markdown h3, .message-markdown h4 { margin: 10px 0 4px; }
+.message-markdown blockquote { margin: 6px 0; }
+.message-markdown pre { margin: 7px 0; }

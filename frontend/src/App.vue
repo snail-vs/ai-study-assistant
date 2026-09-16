@@ -78,7 +78,12 @@ onUnmounted(() => stopChatResize())
 const section = computed(() => card.value?.sections?.[activeSection.value] || null)
 const renderedContent = computed(() => md.render(section.value?.contentMarkdown || '本节内容正在生成。'))
 function renderMessage(content) {
-  return md.render(content || '')
+  const source = String(content || '').replace(/\r\n?/g, '\n')
+  // 只压缩普通 Markdown 文本，围栏代码块中的空行必须保持原样。
+  const compacted = source.split(/(```[\s\S]*?```)/g).map((part, index) => (
+    index % 2 === 1 ? part : part.replace(/\n{3,}/g, '\n\n')
+  )).join('').trim()
+  return md.render(compacted)
 }
 const isRelatedCard = computed(() => Boolean(cardNavigationContext.value))
 const keyConfigured = computed(() => Boolean(providerStatus.value.providers?.[selectedProvider.value]))
