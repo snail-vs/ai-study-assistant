@@ -6,6 +6,8 @@ TASK_PROVIDER = {
     "knowledge_card": "text",
     "course_plan": "text",
     "section_content": "text",
+    "quiz_generation": "text",
+    "quiz_evaluation": "text",
     "bridge_note": "text",
     "note_organizer": "text",
 }

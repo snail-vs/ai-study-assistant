@@ -263,6 +263,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cards/{cardId}/sections/{sectionId}/activities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cardId: components["parameters"]["CardId"];
+                sectionId: components["parameters"]["SectionId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listSectionActivities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/{cardId}/sections/{sectionId}/activities/quiz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cardId: components["parameters"]["CardId"];
+                sectionId: components["parameters"]["SectionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["generateSectionQuiz"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/activities/{activityId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                activityId: components["parameters"]["ActivityId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getLearningActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/activities/{activityId}/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                activityId: components["parameters"]["ActivityId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["submitActivityAttempt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/activities/{activityId}/attempts/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                activityId: components["parameters"]["ActivityId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getLatestActivityAttempt"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/conversations/{conversationId}/messages/stream": {
         parameters: {
             query?: never;
@@ -536,13 +628,63 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        QuizOption: {
+            id: string;
+            text: string;
+        };
+        QuizQuestion: {
+            id: string;
+            /** @enum {string} */
+            type: "single_choice" | "true_false" | "short_answer";
+            prompt: string;
+            options: components["schemas"]["QuizOption"][];
+        };
+        LearningActivity: {
+            id: string;
+            cardId: string;
+            sectionId: string;
+            /** @enum {string} */
+            activityType: "quiz" | "practice" | "lab";
+            title: string;
+            objective?: string | null;
+            status: string;
+            questions: components["schemas"]["QuizQuestion"][];
+            latestAttempt?: components["schemas"]["ActivityAttempt"] | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        SubmitActivityAttemptRequest: {
+            answers: {
+                [key: string]: unknown;
+            };
+        };
+        ActivityResultItem: {
+            questionId: string;
+            correct: boolean;
+            score: number;
+            feedback: string;
+            referenceAnswer?: string | null;
+        };
+        ActivityAttempt: {
+            id: string;
+            activityId: string;
+            status: string;
+            score?: number | null;
+            masteryLevel?: string | null;
+            diagnosticSummary?: string | null;
+            results: components["schemas"]["ActivityResultItem"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            completedAt?: string | null;
+        };
         TeacherGuidance: {
             id: string;
             cardId: string;
             sectionId: string;
             sourceConversationId?: string | null;
             /** @enum {string} */
-            trigger: "section_enter" | "side_question";
+            trigger: "section_enter" | "side_question" | "activity_result";
             content: string;
             /** Format: date-time */
             createdAt: string;
@@ -586,7 +728,8 @@ export interface components {
         };
         RelatedCardProposal: {
             id: string;
-            conversationId: string;
+            conversationId?: string | null;
+            activityId?: string | null;
             cardId: string;
             sectionId?: string | null;
             title: string;
@@ -671,6 +814,8 @@ export interface components {
         SpaceId: string;
         CardId: string;
         ConversationId: string;
+        SectionId: string;
+        ActivityId: string;
     };
     requestBodies: never;
     headers: never;
@@ -1213,6 +1358,122 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    listSectionActivities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cardId: components["parameters"]["CardId"];
+                sectionId: components["parameters"]["SectionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Activities attached to the section */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningActivity"][];
+                };
+            };
+        };
+    };
+    generateSectionQuiz: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cardId: components["parameters"]["CardId"];
+                sectionId: components["parameters"]["SectionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ready knowledge check */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningActivity"];
+                };
+            };
+        };
+    };
+    getLearningActivity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                activityId: components["parameters"]["ActivityId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Learning activity without answer key */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningActivity"];
+                };
+            };
+        };
+    };
+    submitActivityAttempt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                activityId: components["parameters"]["ActivityId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitActivityAttemptRequest"];
+            };
+        };
+        responses: {
+            /** @description Evaluated attempt */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityAttempt"];
+                };
+            };
+        };
+    };
+    getLatestActivityAttempt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                activityId: components["parameters"]["ActivityId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Latest attempt, if any */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityAttempt"] | null;
+                };
+            };
         };
     };
     streamConversationMessage: {

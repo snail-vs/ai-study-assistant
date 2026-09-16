@@ -18,6 +18,8 @@ class TaskDefinition:
 TASKS = (
     TaskDefinition("course_plan", "课程规划", "generation"),
     TaskDefinition("section_content", "章节内容生成", "generation"),
+    TaskDefinition("quiz_generation", "理解检查生成", "generation"),
+    TaskDefinition("quiz_evaluation", "理解检查评估", "assessment"),
     TaskDefinition("teacher_guidance", "导师引导", "teaching"),
     TaskDefinition("side_answer", "答疑回复", "conversation"),
     TaskDefinition("gap_diagnosis", "知识断层诊断", "diagnosis"),

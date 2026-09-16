@@ -17,6 +17,7 @@ AGENTS = (
     AgentDefinition("peer_curiosity", "好奇同学", "student", "提出初学者视角的追问，帮助发现盲点。", priority=5),
     AgentDefinition("peer_challenger", "质疑同学", "student", "提出反例和边界条件，促进深入思考。", priority=4),
     AgentDefinition("diagnostician", "学习诊断器", "diagnostician", "判断理解状态和前置知识断层。", visible=False),
+    AgentDefinition("assessment", "测评智能体", "assessment", "生成理解检查并评估学习结果。", visible=False),
     AgentDefinition("recommendation", "前置知识推荐器", "recommendation", "生成和管理前置知识建议。", visible=False),
 )
 

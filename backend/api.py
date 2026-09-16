@@ -13,6 +13,7 @@ from .ai.registry import create_named_text_provider
 from .ai.providers.mock import MockTextProvider
 from .ai.tasks import TASK_BY_ID, TASKS
 from .agents.bridge_agent import BridgeAgent
+from .agents.assessment_agent import AssessmentAgent
 from .agents.main_agent import MainAgent
 from .agents.side_agent import SideAgent
 from .agents.teacher_agent import TeacherAgent
@@ -34,6 +35,8 @@ from .models import (
     TaskModelRoute,
     DefaultModelPreference,
     AIRun,
+    ActivityAttempt,
+    LearningActivity,
     RelatedCardProposal,
     TeacherGuidance,
 )
@@ -62,6 +65,9 @@ from .schemas import (
     AgentDefinitionResponse,
     AIRunResponse,
     RelatedCardProposalResponse,
+    ActivityAttemptResponse,
+    LearningActivityResponse,
+    SubmitActivityAttemptRequest,
     TeacherGuidanceResponse,
 )
 from .security.encryption import EncryptionError, decrypt_secret, encrypt_secret
@@ -73,6 +79,7 @@ side_agent = SideAgent(gateway)
 teacher_agent = TeacherAgent(gateway)
 main_agent = MainAgent(gateway)
 bridge_agent = BridgeAgent(gateway)
+assessment_agent = AssessmentAgent(gateway)
 provider_state = {
     "active": "mock",
     "active_model": None,
@@ -566,6 +573,252 @@ def list_card_proposals(card_id: str, db: Session = Depends(get_db)):
             .order_by(RelatedCardProposal.created_at.desc())
         )
     )
+
+
+def _activity_attempt_response(attempt: ActivityAttempt | None) -> dict | None:
+    if not attempt:
+        return None
+    result = json.loads(attempt.result_json or "{}")
+    return {
+        "id": attempt.id,
+        "activityId": attempt.activity_id,
+        "status": attempt.status,
+        "score": attempt.score,
+        "masteryLevel": attempt.mastery_level,
+        "diagnosticSummary": attempt.diagnostic_summary,
+        "results": result.get("items", []),
+        "createdAt": attempt.created_at,
+        "completedAt": attempt.completed_at,
+    }
+
+
+def _activity_response(activity: LearningActivity, attempt: ActivityAttempt | None = None) -> dict:
+    content = json.loads(activity.content_json or "{}")
+    return {
+        "id": activity.id,
+        "cardId": activity.card_id,
+        "sectionId": activity.section_id,
+        "activityType": activity.activity_type,
+        "title": activity.title,
+        "objective": activity.objective,
+        "status": activity.status,
+        "questions": content.get("questions", []),
+        "latestAttempt": _activity_attempt_response(attempt),
+        "createdAt": activity.created_at,
+    }
+
+
+def _get_activity(activity_id: str, db: Session) -> LearningActivity:
+    activity = db.get(LearningActivity, activity_id)
+    section = db.get(CardSection, activity.section_id) if activity else None
+    card = db.get(KnowledgeCard, activity.card_id) if activity else None
+    if not activity or not section or not card or card.status == "deleted":
+        raise HTTPException(status_code=404, detail="Learning activity not found")
+    return activity
+
+
+@router.get(
+    "/cards/{card_id}/sections/{section_id}/activities",
+    response_model=list[LearningActivityResponse],
+)
+def list_section_activities(card_id: str, section_id: str, db: Session = Depends(get_db)):
+    section = db.get(CardSection, section_id)
+    card = db.get(KnowledgeCard, card_id)
+    if not section or not card or section.card_id != card_id or card.status == "deleted":
+        raise HTTPException(status_code=404, detail="Section not found")
+    activities = list(db.scalars(
+        select(LearningActivity)
+        .where(LearningActivity.card_id == card_id, LearningActivity.section_id == section_id)
+        .order_by(LearningActivity.created_at)
+    ))
+    return [_activity_response(activity, db.scalar(
+        select(ActivityAttempt).where(ActivityAttempt.activity_id == activity.id)
+        .order_by(ActivityAttempt.created_at.desc())
+    )) for activity in activities]
+
+
+@router.post(
+    "/cards/{card_id}/sections/{section_id}/activities/quiz",
+    response_model=LearningActivityResponse,
+)
+async def generate_section_quiz(card_id: str, section_id: str, db: Session = Depends(get_db)):
+    section = db.get(CardSection, section_id)
+    card = db.get(KnowledgeCard, card_id)
+    if not section or not card or section.card_id != card_id or card.status == "deleted":
+        raise HTTPException(status_code=404, detail="Section not found")
+    activity = db.scalar(select(LearningActivity).where(
+        LearningActivity.section_id == section_id,
+        LearningActivity.activity_type == "quiz",
+    ))
+    if activity and activity.status == "ready":
+        attempt = db.scalar(select(ActivityAttempt).where(ActivityAttempt.activity_id == activity.id).order_by(ActivityAttempt.created_at.desc()))
+        return _activity_response(activity, attempt)
+    if activity is None:
+        activity = LearningActivity(
+            card_id=card_id,
+            section_id=section_id,
+            activity_type="quiz",
+            title="理解检查",
+            objective=section.teaching_objective or f"检查是否理解“{section.title}”的核心内容。",
+            status="generating",
+            content_json="{}",
+            answer_key_json="{}",
+        )
+        db.add(activity)
+        db.commit()
+        db.refresh(activity)
+    else:
+        activity.status = "generating"
+        activity.generation_error = None
+        db.commit()
+    try:
+        restore_active_provider(db)
+        draft = await assessment_agent.generate_quiz(
+            card.title,
+            section.title,
+            activity.objective or "检查本节核心内容",
+            section.content_markdown,
+        )
+        activity.title = draft.title
+        activity.objective = draft.objective
+        activity.content_json = json.dumps(
+            {"version": 1, "questions": [item.model_dump(mode="json") for item in draft.questions]},
+            ensure_ascii=False,
+        )
+        activity.answer_key_json = json.dumps(
+            {key: value.model_dump(mode="json", by_alias=True) for key, value in draft.answer_key.items()},
+            ensure_ascii=False,
+        )
+        activity.status = "ready"
+        db.commit()
+        db.refresh(activity)
+        return _activity_response(activity)
+    except Exception as exc:
+        activity.status = "failed"
+        activity.generation_error = str(exc)
+        db.commit()
+        raise
+
+
+@router.get("/activities/{activity_id}", response_model=LearningActivityResponse)
+def get_learning_activity(activity_id: str, db: Session = Depends(get_db)):
+    activity = _get_activity(activity_id, db)
+    attempt = db.scalar(select(ActivityAttempt).where(ActivityAttempt.activity_id == activity.id).order_by(ActivityAttempt.created_at.desc()))
+    return _activity_response(activity, attempt)
+
+
+@router.get("/activities/{activity_id}/attempts/latest", response_model=ActivityAttemptResponse | None)
+def get_latest_activity_attempt(activity_id: str, db: Session = Depends(get_db)):
+    activity = _get_activity(activity_id, db)
+    attempt = db.scalar(select(ActivityAttempt).where(ActivityAttempt.activity_id == activity.id).order_by(ActivityAttempt.created_at.desc()))
+    return _activity_attempt_response(attempt)
+
+
+@router.post("/activities/{activity_id}/attempts", response_model=ActivityAttemptResponse)
+async def submit_activity_attempt(
+    activity_id: str,
+    payload: SubmitActivityAttemptRequest,
+    db: Session = Depends(get_db),
+):
+    activity = _get_activity(activity_id, db)
+    if activity.status != "ready":
+        raise HTTPException(status_code=409, detail="Learning activity is not ready")
+    section = db.get(CardSection, activity.section_id)
+    card = db.get(KnowledgeCard, activity.card_id)
+    content = json.loads(activity.content_json or "{}")
+    answer_key = json.loads(activity.answer_key_json or "{}")
+    questions = content.get("questions", [])
+    result_items = []
+    for question in questions:
+        question_id = question.get("id")
+        key = answer_key.get(question_id, {})
+        answer = payload.answers.get(question_id)
+        question_type = question.get("type")
+        if question_type == "short_answer":
+            evaluation = await assessment_agent.evaluate_short_answer(
+                activity.objective or "",
+                section.content_markdown if section else "",
+                question.get("prompt", ""),
+                str(answer or ""),
+                key.get("rubric", []),
+            )
+            result_items.append({
+                "questionId": question_id,
+                "correct": evaluation.score >= 60,
+                "score": evaluation.score,
+                "feedback": evaluation.feedback,
+                "referenceAnswer": key.get("reference_answer"),
+                "misconception": evaluation.misconception,
+            })
+        else:
+            expected = key.get("answer")
+            correct = answer == expected
+            result_items.append({
+                "questionId": question_id,
+                "correct": correct,
+                "score": 100 if correct else 0,
+                "feedback": key.get("explanation", "") if correct else f"参考理解：{key.get('explanation', '')}",
+                "referenceAnswer": None,
+                "misconception": None if correct else "需要重新检查本题对应的核心概念。",
+            })
+    score = round(sum(item["score"] for item in result_items) / len(result_items)) if result_items else 0
+    mastery = "mastered" if score >= 85 else "developing" if score >= 60 else "needs_review"
+    misconceptions = [item["misconception"] for item in result_items if item.get("misconception")]
+    diagnostic = (
+        "本节核心目标掌握较好，可以继续下一节。" if mastery == "mastered" else
+        "已经掌握主要内容，但建议回看错误题目后再继续。" if mastery == "developing" else
+        "本节核心概念还不稳定，建议先回看课程内容和导师引导。"
+    )
+    attempt = ActivityAttempt(
+        activity_id=activity.id,
+        status="evaluated",
+        answers_json=json.dumps(payload.answers, ensure_ascii=False),
+        result_json=json.dumps({"items": result_items, "misconceptions": misconceptions}, ensure_ascii=False),
+        score=score,
+        mastery_level=mastery,
+        diagnostic_summary=diagnostic,
+        completed_at=now(),
+    )
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+
+    if card and section:
+        try:
+            restore_active_provider(db)
+            guidance = await teacher_agent.create_activity_followup(
+                card.title, section.title, activity.objective or "", score, diagnostic,
+            )
+            db.add(TeacherGuidance(
+                card_id=card.id,
+                section_id=section.id,
+                source_conversation_id=None,
+                trigger="activity_result",
+                content=guidance.content,
+            ))
+            db.commit()
+        except Exception:
+            logger.exception("activity mentor follow-up failed: activity_id=%s", activity.id)
+    if score < 60 and card and section:
+        try:
+            restore_active_provider(db)
+            diagnosis = await side_agent.diagnose(
+                "；".join(misconceptions) or diagnostic,
+                context=f"知识卡：{card.title}\n章节：{section.title}\n课程内容：{section.content_markdown}",
+            )
+            if diagnosis.proposal:
+                db.add(RelatedCardProposal(
+                    conversation_id=None,
+                    activity_id=activity.id,
+                    card_id=card.id,
+                    section_id=section.id,
+                    title=diagnosis.proposal.title,
+                    reason=diagnosis.proposal.reason,
+                ))
+                db.commit()
+        except Exception:
+            logger.exception("activity gap diagnosis failed: activity_id=%s", activity.id)
+    return _activity_attempt_response(attempt)
 
 
 @router.get("/conversations/{conversation_id}/messages", response_model=list[MessageResponse])

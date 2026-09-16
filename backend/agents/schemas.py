@@ -50,6 +50,38 @@ class SectionContentDraft(BaseModel):
     content_markdown: str
 
 
+class QuizOption(BaseModel):
+    id: str
+    text: str
+
+
+class QuizQuestion(BaseModel):
+    id: str
+    type: Literal["single_choice", "true_false", "short_answer"]
+    prompt: str
+    options: list[QuizOption] = Field(default_factory=list)
+
+
+class QuizAnswerKey(BaseModel):
+    answer: str | bool | None = None
+    explanation: str = ""
+    reference_answer: str | None = None
+    rubric: list[str] = Field(default_factory=list)
+
+
+class QuizDraft(BaseModel):
+    title: str = "理解检查"
+    objective: str
+    questions: list[QuizQuestion]
+    answer_key: dict[str, QuizAnswerKey]
+
+
+class ShortAnswerEvaluation(BaseModel):
+    score: int = Field(ge=0, le=100)
+    feedback: str
+    misconception: str | None = None
+
+
 class KnowledgeCardDraft(BaseModel):
     title: str
     summary: str

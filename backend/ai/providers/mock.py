@@ -52,6 +52,25 @@ class MockTextProvider:
         if task == "section_content":
             prompt = messages[-1]["content"] if messages else ""
             return {"content_markdown": f"## 本节内容\n\n这是根据以下教学规划生成的 Mock 内容：\n\n{prompt}"}
+        if task == "quiz_generation":
+            return {
+                "title": "理解检查",
+                "objective": "检查是否理解本节核心概念。",
+                "questions": [
+                    {"id": "q1", "type": "single_choice", "prompt": "本节最核心的概念是什么？", "options": [{"id": "a", "text": "选项 A"}, {"id": "b", "text": "选项 B"}]},
+                    {"id": "q2", "type": "true_false", "prompt": "只要记住术语就代表理解了本节。", "options": []},
+                    {"id": "q3", "type": "single_choice", "prompt": "哪个说法更准确？", "options": [{"id": "a", "text": "选项 A"}, {"id": "b", "text": "选项 B"}]},
+                    {"id": "q4", "type": "short_answer", "prompt": "请用一句话说明本节的核心关系。", "options": []},
+                ],
+                "answer_key": {
+                    "q1": {"answer": "a", "explanation": "这是本节的核心概念。"},
+                    "q2": {"answer": False, "explanation": "理解还需要能够解释关系和应用。"},
+                    "q3": {"answer": "b", "explanation": "该说法更完整。"},
+                    "q4": {"reference_answer": "能够说清本节核心关系。", "rubric": ["提到核心概念", "说明概念之间的关系"]},
+                },
+            }
+        if task == "quiz_evaluation":
+            return {"score": 70, "feedback": "回答抓住了主要关系，但还可以补充关键条件。", "misconception": None}
         return {
             "title": "Mock 学习知识卡",
             "summary": "用于本地开发验证的知识卡。",

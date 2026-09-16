@@ -88,6 +88,36 @@ class LearningRuntimeRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
+class LearningActivity(Base):
+    __tablename__ = "learning_activities"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    card_id: Mapped[str] = mapped_column(ForeignKey("knowledge_cards.id"))
+    section_id: Mapped[str] = mapped_column(ForeignKey("card_sections.id"))
+    activity_type: Mapped[str] = mapped_column(String(30), default="quiz")
+    title: Mapped[str] = mapped_column(String(200))
+    objective: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="ready")
+    content_json: Mapped[str] = mapped_column(Text, default="{}")
+    answer_key_json: Mapped[str] = mapped_column(Text, default="{}")
+    generation_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class ActivityAttempt(Base):
+    __tablename__ = "activity_attempts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    activity_id: Mapped[str] = mapped_column(ForeignKey("learning_activities.id"))
+    status: Mapped[str] = mapped_column(String(20), default="evaluated")
+    answers_json: Mapped[str] = mapped_column(Text, default="{}")
+    result_json: Mapped[str] = mapped_column(Text, default="{}")
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mastery_level: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    diagnostic_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class TeacherGuidance(Base):
     __tablename__ = "teacher_guidance"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -165,7 +195,8 @@ class Note(Base):
 class RelatedCardProposal(Base):
     __tablename__ = "related_card_proposals"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"))
+    conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id"), nullable=True)
+    activity_id: Mapped[str | None] = mapped_column(ForeignKey("learning_activities.id"), nullable=True)
     card_id: Mapped[str] = mapped_column(ForeignKey("knowledge_cards.id"))
     section_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     title: Mapped[str] = mapped_column(String(200))

@@ -339,6 +339,77 @@ paths:
                 $ref: '#/components/schemas/TeacherGuidance'
         '404':
           $ref: '#/components/responses/NotFound'
+  /cards/{cardId}/sections/{sectionId}/activities:
+    parameters:
+      - $ref: '#/components/parameters/CardId'
+      - $ref: '#/components/parameters/SectionId'
+    get:
+      operationId: listSectionActivities
+      responses:
+        '200':
+          description: Activities attached to the section
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LearningActivity' }
+  /cards/{cardId}/sections/{sectionId}/activities/quiz:
+    parameters:
+      - $ref: '#/components/parameters/CardId'
+      - $ref: '#/components/parameters/SectionId'
+    post:
+      operationId: generateSectionQuiz
+      responses:
+        '200':
+          description: Ready knowledge check
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningActivity'
+  /activities/{activityId}:
+    parameters:
+      - $ref: '#/components/parameters/ActivityId'
+    get:
+      operationId: getLearningActivity
+      responses:
+        '200':
+          description: Learning activity without answer key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningActivity'
+  /activities/{activityId}/attempts:
+    parameters:
+      - $ref: '#/components/parameters/ActivityId'
+    post:
+      operationId: submitActivityAttempt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitActivityAttemptRequest'
+      responses:
+        '200':
+          description: Evaluated attempt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityAttempt'
+  /activities/{activityId}/attempts/latest:
+    parameters:
+      - $ref: '#/components/parameters/ActivityId'
+    get:
+      operationId: getLatestActivityAttempt
+      responses:
+        '200':
+          description: Latest attempt, if any
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ActivityAttempt'
+                  - type: 'null'
   /conversations/{conversationId}/messages/stream:
     parameters:
       - $ref: '#/components/parameters/ConversationId'
@@ -507,6 +578,16 @@ components:
       schema: { type: string }
     ConversationId:
       name: conversationId
+      in: path
+      required: true
+      schema: { type: string }
+    SectionId:
+      name: sectionId
+      in: path
+      required: true
+      schema: { type: string }
+    ActivityId:
+      name: activityId
       in: path
       required: true
       schema: { type: string }
@@ -679,6 +760,72 @@ components:
           type: array
           items: { $ref: '#/components/schemas/LearningNavigationEntry' }
         updatedAt: { type: string, format: date-time }
+    QuizOption:
+      type: object
+      required: [id, text]
+      properties:
+        id: { type: string }
+        text: { type: string }
+    QuizQuestion:
+      type: object
+      required: [id, type, prompt, options]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [single_choice, true_false, short_answer] }
+        prompt: { type: string }
+        options:
+          type: array
+          items: { $ref: '#/components/schemas/QuizOption' }
+    LearningActivity:
+      type: object
+      required: [id, cardId, sectionId, activityType, title, status, questions, createdAt]
+      properties:
+        id: { type: string }
+        cardId: { type: string }
+        sectionId: { type: string }
+        activityType: { type: string, enum: [quiz, practice, lab] }
+        title: { type: string }
+        objective: { type: string, nullable: true }
+        status: { type: string }
+        questions:
+          type: array
+          items: { $ref: '#/components/schemas/QuizQuestion' }
+        latestAttempt:
+          oneOf:
+            - $ref: '#/components/schemas/ActivityAttempt'
+            - type: 'null'
+        createdAt: { type: string, format: date-time }
+    SubmitActivityAttemptRequest:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: object
+          additionalProperties: {}
+    ActivityResultItem:
+      type: object
+      required: [questionId, correct, score, feedback]
+      properties:
+        questionId: { type: string }
+        correct: { type: boolean }
+        score: { type: integer }
+        feedback: { type: string }
+        referenceAnswer: { type: string, nullable: true }
+    ActivityAttempt:
+      type: object
+      required: [id, activityId, status, results, createdAt]
+      properties:
+        id: { type: string }
+        activityId: { type: string }
+        status: { type: string }
+        score: { type: integer, nullable: true }
+        masteryLevel: { type: string, nullable: true }
+        diagnosticSummary: { type: string, nullable: true }
+        results:
+          type: array
+          items: { $ref: '#/components/schemas/ActivityResultItem' }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
     TeacherGuidance:
       type: object
       required: [id, cardId, sectionId, trigger, content, createdAt]
@@ -687,7 +834,7 @@ components:
         cardId: { type: string }
         sectionId: { type: string }
         sourceConversationId: { type: string, nullable: true }
-        trigger: { type: string, enum: [section_enter, side_question] }
+        trigger: { type: string, enum: [section_enter, side_question, activity_result] }
         content: { type: string }
         createdAt: { type: string, format: date-time }
     CreateConversationRequest:
@@ -723,10 +870,11 @@ components:
         createdAt: { type: string, format: date-time }
     RelatedCardProposal:
       type: object
-      required: [id, conversationId, cardId, title, reason, status, createdAt]
+      required: [id, cardId, title, reason, status, createdAt]
       properties:
         id: { type: string }
-        conversationId: { type: string }
+        conversationId: { type: string, nullable: true }
+        activityId: { type: string, nullable: true }
         cardId: { type: string }
         sectionId: { type: string, nullable: true }
         title: { type: string }

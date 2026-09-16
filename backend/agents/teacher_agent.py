@@ -22,6 +22,15 @@ class TeacherAgent:
             "side_question",
         )
 
+    async def create_activity_followup(
+        self, card_title: str, section_title: str, objective: str, score: int, diagnostic: str
+    ) -> TeacherGuidanceDraft:
+        return await self._create(
+            f"知识卡：{card_title}\n章节：{section_title}\n教学目标：{objective}\n"
+            f"得分：{score}\n诊断：{diagnostic}",
+            "activity_result",
+        )
+
     async def _create(self, context: str, trigger: str) -> TeacherGuidanceDraft:
         result = await self.gateway.structured(
             [

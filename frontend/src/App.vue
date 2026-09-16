@@ -12,6 +12,13 @@ const rootCard = ref(null)
 const relatedCards = ref([])
 const navigationStack = ref([])
 const activeSection = ref(0)
+const learningView = ref('content')
+const activities = ref([])
+const activeActivity = ref(null)
+const activityAnswers = ref({})
+const activityResult = ref(null)
+const activityLoading = ref(false)
+const activitySubmitting = ref(false)
 const showKnowledgeSidebar = ref(localStorage.getItem('studycenter.knowledgeSidebar') !== 'false')
 const teacherGuidance = ref([])
 const showTeacherGuidance = ref(true)
@@ -45,6 +52,8 @@ const taskRoutes = ref({})
 const taskDefinitions = [
   { id: 'course_plan', label: '课程规划' },
   { id: 'section_content', label: '章节内容生成' },
+  { id: 'quiz_generation', label: '理解检查生成' },
+  { id: 'quiz_evaluation', label: '理解检查评估' },
   { id: 'teacher_guidance', label: '导师引导' },
   { id: 'side_answer', label: '答疑回复' },
   { id: 'gap_diagnosis', label: '知识断层诊断' },
@@ -108,6 +117,12 @@ const sectionTypeLabels = {
   interactive: '互动讲解',
 }
 const sectionTypeLabel = computed(() => sectionTypeLabels[section.value?.contentType] || '课程内容')
+const quizActivity = computed(() => activities.value.find((item) => item.activityType === 'quiz') || null)
+const quizStatusLabel = computed(() => {
+  const result = quizActivity.value?.latestAttempt
+  if (!result) return '理解检查'
+  return `${result.score} 分`
+})
 const noteEditorDirty = computed(() => noteEditorMode.value !== 'list' && (
   noteEditorTitle.value !== noteEditorInitial.value.title
   || noteEditorContent.value !== noteEditorInitial.value.content
@@ -162,6 +177,10 @@ function syncStudyUrl({ replace = false } = {}) {
   if (!space.value || !card.value) return
   const params = new URLSearchParams({ section: String(activeSection.value) })
   if (activeConversation.value?.id) params.set('conversation', activeConversation.value.id)
+  if (learningView.value === 'activity') {
+    params.set('view', 'quiz')
+    if (activeActivity.value?.id) params.set('activity', activeActivity.value.id)
+  }
   const url = `/study/${space.value.id}/card/${card.value.id}?${params.toString()}`
   window.history[replace ? 'replaceState' : 'pushState']({}, '', url)
 }
@@ -195,6 +214,9 @@ async function restoreStudyRoute() {
     if (conversation && activeConversation.value?.id !== conversation.id) {
       await selectConversation(conversation)
     }
+    await loadSectionActivities()
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('view') === 'quiz') await openQuiz(params.get('activity'))
     syncStudyUrl({ replace: true })
     await persistLearningRuntime('restore')
   } catch (err) {
@@ -256,6 +278,89 @@ async function persistLearningRuntime(eventType = 'navigation') {
   } catch (_) {
     // Runtime persistence must not block reading an otherwise available course.
   }
+}
+
+async function loadSectionActivities() {
+  if (!card.value || !section.value) {
+    activities.value = []
+    return
+  }
+  try {
+    activities.value = await request(`/cards/${card.value.id}/sections/${section.value.id}/activities`)
+    if (activeActivity.value && !activities.value.some((item) => item.id === activeActivity.value.id)) {
+      activeActivity.value = null
+      activityResult.value = null
+    }
+  } catch (_) {
+    activities.value = []
+  }
+}
+
+async function openQuiz(activityId = null) {
+  if (!card.value || !section.value) return
+  activityLoading.value = true
+  learningView.value = 'activity'
+  error.value = ''
+  try {
+    let activity = activityId ? activities.value.find((item) => item.id === activityId && item.status === 'ready') : activities.value.find((item) => item.activityType === 'quiz' && item.status === 'ready')
+    if (!activity) {
+      activity = await request(`/cards/${card.value.id}/sections/${section.value.id}/activities/quiz`, { method: 'POST' })
+      activities.value = [activity, ...activities.value.filter((item) => item.id !== activity.id)]
+    }
+    activeActivity.value = activity
+    activityResult.value = activity.latestAttempt || null
+    if (activityResult.value) {
+      activityAnswers.value = {}
+    } else {
+      activityAnswers.value = Object.fromEntries((activity.questions || []).map((question) => [question.id, question.type === 'short_answer' ? '' : null]))
+    }
+    syncStudyUrl({ replace: true })
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    activityLoading.value = false
+  }
+}
+
+function closeQuiz() {
+  learningView.value = 'content'
+  activeActivity.value = null
+  activityResult.value = null
+  activityAnswers.value = {}
+  syncStudyUrl({ replace: true })
+}
+
+async function submitQuiz() {
+  if (!activeActivity.value || activitySubmitting.value) return
+  const unanswered = (activeActivity.value.questions || []).filter((question) => {
+    const answer = activityAnswers.value[question.id]
+    return answer === null || answer === undefined || String(answer).trim() === ''
+  })
+  if (unanswered.length) {
+    error.value = `还有 ${unanswered.length} 道题没有完成`
+    return
+  }
+  activitySubmitting.value = true
+  error.value = ''
+  try {
+    activityResult.value = await request(`/activities/${activeActivity.value.id}/attempts`, {
+      method: 'POST',
+      body: JSON.stringify({ answers: activityAnswers.value }),
+    })
+    activeActivity.value = { ...activeActivity.value, latestAttempt: activityResult.value }
+    activities.value = activities.value.map((item) => item.id === activeActivity.value.id ? activeActivity.value : item)
+    await loadTeacherGuidance()
+    await loadRecommendations()
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    activitySubmitting.value = false
+  }
+}
+
+function retryQuiz() {
+  activityResult.value = null
+  activityAnswers.value = Object.fromEntries((activeActivity.value?.questions || []).map((question) => [question.id, question.type === 'short_answer' ? '' : null]))
 }
 
 async function openSettings() {
@@ -444,9 +549,13 @@ async function startLearning() {
     })
     card.value = await request(`/cards/${space.value.rootCardId}`)
     rootCard.value = card.value
+    learningView.value = 'content'
+    activeActivity.value = null
+    activityResult.value = null
     await loadTeacherGuidance()
     await loadRecommendations()
     await loadRelatedCards()
+    await loadSectionActivities()
     const main = await request(`/cards/${card.value.id}/conversations`, {
       method: 'POST',
       body: JSON.stringify({ conversationType: 'main', title: '课程导师', rootQuestion: goal.value }),
@@ -492,9 +601,13 @@ async function openHistory(item) {
     rootCard.value = card.value
     activeSection.value = 0
     navigationStack.value = []
+    learningView.value = 'content'
+    activeActivity.value = null
+    activityResult.value = null
     await loadTeacherGuidance()
     await loadRecommendations()
     await loadRelatedCards()
+    await loadSectionActivities()
     conversations.value = await request(`/cards/${card.value.id}/conversations`)
     activeConversation.value = conversations.value[0] || null
     await loadConversationMessages(activeConversation.value)
@@ -716,6 +829,10 @@ async function openCard(target, navigationContext = null, options = {}) {
     navigationStack.value = []
   }
   card.value = target
+  learningView.value = 'content'
+  activeActivity.value = null
+  activityResult.value = null
+  activityAnswers.value = {}
   showConversationList.value = false
   selectedRecommendation.value = null
   proposal.value = null
@@ -723,6 +840,7 @@ async function openCard(target, navigationContext = null, options = {}) {
   await loadTeacherGuidance()
   await loadRecommendations()
   await loadRelatedCards()
+  await loadSectionActivities()
   conversations.value = await request(`/cards/${target.id}/conversations`)
   activeConversation.value = conversations.value[0] || null
   await loadConversationMessages(activeConversation.value)
@@ -831,9 +949,14 @@ async function loadRecommendations() {
 
 async function selectSection(index) {
   activeSection.value = index
+  learningView.value = 'content'
+  activeActivity.value = null
+  activityResult.value = null
+  activityAnswers.value = {}
   syncStudyUrl({ replace: true })
   await loadRelatedCards()
   await loadTeacherGuidance()
+  await loadSectionActivities()
   await persistLearningRuntime('section_changed')
 }
 
@@ -938,6 +1061,9 @@ function nextSection() {
         <button v-for="(item, index) in card.sections" :key="item.id" class="tree-item" :class="{ active: index === activeSection }" @click="selectSection(index)">
           <span>{{ String(index + 1).padStart(2, '0') }}</span>{{ item.title }}
         </button>
+        <button class="activity-nav-item" :class="{ active: learningView === 'activity' }" @click="openQuiz()">
+          <span>✓</span>理解检查 <small>{{ quizStatusLabel }}</small>
+        </button>
         <div class="tree-label related">本节学习分支</div>
         <button v-for="related in relatedCards" :key="related.id" class="related-card" :class="{ active: card.id === related.id }" @click="openRelatedCard(related)">
           <span>↳</span>{{ related.title }}
@@ -950,10 +1076,32 @@ function nextSection() {
       </aside>
 
       <section class="board panel">
-        <div class="board-meta"><div class="board-location"><button v-if="!showKnowledgeSidebar" class="sidebar-toggle collapsed-toggle" title="展开学习导航" @click="toggleKnowledgeSidebar">› <span>学习导航</span></button><span>第 {{ activeSection + 1 }} 节</span></div><div class="board-actions"><span>{{ sectionTypeLabel }}</span><button @click="startNote">＋ 记笔记</button></div></div>
+        <div class="board-meta"><div class="board-location"><button v-if="!showKnowledgeSidebar" class="sidebar-toggle collapsed-toggle" title="展开学习导航" @click="toggleKnowledgeSidebar">› <span>学习导航</span></button><span>第 {{ activeSection + 1 }} 节</span></div><div class="board-actions"><span>{{ learningView === 'activity' ? '理解检查' : sectionTypeLabel }}</span><button @click="startNote">＋ 记笔记</button></div></div>
         <div class="board-scroll">
           <button v-if="isRelatedCard" class="back-main" @click="returnToMain">← 返回来源知识卡</button>
-          <article class="markdown">
+          <section v-if="learningView === 'activity'" class="quiz-screen">
+            <div v-if="activityLoading" class="activity-loading"><i class="status-spinner"></i>正在根据本节内容准备理解检查…</div>
+            <template v-else-if="activeActivity">
+              <div class="quiz-intro"><div><span class="quiz-kicker">学习活动</span><h2>{{ activeActivity.title }}</h2><p>{{ activeActivity.objective }}</p></div><button class="quiz-close" @click="closeQuiz">返回课程内容</button></div>
+              <div v-if="!activityResult" class="quiz-questions">
+                <article v-for="(question, index) in activeActivity.questions" :key="question.id" class="quiz-question">
+                  <h3>{{ index + 1 }}. {{ question.prompt }}</h3>
+                  <div v-if="question.type === 'short_answer'" class="quiz-options"><textarea v-model="activityAnswers[question.id]" placeholder="用一两句话写下你的理解…"></textarea></div>
+                  <div v-else class="quiz-options">
+                    <label v-for="option in (question.options?.length ? question.options : [{ id: true, text: '正确' }, { id: false, text: '错误' }])" :key="String(option.id)"><input v-model="activityAnswers[question.id]" :name="question.id" :type="question.type === 'true_false' ? 'radio' : 'radio'" :value="option.id" /><span>{{ option.text }}</span></label>
+                  </div>
+                </article>
+                <button class="primary quiz-submit" :disabled="activitySubmitting" @click="submitQuiz">{{ activitySubmitting ? '正在分析你的回答…' : '提交答案' }}</button>
+              </div>
+              <section v-else class="quiz-result">
+                <div class="quiz-score"><strong>{{ activityResult.score }}</strong><span>分</span><em>{{ activityResult.masteryLevel === 'mastered' ? '已掌握' : activityResult.masteryLevel === 'developing' ? '掌握中' : '需要复习' }}</em></div>
+                <p class="quiz-diagnostic">{{ activityResult.diagnosticSummary }}</p>
+                <article v-for="(result, index) in activityResult.results" :key="result.questionId" class="quiz-result-item" :class="{ correct: result.correct }"><div><b>{{ result.correct ? '✓' : '!' }}</b><strong>第 {{ index + 1 }} 题</strong></div><p>{{ result.feedback }}</p><small v-if="result.referenceAnswer">参考答案：{{ result.referenceAnswer }}</small></article>
+                <div class="quiz-result-actions"><button class="secondary" @click="retryQuiz">重新尝试</button><button class="primary" @click="closeQuiz">返回课程内容</button></div>
+              </section>
+            </template>
+          </section>
+          <article v-else class="markdown">
             <h2>{{ section?.title }}</h2>
             <div class="content" v-html="renderedContent"></div>
           </article>
@@ -970,7 +1118,7 @@ function nextSection() {
           </div>
           <div v-if="showTeacherGuidance" class="teacher-guidance-body">
             <article v-for="item in teacherGuidance" :key="item.id" class="teacher-guidance-item">
-              <span class="teacher-guidance-trigger">{{ item.trigger === 'section_enter' ? '进入本节' : '讨论后归位' }}</span>
+              <span class="teacher-guidance-trigger">{{ item.trigger === 'section_enter' ? '进入本节' : item.trigger === 'activity_result' ? '理解检查后' : '讨论后归位' }}</span>
               <p>{{ item.content }}</p>
             </article>
             <div v-if="!teacherGuidance.length" class="teacher-guidance-empty">正在准备本节的学习引导…</div>

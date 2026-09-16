@@ -108,6 +108,55 @@ class LearningRuntimeResponse(ApiModel):
     updated_at: datetime = Field(alias="updatedAt")
 
 
+class QuizOptionResponse(ApiModel):
+    id: str
+    text: str
+
+
+class QuizQuestionResponse(ApiModel):
+    id: str
+    type: Literal["single_choice", "true_false", "short_answer"]
+    prompt: str
+    options: list[QuizOptionResponse] = Field(default_factory=list)
+
+
+class LearningActivityResponse(ApiModel):
+    id: str
+    card_id: str = Field(alias="cardId")
+    section_id: str = Field(alias="sectionId")
+    activity_type: Literal["quiz", "practice", "lab"] = Field(alias="activityType")
+    title: str
+    objective: str | None = None
+    status: str
+    questions: list[QuizQuestionResponse] = Field(default_factory=list)
+    latest_attempt: "ActivityAttemptResponse | None" = Field(default=None, alias="latestAttempt")
+    created_at: datetime = Field(alias="createdAt")
+
+
+class SubmitActivityAttemptRequest(ApiModel):
+    answers: dict[str, str | bool | None] = Field(default_factory=dict)
+
+
+class ActivityResultItem(ApiModel):
+    question_id: str = Field(alias="questionId")
+    correct: bool
+    score: int
+    feedback: str
+    reference_answer: str | None = Field(default=None, alias="referenceAnswer")
+
+
+class ActivityAttemptResponse(ApiModel):
+    id: str
+    activity_id: str = Field(alias="activityId")
+    status: str
+    score: int | None = None
+    mastery_level: str | None = Field(default=None, alias="masteryLevel")
+    diagnostic_summary: str | None = Field(default=None, alias="diagnosticSummary")
+    results: list[ActivityResultItem] = Field(default_factory=list)
+    created_at: datetime = Field(alias="createdAt")
+    completed_at: datetime | None = Field(default=None, alias="completedAt")
+
+
 class CardSectionResponse(ApiModel):
     id: str
     title: str
@@ -206,7 +255,8 @@ class ConversationResponse(ApiModel):
 
 class RelatedCardProposalResponse(ApiModel):
     id: str
-    conversation_id: str = Field(alias="conversationId")
+    conversation_id: str | None = Field(default=None, alias="conversationId")
+    activity_id: str | None = Field(default=None, alias="activityId")
     card_id: str = Field(alias="cardId")
     section_id: str | None = Field(default=None, alias="sectionId")
     title: str
