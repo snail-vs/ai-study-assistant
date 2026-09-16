@@ -142,6 +142,23 @@ class ProviderCredential(Base):
     encryption_key_version: Mapped[int] = mapped_column(Integer, default=1)
     models_json: Mapped[str] = mapped_column(Text, default="[]")
     active_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    task_routes_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class TaskModelRoute(Base):
+    __tablename__ = "task_model_routes"
+    task: Mapped[str] = mapped_column(String(80), primary_key=True)
+    provider_name: Mapped[str] = mapped_column(String(50))
+    model_id: Mapped[str] = mapped_column(String(200))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class DefaultModelPreference(Base):
+    __tablename__ = "default_model_preferences"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider_name: Mapped[str] = mapped_column(String(50))
+    model_id: Mapped[str] = mapped_column(String(200))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)

@@ -72,6 +72,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/model-routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getModelRoutes"];
+        put: operations["configureModelRoutes"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -384,6 +400,20 @@ export interface components {
             models: {
                 [key: string]: string[];
             };
+            taskRoutes: {
+                [key: string]: string;
+            };
+        };
+        TaskRoute: {
+            id: string;
+            label: string;
+            category: string;
+            model?: string | null;
+        };
+        ConfigureTaskRoutesRequest: {
+            routes: {
+                [key: string]: string;
+            };
         };
         AgentDefinition: {
             id: string;
@@ -396,7 +426,12 @@ export interface components {
         ConfigureProviderRequest: {
             apiKey?: string | null;
             models: string[];
-            defaultModel: string;
+            /** @deprecated */
+            defaultModel?: string | null;
+            /** @description Values use provider:model, for example deepseek:deepseek-chat. */
+            taskRoutes?: {
+                [key: string]: string;
+            };
         };
         DiscoverModelsRequest: {
             apiKey?: string | null;
@@ -706,6 +741,50 @@ export interface operations {
         };
         responses: {
             /** @description Model selected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderSettings"];
+                };
+            };
+        };
+    };
+    getModelRoutes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Task model routes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRoute"][];
+                };
+            };
+        };
+    };
+    configureModelRoutes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigureTaskRoutesRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated provider settings */
             200: {
                 headers: {
                     [name: string]: unknown;

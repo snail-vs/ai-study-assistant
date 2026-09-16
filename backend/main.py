@@ -1,3 +1,4 @@
+import logging
 from uuid import uuid4
 
 from fastapi import FastAPI
@@ -11,6 +12,7 @@ from .ai.base import AIProviderError
 from . import models  # noqa: F401
 
 app = FastAPI(title="StudyCenter API", version="0.1.0")
+logger = logging.getLogger("studycenter.ai")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
@@ -56,6 +58,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(AIProviderError)
 async def ai_provider_exception_handler(request: Request, exc: AIProviderError):
+    logger.error(
+        "AI provider request failed request_id=%s method=%s path=%s reason=%s",
+        request.state.request_id,
+        request.method,
+        request.url.path,
+        str(exc),
+    )
     return error_response(request, "AI_PROVIDER_ERROR", "AI 服务调用失败", {"reason": str(exc)}, 502)
 
 app.include_router(router, prefix="/api/v1")

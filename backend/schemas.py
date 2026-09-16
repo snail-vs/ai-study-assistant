@@ -24,6 +24,7 @@ class ProviderSettingsResponse(ApiModel):
     active_model: str | None = Field(alias="activeModel")
     providers: dict[str, bool]
     models: dict[str, list[str]]
+    task_routes: dict[str, str] = Field(default_factory=dict, alias="taskRoutes")
 
 
 class AgentDefinitionResponse(ApiModel):
@@ -38,7 +39,20 @@ class AgentDefinitionResponse(ApiModel):
 class ConfigureProviderRequest(ApiModel):
     api_key: str | None = Field(default=None, alias="apiKey", min_length=1)
     models: list[str] = Field(min_length=1)
-    default_model: str = Field(alias="defaultModel", min_length=1)
+    default_model: str | None = Field(default=None, alias="defaultModel", min_length=1)
+    task_routes: dict[str, str] | None = Field(default=None, alias="taskRoutes")
+
+
+class TaskRouteResponse(ApiModel):
+    id: str
+    label: str
+    category: str
+    model: str | None = None
+
+
+class ConfigureTaskRoutesRequest(ApiModel):
+    # Values use provider:model, e.g. deepseek:deepseek-chat.
+    routes: dict[str, str] = Field(default_factory=dict)
 
 
 class DiscoverModelsRequest(ApiModel):

@@ -17,15 +17,20 @@ class SideAgentResult(BaseModel):
     proposal: RelatedCardProposal | None = None
 
 
-class KnowledgeCardDraft(BaseModel):
-    title: str
-    summary: str
-    sections: list[dict[str, str]]
-
-
 class BridgeNoteDraft(BaseModel):
     content: str
 
 
 class TeacherGuidanceDraft(BaseModel):
     content: str
+
+
+class CardSectionDraft(BaseModel):
+    title: str
+    content_markdown: str
+
+
+class KnowledgeCardDraft(BaseModel):
+    title: str
+    summary: str
+    sections: list[CardSectionDraft]

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from .ai.gateway import AIGateway
 from .ai.registry import create_named_text_provider
 from .ai.providers.mock import MockTextProvider
+from .ai.tasks import TASK_BY_ID, TASKS
 from .agents.bridge_agent import BridgeAgent
 from .agents.main_agent import MainAgent
 from .agents.side_agent import SideAgent
@@ -25,6 +26,8 @@ from .models import (
     Message,
     Note,
     ProviderCredential,
+    TaskModelRoute,
+    DefaultModelPreference,
     RelatedCardProposal,
     TeacherGuidance,
 )
@@ -46,6 +49,8 @@ from .schemas import (
     DiscoverModelsResponse,
     ProviderSettingsResponse,
     SelectModelRequest,
+    ConfigureTaskRoutesRequest,
+    TaskRouteResponse,
     AgentDefinitionResponse,
     RelatedCardProposalResponse,
     TeacherGuidanceResponse,
@@ -67,7 +72,10 @@ provider_state = {
 
 
 def restore_active_provider(db: Session) -> None:
-    credential = db.scalar(select(ProviderCredential).where(ProviderCredential.is_active.is_(True)))
+    preference = db.get(DefaultModelPreference, 1)
+    credential = db.get(ProviderCredential, preference.provider_name) if preference else None
+    if credential is None:
+        credential = db.scalar(select(ProviderCredential).where(ProviderCredential.is_active.is_(True)))
     if not credential:
         gateway.configure(MockTextProvider())
         provider_state["active"] = "mock"
@@ -77,25 +85,82 @@ def restore_active_provider(db: Session) -> None:
         api_key = decrypt_secret(credential.api_key_ciphertext, credential.api_key_nonce)
     except EncryptionError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    gateway.configure(create_named_text_provider(credential.provider_name, api_key, credential.active_model))
+    default_model = preference.model_id if preference and preference.provider_name == credential.provider_name else credential.active_model
+    default_provider = create_named_text_provider(credential.provider_name, api_key, default_model)
+    task_providers = {}
+    routes = list(db.scalars(select(TaskModelRoute)))
+    if not routes:
+        # Compatibility with task routes saved before routes became global.
+        routes = [
+            TaskModelRoute(task=task, provider_name=credential.provider_name, model_id=model)
+            for task, model in json.loads(credential.task_routes_json or "{}").items()
+        ]
+    credentials = {item.provider_name: item for item in db.scalars(select(ProviderCredential))}
+    for route in routes:
+        route_credential = credentials.get(route.provider_name)
+        if route.task not in TASK_BY_ID or not route_credential:
+            continue
+        try:
+            route_key = decrypt_secret(route_credential.api_key_ciphertext, route_credential.api_key_nonce)
+            selected_models = json.loads(route_credential.models_json or "[]")
+            if route.model_id in selected_models:
+                task_providers[route.task] = create_named_text_provider(route.provider_name, route_key, route.model_id)
+        except (EncryptionError, ValueError):
+            continue
+    gateway.configure(default_provider, task_providers)
     provider_state["active"] = credential.provider_name
-    provider_state["active_model"] = credential.active_model
+    provider_state["active_model"] = default_model
 
 
 def provider_settings(db: Session) -> dict:
     credentials = list(db.scalars(select(ProviderCredential)))
     providers = {name: False for name in provider_state["providers"]}
     models = {name: [] for name in provider_state["providers"]}
-    active = db.scalar(select(ProviderCredential).where(ProviderCredential.is_active.is_(True)))
+    preference = db.get(DefaultModelPreference, 1)
+    active = db.get(ProviderCredential, preference.provider_name) if preference else None
+    if active is None:
+        active = db.scalar(select(ProviderCredential).where(ProviderCredential.is_active.is_(True)))
     for credential in credentials:
         providers[credential.provider_name] = True
         models[credential.provider_name] = json.loads(credential.models_json)
+    routes = {
+        route.task: f"{route.provider_name}:{route.model_id}"
+        for route in db.scalars(select(TaskModelRoute))
+    }
     return {
-        "activeProvider": active.provider_name if active else "mock",
-        "activeModel": active.active_model if active else None,
+        "activeProvider": preference.provider_name if preference else (active.provider_name if active else "mock"),
+        "activeModel": preference.model_id if preference else (active.active_model if active else None),
         "providers": providers,
         "models": models,
+        "taskRoutes": routes,
     }
+
+
+def validate_task_routes(routes: dict[str, str], db: Session) -> None:
+    credentials = {item.provider_name: item for item in db.scalars(select(ProviderCredential))}
+    for task, model_ref in routes.items():
+        if task not in TASK_BY_ID:
+            raise HTTPException(status_code=400, detail=f"Unknown task route: {task}")
+        provider_name, separator, model_id = model_ref.partition(":")
+        credential = credentials.get(provider_name)
+        if not separator or not model_id or not credential:
+            raise HTTPException(status_code=400, detail=f"Invalid task model: {model_ref}")
+        if model_id not in json.loads(credential.models_json or "[]"):
+            raise HTTPException(status_code=400, detail=f"Model is not selected for provider: {model_ref}")
+
+
+def save_task_routes(routes: dict[str, str], db: Session) -> None:
+    validate_task_routes(routes, db)
+    existing = {route.task: route for route in db.scalars(select(TaskModelRoute))}
+    for task, model_ref in routes.items():
+        provider_name, _, model_id = model_ref.partition(":")
+        route = existing.get(task) or TaskModelRoute(task=task)
+        route.provider_name = provider_name
+        route.model_id = model_id
+        db.add(route)
+    for task, route in existing.items():
+        if task not in routes:
+            db.delete(route)
 
 
 @router.get("/settings/providers", response_model=ProviderSettingsResponse)
@@ -128,7 +193,7 @@ async def discover_models(provider_name: str, payload: DiscoverModelsRequest, db
 @router.put("/settings/providers/{provider_name}", response_model=ProviderSettingsResponse)
 def configure_provider(provider_name: str, payload: ConfigureProviderRequest, db: Session = Depends(get_db)):
     models = list(dict.fromkeys(payload.models))
-    if payload.default_model not in models:
+    if payload.default_model is not None and payload.default_model not in models:
         raise HTTPException(status_code=400, detail="Default model must be one of the selected models")
     credential = db.get(ProviderCredential, provider_name)
     api_key = payload.api_key
@@ -152,24 +217,65 @@ def configure_provider(provider_name: str, payload: ConfigureProviderRequest, db
         credential.api_key_ciphertext = ciphertext
         credential.api_key_nonce = nonce
     credential.models_json = json.dumps(models)
-    credential.active_model = payload.default_model
+    if credential.active_model is None and models:
+        credential.active_model = models[0]
+    if payload.task_routes is not None:
+        db.flush()
+        save_task_routes(payload.task_routes, db)
     credential.is_active = True
     for other in db.scalars(select(ProviderCredential).where(ProviderCredential.provider_name != provider_name)):
         other.is_active = False
     db.commit()
+    restore_active_provider(db)
     return provider_settings(db)
 
 
 @router.put("/settings/model", response_model=ProviderSettingsResponse)
 def select_model(payload: SelectModelRequest, db: Session = Depends(get_db)):
-    active = provider_state["active"]
-    if active == "mock" or payload.model not in provider_state["models"].get(active, []):
+    preference = db.get(DefaultModelPreference, 1)
+    active_credential = db.get(ProviderCredential, preference.provider_name) if preference else None
+    if active_credential is None:
+        active_credential = db.scalar(select(ProviderCredential).where(ProviderCredential.is_active.is_(True)))
+    active = active_credential.provider_name if active_credential else "mock"
+    provider_name, separator, model_id = payload.model.partition(":")
+    if separator:
+        active = provider_name
+        active_credential = db.get(ProviderCredential, provider_name)
+    else:
+        model_id = payload.model
+    selected_models = json.loads(active_credential.models_json or "[]") if active_credential else []
+    if active == "mock" or model_id not in selected_models:
         raise HTTPException(status_code=400, detail="Model is not available for the active provider")
-    gateway.select_model(payload.model)
-    credential = db.get(ProviderCredential, active)
-    credential.active_model = payload.model
+    restore_active_provider(db)
+    preference = preference or DefaultModelPreference(id=1)
+    preference.provider_name = active
+    preference.model_id = model_id
+    db.add(preference)
+    gateway.configure(create_named_text_provider(active, decrypt_secret(active_credential.api_key_ciphertext, active_credential.api_key_nonce), model_id))
     db.commit()
-    provider_state["active_model"] = payload.model
+    provider_state["active"] = active
+    provider_state["active_model"] = model_id
+    return provider_settings(db)
+
+
+@router.get("/settings/model-routes", response_model=list[TaskRouteResponse])
+def get_model_routes(db: Session = Depends(get_db)):
+    settings = provider_settings(db)
+    routes = settings["taskRoutes"]
+    return [
+        {"id": task.id, "label": task.label, "category": task.category, "model": routes.get(task.id)}
+        for task in TASKS
+    ]
+
+
+@router.put("/settings/model-routes", response_model=ProviderSettingsResponse)
+def configure_model_routes(payload: ConfigureTaskRoutesRequest, db: Session = Depends(get_db)):
+    active = db.scalar(select(ProviderCredential).where(ProviderCredential.is_active.is_(True)))
+    if not active:
+        raise HTTPException(status_code=400, detail="请先配置一个 AI Provider")
+    save_task_routes(payload.routes, db)
+    db.commit()
+    restore_active_provider(db)
     return provider_settings(db)
 
 
@@ -187,6 +293,9 @@ def clear_provider(provider_name: str, db: Session = Depends(get_db)):
         gateway.configure(MockTextProvider())
         provider_state["active"] = "mock"
         provider_state["active_model"] = None
+    preference = db.get(DefaultModelPreference, 1)
+    if preference and preference.provider_name == provider_name:
+        db.delete(preference)
     db.commit()
     return provider_settings(db)
 
@@ -215,9 +324,9 @@ async def create_learning_space(payload: CreateLearningSpaceRequest, db: Session
         db.add(
             CardSection(
                 card_id=card.id,
-                title=section.get("title", f"第 {index + 1} 节"),
+                title=section.title or f"第 {index + 1} 节",
                 order_index=index,
-                content_markdown=section.get("content_markdown", ""),
+                content_markdown=section.content_markdown,
             )
         )
     space.root_card_id = card.id
@@ -503,7 +612,7 @@ async def accept_proposal(proposal_id: str, db: Session = Depends(get_db)):
     db.add(card)
     db.flush()
     for index, section in enumerate(draft.sections):
-        db.add(CardSection(card_id=card.id, title=section.get("title", f"第 {index + 1} 节"), order_index=index, content_markdown=section.get("content_markdown", "")))
+        db.add(CardSection(card_id=card.id, title=section.title or f"第 {index + 1} 节", order_index=index, content_markdown=section.content_markdown))
     bridge = await bridge_agent.create(source_card.title, card.title)
     db.add(BridgeNote(card_id=source_card.id, related_card_id=card.id, content=bridge.content))
     proposal.status = "accepted"

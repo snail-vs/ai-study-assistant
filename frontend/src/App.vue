@@ -35,10 +35,30 @@ const showSettings = ref(false)
 const selectedProvider = ref('deepseek')
 const apiKey = ref('')
 const providerStatus = ref({ activeProvider: 'mock', providers: {} })
-const selectedModel = ref('')
 const availableModels = ref([])
 const selectedModels = ref([])
 const selectedDefaultModel = ref('')
+const taskRoutes = ref({})
+const taskDefinitions = [
+  { id: 'knowledge_card', label: '生成知识卡' },
+  { id: 'teacher_guidance', label: '教师引导' },
+  { id: 'side_agent', label: '旁支问答与断层诊断' },
+  { id: 'bridge_note', label: '知识卡连接说明' },
+  { id: 'conversation_title', label: '会话标题' },
+  { id: 'group_director', label: '多 Agent 调度' },
+]
+const allModelOptions = computed(() => {
+  const options = Object.entries(providerStatus.value.models || {}).flatMap(([provider, models]) => (
+    (models || []).map((model) => ({ value: `${provider}:${model}`, label: `${provider} · ${model}` }))
+  ))
+  if (availableModels.value.length) {
+    for (const model of availableModels.value) {
+      const value = `${selectedProvider.value}:${model}`
+      if (!options.some((item) => item.value === value)) options.push({ value, label: `${selectedProvider.value} · ${model}` })
+    }
+  }
+  return options
+})
 const fetchingModels = ref(false)
 const editingKey = ref(false)
 const proposal = ref(null)
@@ -57,6 +77,8 @@ const section = computed(() => card.value?.sections?.[activeSection.value] || nu
 const renderedContent = computed(() => md.render(section.value?.contentMarkdown || '本节内容正在生成。'))
 const isRelatedCard = computed(() => card.value?.cardType === 'related')
 const keyConfigured = computed(() => Boolean(providerStatus.value.providers?.[selectedProvider.value]))
+const knowledgeCardModel = computed(() => providerStatus.value.taskRoutes?.knowledge_card
+  || (providerStatus.value.activeModel ? `${providerStatus.value.activeProvider}:${providerStatus.value.activeModel}` : 'Mock'))
 const noteEditorDirty = computed(() => noteEditorMode.value !== 'list' && (
   noteEditorTitle.value !== noteEditorInitial.value.title
   || noteEditorContent.value !== noteEditorInitial.value.content
@@ -127,16 +149,17 @@ async function request(path, options = {}) {
     ...options,
   })
   const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body?.error?.message || body?.detail || '请求失败')
+  if (!response.ok) throw new Error(body?.error?.details?.reason || body?.error?.message || body?.detail || '请求失败')
   return body
 }
 
 async function openSettings() {
   await loadProviderSettings()
   selectedProvider.value = providerStatus.value.activeProvider === 'mock' ? 'deepseek' : providerStatus.value.activeProvider
-  selectedModel.value = providerStatus.value.activeModel || providerStatus.value.models?.[selectedProvider.value]?.[0] || ''
   selectedModels.value = [...(providerStatus.value.models?.[selectedProvider.value] || [])]
-  selectedDefaultModel.value = providerStatus.value.activeModel || selectedModels.value[0] || ''
+  selectedDefaultModel.value = providerStatus.value.activeModel
+    ? `${providerStatus.value.activeProvider}:${providerStatus.value.activeModel}` : ''
+  taskRoutes.value = { ...(providerStatus.value.taskRoutes || {}) }
   availableModels.value = [...selectedModels.value]
   apiKey.value = ''
   editingKey.value = false
@@ -247,23 +270,19 @@ async function removeNote(item) {
 function changeProvider() {
   availableModels.value = [...(providerStatus.value.models?.[selectedProvider.value] || [])]
   selectedModels.value = [...availableModels.value]
-  selectedDefaultModel.value = providerStatus.value.activeProvider === selectedProvider.value
-    ? providerStatus.value.activeModel || selectedModels.value[0] || ''
-    : selectedModels.value[0] || ''
+  taskRoutes.value = providerStatus.value.activeProvider === selectedProvider.value
+    ? { ...(providerStatus.value.taskRoutes || {}) }
+    : {}
   apiKey.value = ''
   editingKey.value = false
 }
 
 function ensureDefaultModel() {
-  if (!selectedModels.value.includes(selectedDefaultModel.value)) {
-    selectedDefaultModel.value = selectedModels.value[0] || ''
-  }
 }
 
 async function loadProviderSettings() {
   try {
     providerStatus.value = await request('/settings/providers')
-    selectedModel.value = providerStatus.value.activeModel || ''
   } catch (_) {
     // Keep the page usable with Mock when settings are unavailable.
   }
@@ -285,24 +304,21 @@ async function fetchModels() {
 }
 
 async function saveProvider() {
-  if ((!apiKey.value.trim() && !keyConfigured.value) || !selectedModels.value.length || !selectedDefaultModel.value) return
+  if ((!apiKey.value.trim() && !keyConfigured.value) || !selectedModels.value.length) return
   loading.value = true
   try {
     providerStatus.value = await request(`/settings/providers/${selectedProvider.value}`, {
-      method: 'PUT', body: JSON.stringify({ ...(apiKey.value.trim() ? { apiKey: apiKey.value.trim() } : {}), models: selectedModels.value, defaultModel: selectedDefaultModel.value }),
+      method: 'PUT', body: JSON.stringify({ ...(apiKey.value.trim() ? { apiKey: apiKey.value.trim() } : {}), models: selectedModels.value, taskRoutes: Object.fromEntries(Object.entries(taskRoutes.value).filter(([, model]) => model)) }),
     })
-    selectedModel.value = providerStatus.value.activeModel || ''
+    if (selectedDefaultModel.value) {
+      providerStatus.value = await request('/settings/model', { method: 'PUT', body: JSON.stringify({ model: selectedDefaultModel.value }) })
+    }
     availableModels.value = []
     selectedModels.value = []
     apiKey.value = ''
     editingKey.value = false
     showSettings.value = false
   } catch (err) { error.value = err.message } finally { loading.value = false }
-}
-
-async function selectModel() {
-  if (!selectedModel.value || providerStatus.value.activeProvider === 'mock') return
-  providerStatus.value = await request('/settings/model', { method: 'PUT', body: JSON.stringify({ model: selectedModel.value }) })
 }
 
 async function useMock() {
@@ -317,7 +333,6 @@ async function startLearning() {
   loading.value = true
   error.value = ''
   try {
-    if (selectedModel.value && providerStatus.value.activeProvider !== 'mock') await selectModel()
     space.value = await request('/learning-spaces', {
       method: 'POST',
       body: JSON.stringify({ title: goal.value.trim(), learningGoal: goal.value.trim() }),
@@ -615,7 +630,7 @@ function nextSection() {
     <header class="topbar">
       <button class="brand" @click="goHome" title="返回首页">Study<span>Center</span></button>
       <div v-if="space" class="crumb">学习空间 / {{ card?.title }} / {{ section?.title || '未开始' }}</div>
-      <div class="status">{{ loading ? 'AI 正在准备内容…' : `当前模型：${providerStatus.activeProvider}` }}</div>
+      <div class="status">{{ loading ? 'AI 正在准备内容…' : `课程生成：${knowledgeCardModel}` }}</div>
       <button class="notes-button" @click="openNotes">笔记</button>
       <button class="settings-button" @click="openSettings">设置</button>
     </header>
@@ -626,7 +641,7 @@ function nextSection() {
       <p class="lead">主 Agent 会先生成一张知识卡。之后的提问、旁支和笔记，都围绕它展开。</p>
       <form @submit.prevent="startLearning" class="start-form">
         <textarea v-model="goal" placeholder="例如：我想系统理解 Kubernetes 容器隔离，并能看懂 Namespace 和 cgroups 的关系" autofocus></textarea>
-        <div class="start-options"><label>模型<select v-model="selectedModel" :disabled="providerStatus.activeProvider === 'mock'"><option v-if="providerStatus.activeProvider === 'mock'" value="">Mock（请先配置模型）</option><option v-for="model in (providerStatus.models?.[providerStatus.activeProvider] || [])" :key="model" :value="model">{{ model }}</option></select></label><button :disabled="loading">创建知识卡</button></div>
+        <div class="start-options"><span class="route-hint">课程生成使用：{{ knowledgeCardModel }}</span><button :disabled="loading">创建知识卡</button></div>
       </form>
       <div v-if="homeCards.length" class="history">
         <div class="history-title">我的知识卡</div>
@@ -643,8 +658,10 @@ function nextSection() {
         <div class="settings-head"><div><div class="panel-title">模型设置</div><p>Key 会在后端加密保存，前端不会保存明文。</p></div><button @click="showSettings = false">×</button></div>
         <label>Provider<select v-model="selectedProvider" @change="changeProvider"><option value="deepseek">DeepSeek</option><option value="opencode">OpenCode Zen</option><option value="openrouter">OpenRouter</option></select></label>
         <label>API Key<div class="key-row"><input v-if="editingKey || !keyConfigured" v-model="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" /><div v-else class="masked-key">*****</div><button v-if="keyConfigured && !editingKey" class="edit-key" @click="editingKey = true">编辑</button><button :disabled="fetchingModels || (!apiKey && !keyConfigured)" @click="fetchModels">{{ fetchingModels ? '获取中…' : '获取模型' }}</button></div></label>
-        <div v-if="availableModels.length" class="model-catalog"><div class="catalog-title">选择模型，并指定一个默认模型</div><label v-for="model in availableModels" :key="model" class="model-check"><input v-model="selectedModels" type="checkbox" :value="model" @change="ensureDefaultModel" /><span>{{ model }}</span><input v-model="selectedDefaultModel" type="radio" name="default-model" :value="model" :disabled="!selectedModels.includes(model)" /><em>默认</em></label></div>
-        <div class="provider-actions"><button class="secondary" @click="useMock">切换 Mock</button><button class="primary" :disabled="loading || ((!apiKey && !keyConfigured) || !selectedModels.length || !selectedDefaultModel)" @click="saveProvider">保存并使用</button></div>
+        <div v-if="availableModels.length" class="model-catalog"><div class="catalog-title">选择此 Provider 可使用的模型</div><label v-for="model in availableModels" :key="model" class="model-check"><input v-model="selectedModels" type="checkbox" :value="model" /><span>{{ model }}</span></label></div>
+        <div class="provider-actions"><button class="secondary" @click="useMock">切换 Mock</button><button class="primary" :disabled="loading || ((!apiKey && !keyConfigured) || !selectedModels.length)" @click="saveProvider">保存 Provider</button></div>
+        <div v-if="allModelOptions.length" class="default-model-setting"><div class="catalog-title">全局默认模型（跨 Provider）</div><select v-model="selectedDefaultModel"><option value="">请选择默认模型</option><option v-for="option in allModelOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></div>
+        <div v-if="allModelOptions.length" class="task-routes"><div class="catalog-title">任务模型路由（跨 Provider；不设置则使用当前默认模型）</div><label v-for="task in taskDefinitions" :key="task.id" class="task-route"><span>{{ task.label }}</span><select v-model="taskRoutes[task.id]"><option value="">跟随默认模型</option><option v-for="option in allModelOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></div>
         <div class="provider-hint">已配置：{{ Object.entries(providerStatus.providers).filter(([, value]) => value).map(([key]) => key).join('、') || '暂无' }}</div>
       </section>
     </div>

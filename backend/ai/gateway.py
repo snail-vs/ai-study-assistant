@@ -8,9 +8,11 @@ from .registry import create_text_provider
 class AIGateway:
     def __init__(self, provider: TextProvider | None = None) -> None:
         self.provider = provider or create_text_provider()
+        self.task_providers: dict[str, TextProvider] = {}
 
-    def configure(self, provider: TextProvider) -> None:
+    def configure(self, provider: TextProvider, task_providers: dict[str, TextProvider] | None = None) -> None:
         self.provider = provider
+        self.task_providers = task_providers or {}
 
     def select_model(self, model: str) -> None:
         if not hasattr(self.provider, "model"):
@@ -20,9 +22,11 @@ class AIGateway:
     def stream_text(
         self, messages: Sequence[dict[str, str]], *, task: str
     ) -> AsyncIterator[str]:
-        return self.provider.stream_text(messages, task=task)
+        provider = self.task_providers.get(task, self.provider)
+        return provider.stream_text(messages, task=task)
 
     async def structured(
         self, messages: Sequence[dict[str, str]], *, task: str, schema: dict[str, Any]
     ) -> dict[str, Any]:
-        return await self.provider.structured(messages, task=task, schema=schema)
+        provider = self.task_providers.get(task, self.provider)
+        return await provider.structured(messages, task=task, schema=schema)

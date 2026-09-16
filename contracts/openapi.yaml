@@ -86,6 +86,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProviderSettings'
+  /settings/model-routes:
+    get:
+      operationId: getModelRoutes
+      responses:
+        '200':
+          description: Task model routes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskRoute'
+    put:
+      operationId: configureModelRoutes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigureTaskRoutesRequest'
+      responses:
+        '200':
+          description: Updated provider settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderSettings'
   /health:
     get:
       operationId: getHealth
@@ -451,7 +478,7 @@ components:
   schemas:
     ProviderSettings:
       type: object
-      required: [activeProvider, activeModel, providers, models]
+      required: [activeProvider, activeModel, providers, models, taskRoutes]
       properties:
         activeProvider: { type: string }
         activeModel: { type: string, nullable: true }
@@ -463,6 +490,24 @@ components:
           additionalProperties:
             type: array
             items: { type: string }
+        taskRoutes:
+          type: object
+          additionalProperties: { type: string }
+    TaskRoute:
+      type: object
+      required: [id, label, category]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        category: { type: string }
+        model: { type: string, nullable: true }
+    ConfigureTaskRoutesRequest:
+      type: object
+      required: [routes]
+      properties:
+        routes:
+          type: object
+          additionalProperties: { type: string }
     AgentDefinition:
       type: object
       required: [id, name, role, description, visible, priority]
@@ -475,14 +520,18 @@ components:
         priority: { type: integer }
     ConfigureProviderRequest:
       type: object
-      required: [models, defaultModel]
+      required: [models]
       properties:
         apiKey: { type: string, minLength: 1, nullable: true, writeOnly: true }
         models:
           type: array
           minItems: 1
           items: { type: string }
-        defaultModel: { type: string, minLength: 1 }
+        defaultModel: { type: string, minLength: 1, nullable: true, deprecated: true }
+        taskRoutes:
+          type: object
+          description: Values use provider:model, for example deepseek:deepseek-chat.
+          additionalProperties: { type: string }
     DiscoverModelsRequest:
       type: object
       properties:
