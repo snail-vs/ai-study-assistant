@@ -85,6 +85,29 @@ class LearningSpaceList(ApiModel):
     next_cursor: str | None = Field(default=None, alias="nextCursor")
 
 
+class LearningNavigationEntry(ApiModel):
+    card_id: str = Field(alias="cardId")
+    section_id: str | None = Field(default=None, alias="sectionId")
+
+
+class UpdateLearningRuntimeRequest(ApiModel):
+    current_card_id: str = Field(alias="currentCardId")
+    current_section_id: str | None = Field(default=None, alias="currentSectionId")
+    navigation_stack: list[LearningNavigationEntry] = Field(default_factory=list, alias="navigationStack")
+    event_type: str = Field(default="navigation", alias="eventType")
+
+
+class LearningRuntimeResponse(ApiModel):
+    id: str
+    space_id: str = Field(alias="spaceId")
+    current_card_id: str | None = Field(default=None, alias="currentCardId")
+    current_section_id: str | None = Field(default=None, alias="currentSectionId")
+    source_card_id: str | None = Field(default=None, alias="sourceCardId")
+    source_section_id: str | None = Field(default=None, alias="sourceSectionId")
+    navigation_stack: list[LearningNavigationEntry] = Field(default_factory=list, alias="navigationStack")
+    updated_at: datetime = Field(alias="updatedAt")
+
+
 class CardSectionResponse(ApiModel):
     id: str
     title: str

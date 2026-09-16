@@ -2,7 +2,7 @@ from datetime import datetime
 import json
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -52,6 +52,40 @@ class CardSection(Base):
     teaching_objective: Mapped[str | None] = mapped_column(Text, nullable=True)
     learning_status: Mapped[str] = mapped_column(String(20), default="unread")
     card: Mapped[KnowledgeCard] = relationship(back_populates="sections")
+
+
+class LearningRuntime(Base):
+    __tablename__ = "learning_runtimes"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    space_id: Mapped[str] = mapped_column(ForeignKey("learning_spaces.id"), unique=True)
+    current_card_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    current_section_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_card_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_section_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    navigation_stack_json: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+    @property
+    def navigation_stack(self) -> list[dict[str, str | None]]:
+        try:
+            value = json.loads(self.navigation_stack_json)
+            return value if isinstance(value, list) else []
+        except (TypeError, json.JSONDecodeError):
+            return []
+
+
+class LearningRuntimeRecord(Base):
+    __tablename__ = "learning_runtime_records"
+    __table_args__ = (UniqueConstraint("runtime_id", "seq", name="uq_learning_runtime_record_seq"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    runtime_id: Mapped[str] = mapped_column(ForeignKey("learning_runtimes.id"))
+    seq: Mapped[int] = mapped_column(Integer)
+    event_type: Mapped[str] = mapped_column(String(40), default="navigation")
+    card_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    section_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
 class TeacherGuidance(Base):

@@ -174,6 +174,35 @@ paths:
                 $ref: '#/components/schemas/LearningSpace'
         '404':
           $ref: '#/components/responses/NotFound'
+  /learning-spaces/{spaceId}/runtime:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: getLearningRuntime
+      responses:
+        '200':
+          description: Last persisted learning position and branch return path
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/LearningRuntime'
+                  - type: 'null'
+    put:
+      operationId: updateLearningRuntime
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLearningRuntimeRequest'
+      responses:
+        '200':
+          description: Persisted learning runtime
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningRuntime'
   /cards/{cardId}:
     parameters:
       - $ref: '#/components/parameters/CardId'
@@ -620,6 +649,36 @@ components:
         contentType: { type: string, enum: [concept, practice, summary, quiz, interactive] }
         teachingObjective: { type: string, nullable: true }
         learningStatus: { type: string, enum: [unread, learning, completed] }
+    LearningNavigationEntry:
+      type: object
+      required: [cardId]
+      properties:
+        cardId: { type: string }
+        sectionId: { type: string, nullable: true }
+    UpdateLearningRuntimeRequest:
+      type: object
+      required: [currentCardId, navigationStack]
+      properties:
+        currentCardId: { type: string }
+        currentSectionId: { type: string, nullable: true }
+        navigationStack:
+          type: array
+          items: { $ref: '#/components/schemas/LearningNavigationEntry' }
+        eventType: { type: string, default: navigation }
+    LearningRuntime:
+      type: object
+      required: [id, spaceId, currentCardId, navigationStack, updatedAt]
+      properties:
+        id: { type: string }
+        spaceId: { type: string }
+        currentCardId: { type: string, nullable: true }
+        currentSectionId: { type: string, nullable: true }
+        sourceCardId: { type: string, nullable: true }
+        sourceSectionId: { type: string, nullable: true }
+        navigationStack:
+          type: array
+          items: { $ref: '#/components/schemas/LearningNavigationEntry' }
+        updatedAt: { type: string, format: date-time }
     TeacherGuidance:
       type: object
       required: [id, cardId, sectionId, trigger, content, createdAt]

@@ -154,6 +154,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/learning-spaces/{spaceId}/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: components["parameters"]["SpaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getLearningRuntime"];
+        put: operations["updateLearningRuntime"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cards/{cardId}": {
         parameters: {
             query?: never;
@@ -495,6 +513,28 @@ export interface components {
             teachingObjective?: string | null;
             /** @enum {string} */
             learningStatus?: "unread" | "learning" | "completed";
+        };
+        LearningNavigationEntry: {
+            cardId: string;
+            sectionId?: string | null;
+        };
+        UpdateLearningRuntimeRequest: {
+            currentCardId: string;
+            currentSectionId?: string | null;
+            navigationStack: components["schemas"]["LearningNavigationEntry"][];
+            /** @default navigation */
+            eventType: string;
+        };
+        LearningRuntime: {
+            id: string;
+            spaceId: string;
+            currentCardId: string | null;
+            currentSectionId?: string | null;
+            sourceCardId?: string | null;
+            sourceSectionId?: string | null;
+            navigationStack: components["schemas"]["LearningNavigationEntry"][];
+            /** Format: date-time */
+            updatedAt: string;
         };
         TeacherGuidance: {
             id: string;
@@ -907,6 +947,54 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    getLearningRuntime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: components["parameters"]["SpaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Last persisted learning position and branch return path */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningRuntime"] | null;
+                };
+            };
+        };
+    };
+    updateLearningRuntime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: components["parameters"]["SpaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateLearningRuntimeRequest"];
+            };
+        };
+        responses: {
+            /** @description Persisted learning runtime */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningRuntime"];
+                };
+            };
         };
     };
     getKnowledgeCard: {

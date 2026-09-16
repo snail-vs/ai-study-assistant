@@ -10,7 +10,7 @@ const space = ref(null)
 const card = ref(null)
 const rootCard = ref(null)
 const relatedCards = ref([])
-const cardNavigationContext = ref(null)
+const navigationStack = ref([])
 const activeSection = ref(0)
 const showKnowledgeSidebar = ref(localStorage.getItem('studycenter.knowledgeSidebar') !== 'false')
 const teacherGuidance = ref([])
@@ -96,7 +96,7 @@ function renderMessage(content) {
   )).join('').trim()
   return md.render(compacted)
 }
-const isRelatedCard = computed(() => Boolean(cardNavigationContext.value))
+const isRelatedCard = computed(() => navigationStack.value.length > 0)
 const keyConfigured = computed(() => Boolean(providerStatus.value.providers?.[selectedProvider.value]))
 const knowledgeCardModel = computed(() => providerStatus.value.taskRoutes?.course_plan
   || (providerStatus.value.activeModel ? `${providerStatus.value.activeProvider}:${providerStatus.value.activeModel}` : 'Mock'))
@@ -181,7 +181,9 @@ async function restoreStudyRoute() {
     space.value = spaceItem
     const target = await request(`/cards/${cardId}`)
     rootCard.value = target.cardType === 'root' ? target : null
-    await openCard(target, null)
+    const runtime = await request(`/learning-spaces/${spaceId}/runtime`)
+    navigationStack.value = runtime?.currentCardId === cardId ? (runtime.navigationStack || []) : []
+    await openCard(target, null, { preserveNavigation: true, persist: false })
     const requestedSection = Number(new URLSearchParams(window.location.search).get('section'))
     if (Number.isInteger(requestedSection) && requestedSection >= 0 && requestedSection < (card.value?.sections?.length || 0)) {
       activeSection.value = requestedSection
@@ -194,6 +196,7 @@ async function restoreStudyRoute() {
       await selectConversation(conversation)
     }
     syncStudyUrl({ replace: true })
+    await persistLearningRuntime('restore')
   } catch (err) {
     error.value = err.message
     window.history.replaceState({}, '', '/')
@@ -236,6 +239,23 @@ async function request(path, options = {}) {
   const body = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(body?.error?.details?.reason || body?.error?.message || body?.detail || '请求失败')
   return body
+}
+
+async function persistLearningRuntime(eventType = 'navigation') {
+  if (!space.value || !card.value) return
+  try {
+    await request(`/learning-spaces/${space.value.id}/runtime`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        currentCardId: card.value.id,
+        currentSectionId: section.value?.id || null,
+        navigationStack: navigationStack.value,
+        eventType,
+      }),
+    })
+  } catch (_) {
+    // Runtime persistence must not block reading an otherwise available course.
+  }
 }
 
 async function openSettings() {
@@ -435,9 +455,11 @@ async function startLearning() {
     activeConversation.value = main
     showConversationList.value = false
     messages.value = []
+    navigationStack.value = []
     await loadNotes()
     await loadHistory()
     syncStudyUrl({ replace: true })
+    await persistLearningRuntime('course_started')
   } catch (err) {
     error.value = err.message
   } finally {
@@ -469,6 +491,7 @@ async function openHistory(item) {
     card.value = await request(`/cards/${item.rootCardId}`)
     rootCard.value = card.value
     activeSection.value = 0
+    navigationStack.value = []
     await loadTeacherGuidance()
     await loadRecommendations()
     await loadRelatedCards()
@@ -477,6 +500,7 @@ async function openHistory(item) {
     await loadConversationMessages(activeConversation.value)
     await loadNotes()
     syncStudyUrl({ replace: true })
+    await persistLearningRuntime('card_opened')
   } catch (err) {
     error.value = err.message
   } finally {
@@ -489,7 +513,7 @@ function goHome() {
   card.value = null
   rootCard.value = null
   relatedCards.value = []
-  cardNavigationContext.value = null
+  navigationStack.value = []
   activeConversation.value = null
   showConversationList.value = false
   teacherGuidance.value = []
@@ -641,11 +665,10 @@ async function acceptProposal(item = proposal.value) {
   if (!item) return
   loading.value = true
   try {
-    card.value = await request(`/proposals/${item.proposalId || item.id}/accept`, { method: 'POST' })
-    await loadRelatedCards()
+    const sourceEntry = { cardId: card.value.id, sectionId: section.value?.id || null }
+    const generatedCard = await request(`/proposals/${item.proposalId || item.id}/accept`, { method: 'POST' })
+    await openCard(generatedCard, sourceEntry, { eventType: 'branch_entered' })
     recommendations.value = recommendations.value.filter((recommendation) => recommendation.id !== item.id && recommendation.proposalId !== item.proposalId)
-    activeSection.value = 0
-    await loadTeacherGuidance()
     proposal.value = null
     selectedRecommendation.value = null
   } catch (err) { error.value = err.message } finally { loading.value = false }
@@ -686,9 +709,13 @@ async function loadRelatedCards() {
     && item.parentSectionId === section.value.id)
 }
 
-async function openCard(target, navigationContext = null) {
+async function openCard(target, navigationContext = null, options = {}) {
+  if (navigationContext) {
+    navigationStack.value = [...navigationStack.value, navigationContext]
+  } else if (!options.preserveNavigation) {
+    navigationStack.value = []
+  }
   card.value = target
-  cardNavigationContext.value = navigationContext
   showConversationList.value = false
   selectedRecommendation.value = null
   proposal.value = null
@@ -700,6 +727,12 @@ async function openCard(target, navigationContext = null) {
   activeConversation.value = conversations.value[0] || null
   await loadConversationMessages(activeConversation.value)
   syncStudyUrl({ replace: window.location.pathname.startsWith('/study/') })
+  if (options.persist !== false) await persistLearningRuntime(options.eventType || 'card_opened')
+}
+
+async function openRelatedCard(target) {
+  if (!card.value) return
+  await openCard(target, { cardId: card.value.id, sectionId: section.value?.id || null }, { eventType: 'branch_entered' })
 }
 
 async function openHistoryCard(spaceItem, target) {
@@ -739,15 +772,22 @@ function openHomeCard(item) {
   }
 }
 
-function returnToMain() {
-  if (!cardNavigationContext.value) return
-  const context = cardNavigationContext.value
-  cardNavigationContext.value = null
-  openCard(context.card, null).then(() => {
-    activeSection.value = context.sectionIndex
-    loadTeacherGuidance()
-    loadRelatedCards()
-  })
+async function returnToMain() {
+  const context = navigationStack.value[navigationStack.value.length - 1]
+  if (!context) return
+  navigationStack.value = navigationStack.value.slice(0, -1)
+  try {
+    const sourceCard = await request(`/cards/${context.cardId}`)
+    await openCard(sourceCard, null, { preserveNavigation: true, persist: false })
+    const sourceIndex = sourceCard.sections?.findIndex((item) => item.id === context.sectionId) ?? -1
+    activeSection.value = sourceIndex >= 0 ? sourceIndex : 0
+    await loadTeacherGuidance()
+    await loadRelatedCards()
+    syncStudyUrl({ replace: true })
+    await persistLearningRuntime('branch_returned')
+  } catch (err) {
+    error.value = err.message
+  }
 }
 
 async function selectConversation(item) {
@@ -794,6 +834,7 @@ async function selectSection(index) {
   syncStudyUrl({ replace: true })
   await loadRelatedCards()
   await loadTeacherGuidance()
+  await persistLearningRuntime('section_changed')
 }
 
 function previousSection() {
@@ -898,7 +939,7 @@ function nextSection() {
           <span>{{ String(index + 1).padStart(2, '0') }}</span>{{ item.title }}
         </button>
         <div class="tree-label related">本节学习分支</div>
-        <button v-for="related in relatedCards" :key="related.id" class="related-card" :class="{ active: card.id === related.id }" @click="openCard(related, { card, sectionIndex: activeSection })">
+        <button v-for="related in relatedCards" :key="related.id" class="related-card" :class="{ active: card.id === related.id }" @click="openRelatedCard(related)">
           <span>↳</span>{{ related.title }}
         </button>
         <div v-if="!relatedCards.length" class="empty-related">从问题讨论中生成<br />新的学习分支</div>
