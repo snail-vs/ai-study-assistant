@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import AsyncIterator
 from uuid import uuid4
 
@@ -59,6 +60,7 @@ from .schemas import (
 from .security.encryption import EncryptionError, decrypt_secret, encrypt_secret
 
 router = APIRouter()
+logger = logging.getLogger("studycenter.api")
 gateway = AIGateway()
 side_agent = SideAgent(gateway)
 teacher_agent = TeacherAgent(gateway)
@@ -566,8 +568,29 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         try:
             # 每次旁支回答后都由主线老师做一次归纳，帮助学生回到当前章节。
             # 这一步不依赖知识断层诊断；诊断只负责后续的推荐知识卡。
+            # 兼容历史上没有章节绑定的旁支会话：优先使用会话绑定章节，
+            # 否则使用客户端发送的当前章节，并把绑定补回数据库。
             section = db.get(CardSection, conversation.section_id) if conversation.section_id else None
+            if not section and payload.section_id:
+                candidate = db.get(CardSection, payload.section_id)
+                if candidate and candidate.card_id == conversation.card_id:
+                    section = candidate
+                    conversation.section_id = candidate.id
+                    db.commit()
+                    logger.info(
+                        "backfilled conversation section: conversation_id=%s section_id=%s",
+                        conversation.id,
+                        candidate.id,
+                    )
             source_card = db.get(KnowledgeCard, conversation.card_id) if section else None
+            if not section or not source_card or section.card_id != conversation.card_id:
+                logger.warning(
+                    "skip teacher guidance: conversation_id=%s card_id=%s conversation_section_id=%s payload_section_id=%s",
+                    conversation.id,
+                    conversation.card_id,
+                    conversation.section_id,
+                    payload.section_id,
+                )
             if section and source_card and section.card_id == conversation.card_id:
                 try:
                     yield f"event: run.phase\ndata: {json.dumps({'phase': 'guiding', 'label': '主线老师正在总结引导'}, ensure_ascii=False)}\n\n"
@@ -590,7 +613,13 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                     db.refresh(guidance)
                     yield f"event: guidance.updated\ndata: {json.dumps(TeacherGuidanceResponse.model_validate(guidance).model_dump(by_alias=True), default=str, ensure_ascii=False)}\n\n"
                 except Exception as exc:
-                    yield f"event: run.failed\ndata: {json.dumps({'code': 'TEACHER_GUIDANCE_FAILED', 'message': str(exc)}, ensure_ascii=False)}\n\n"
+                    logger.exception(
+                        "teacher guidance failed: conversation_id=%s card_id=%s section_id=%s",
+                        conversation.id,
+                        conversation.card_id,
+                        section.id,
+                    )
+                    yield f"event: guidance.failed\ndata: {json.dumps({'code': 'TEACHER_GUIDANCE_FAILED', 'message': str(exc)}, ensure_ascii=False)}\n\n"
 
             yield f"event: run.phase\ndata: {json.dumps({'phase': 'diagnosing', 'label': '正在分析你的知识断层'}, ensure_ascii=False)}\n\n"
             diagnosis = await side_agent.diagnose(payload.content)

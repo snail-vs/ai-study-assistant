@@ -476,7 +476,7 @@ async function sendMessage(text = input.value) {
     const response = await fetch(`${base}/conversations/${activeConversation.value.id}/messages/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: text }),
+      body: JSON.stringify({ content: text, sectionId: section.value?.id || activeConversation.value.sectionId || null }),
     })
     if (!response.ok || !response.body) throw new Error('无法建立 AI 流式连接')
     const reader = response.body.getReader()
@@ -510,6 +510,7 @@ async function sendMessage(text = input.value) {
             recommendations.value = [data, ...recommendations.value.filter((item) => item.proposalId !== data.proposalId)]
           }
           if (block.includes('guidance.updated')) teacherGuidance.value = [...teacherGuidance.value, data]
+          if (block.includes('guidance.failed')) error.value = `主线老师引导失败：${data.message || '未知错误'}`
           if (block.includes('run.failed')) {
             error.value = data.message || 'AI 服务调用失败'
             if (!assistant.content) messages.value = messages.value.filter((message) => message !== assistant)

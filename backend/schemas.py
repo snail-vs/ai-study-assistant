@@ -127,6 +127,7 @@ class CreateKnowledgeCardRequest(ApiModel):
 class CreateMessageRequest(ApiModel):
     content: str = Field(min_length=1)
     client_message_id: str | None = Field(default=None, alias="clientMessageId")
+    section_id: str | None = Field(default=None, alias="sectionId")
 
 
 class MessageResponse(ApiModel):
