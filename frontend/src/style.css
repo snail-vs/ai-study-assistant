@@ -84,5 +84,6 @@ button { cursor: pointer; }
 .recommendation-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
 .recommendation-actions button { border-radius: 6px; padding: 8px 10px; font-size: 12px; }
 .recommendation-actions .secondary { color: #b8c7d2; background: transparent; border: 1px solid #3b5567; }
+.recommendation-actions .danger { color: #e8a1a1; background: transparent; border: 1px solid #75414d; }
 .recommendation-actions .primary { color: #0c1717; background: #74d2b4; border: 0; font-weight: 700; }
 .teacher-guidance.collapsed .teacher-guidance-head { border-bottom: 0; }
