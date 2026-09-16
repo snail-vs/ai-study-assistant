@@ -506,6 +506,11 @@ def get_active_run(conversation_id: str, db: Session = Depends(get_db)):
         .where(AIRun.conversation_id == conversation_id, AIRun.status.in_(("queued", "running")))
         .order_by(AIRun.created_at.desc())
     )
+    if run and run.updated_at and (now() - run.updated_at).total_seconds() > 180:
+        run.status = "expired"
+        run.phase = "expired"
+        run.error_message = "AI 请求可能已中断，请重新发送。"
+        db.commit()
     return run
 
 

@@ -474,7 +474,10 @@ async function loadConversationMessages(conversation) {
   }))
   const activeRun = await request(`/conversations/${conversation.id}/runs/active`)
   if (version !== conversationLoadVersion || activeConversation.value?.id !== conversation.id) return
-  if (activeRun) {
+  if (activeRun?.status === 'expired' || activeRun?.status === 'failed') {
+    sideRun.value = { active: false, phase: '', label: '' }
+    error.value = activeRun.errorMessage || '上一次 AI 请求未完成，请重新发送。'
+  } else if (activeRun) {
     sideRun.value = {
       active: true,
       phase: activeRun.phase || 'waiting',
