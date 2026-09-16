@@ -259,7 +259,7 @@ async function request(path, options = {}) {
     ...options,
   })
   const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body?.error?.details?.reason || body?.error?.message || body?.detail || '请求失败')
+  if (!response.ok) throw new Error(body?.error?.message || body?.detail || body?.error?.details?.reason || '请求失败')
   return body
 }
 

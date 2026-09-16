@@ -1,30 +1,13 @@
 import json
-from copy import deepcopy
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 import httpx
 
 from ..base import AIProviderError
-
-
-def strict_json_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Make Pydantic's object schemas acceptable to strict Responses JSON Schema."""
-    result = deepcopy(schema)
-
-    def visit(value: Any) -> None:
-        if isinstance(value, dict):
-            if value.get("type") == "object" and "properties" in value:
-                value["additionalProperties"] = False
-                value["required"] = list(value["properties"])
-            for child in value.values():
-                visit(child)
-        elif isinstance(value, list):
-            for child in value:
-                visit(child)
-
-    visit(result)
-    return result
+from ..capabilities import ModelCapabilities, capabilities_for_route
+from ..model_routing import ModelRoute
+from ..structured import parse_json_text, provider_error, strict_json_schema
 
 
 class OpenAICompatibleProvider:
@@ -37,12 +20,17 @@ class OpenAICompatibleProvider:
         model: str,
         endpoint: str | None = None,
         protocol: str = "openai_chat_completions",
+        capabilities: ModelCapabilities | None = None,
+        route: ModelRoute | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.protocol = protocol
         self.endpoint = endpoint or f"{self.base_url}/chat/completions"
+        self.capabilities = capabilities or capabilities_for_route(
+            route or ModelRoute("unknown", "unknown", protocol, self.endpoint)
+        )
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
@@ -51,7 +39,7 @@ class OpenAICompatibleProvider:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.get(f"{self.base_url}/models", headers=self._headers())
         if response.status_code >= 400:
-            raise AIProviderError(f"{response.status_code}: {response.text}")
+            raise provider_error(response.status_code, response.text)
         try:
             return sorted(item["id"] for item in response.json()["data"] if item.get("id"))
         except (KeyError, TypeError, json.JSONDecodeError) as exc:
@@ -70,7 +58,8 @@ class OpenAICompatibleProvider:
                 "POST", self.endpoint, headers=self._headers(), json=payload
             ) as response:
                 if response.status_code >= 400:
-                    raise AIProviderError(f"{response.status_code}: {await response.aread()}")
+                    body = (await response.aread()).decode(errors="replace")
+                    raise provider_error(response.status_code, body)
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
                         continue
@@ -103,7 +92,8 @@ class OpenAICompatibleProvider:
                 "POST", self.endpoint, headers=self._headers(), json=payload
             ) as response:
                 if response.status_code >= 400:
-                    raise AIProviderError(f"{response.status_code}: {await response.aread()}")
+                    body = (await response.aread()).decode(errors="replace")
+                    raise provider_error(response.status_code, body)
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
                         continue
@@ -126,10 +116,9 @@ class OpenAICompatibleProvider:
     ) -> dict[str, Any]:
         if self.protocol == "openai_responses":
             return await self._structured_responses(messages, task=task, schema=schema)
-        is_deepseek = "deepseek" in self.base_url.lower()
-        response_format = {"type": "json_object"} if is_deepseek else {
+        response_format = {"type": "json_object"} if not self.capabilities.supports_json_schema else {
             "type": "json_schema",
-            "json_schema": {"name": task, "schema": schema},
+            "json_schema": {"name": task, "schema": strict_json_schema(schema)},
         }
         payload = {
             "model": self.model,
@@ -141,32 +130,26 @@ class OpenAICompatibleProvider:
             response = await client.post(
                 self.endpoint, headers=self._headers(), json=payload
             )
-            if response.status_code == 400 and "response_format" in response.text:
+            if response.status_code >= 400 and provider_error(response.status_code, response.text).category == "schema_incompatible":
                 # Many compatible endpoints support JSON mode but not JSON Schema mode.
                 payload["response_format"] = {"type": "json_object"}
                 response = await client.post(
                     self.endpoint, headers=self._headers(), json=payload
                 )
-            if response.status_code == 400 and "response_format" in response.text:
+            if response.status_code >= 400 and provider_error(response.status_code, response.text).category == "schema_incompatible":
                 # Last compatibility fallback: the agent prompt still requires JSON.
                 payload.pop("response_format", None)
                 response = await client.post(
                     f"{self.base_url}/chat/completions", headers=self._headers(), json=payload
                 )
         if response.status_code >= 400:
-            raise AIProviderError(f"{response.status_code}: {response.text}")
+            raise provider_error(response.status_code, response.text)
         try:
             body = response.json()
             choices = body.get("choices")
             if not choices:
                 raise AIProviderError("Provider returned no choices")
-            content = choices[0]["message"]["content"]
-            if isinstance(content, dict):
-                return content
-            content = content.strip()
-            if content.startswith("```"):
-                content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-            return json.loads(content)
+            return parse_json_text(choices[0]["message"]["content"])
         except AIProviderError:
             raise
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
@@ -179,22 +162,19 @@ class OpenAICompatibleProvider:
         task: str,
         schema: dict[str, Any],
     ) -> dict[str, Any]:
-        payload = {
-            "model": self.model,
-            "input": list(messages),
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": task,
-                    "schema": strict_json_schema(schema),
-                    "strict": True,
-                }
-            },
-        }
+        payload = self._responses_payload(messages, task=task, schema=schema)
         async with httpx.AsyncClient(timeout=120) as client:
             response = await client.post(self.endpoint, headers=self._headers(), json=payload)
+            if response.status_code >= 400:
+                error = provider_error(response.status_code, response.text)
+                if error.category == "schema_incompatible" and self.capabilities.supports_json_object:
+                    payload["text"]["format"] = {"type": "json_object"}
+                    response = await client.post(self.endpoint, headers=self._headers(), json=payload)
+                    if response.status_code >= 400 and provider_error(response.status_code, response.text).category == "schema_incompatible":
+                        payload.pop("text", None)
+                        response = await client.post(self.endpoint, headers=self._headers(), json=payload)
         if response.status_code >= 400:
-            raise AIProviderError(f"{response.status_code}: {response.text}")
+            raise provider_error(response.status_code, response.text)
         try:
             body = response.json()
             content = body.get("output_text")
@@ -208,8 +188,24 @@ class OpenAICompatibleProvider:
                         break
             if not isinstance(content, str):
                 raise AIProviderError("Provider returned no Responses output text")
-            return json.loads(content.strip())
+            return parse_json_text(content)
         except AIProviderError:
             raise
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             raise AIProviderError("Invalid structured Responses response") from exc
+
+    def _responses_payload(
+        self, messages: Sequence[dict[str, str]], *, task: str, schema: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {
+            "model": self.model,
+            "input": list(messages),
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": task,
+                    "schema": strict_json_schema(schema),
+                    "strict": True,
+                }
+            },
+        }

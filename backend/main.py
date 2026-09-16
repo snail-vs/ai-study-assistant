@@ -65,6 +65,21 @@ async def ai_provider_exception_handler(request: Request, exc: AIProviderError):
         request.url.path,
         str(exc),
     )
-    return error_response(request, "AI_PROVIDER_ERROR", "AI 服务调用失败", {"reason": str(exc)}, 502)
+    messages = {
+        "insufficient_balance": "当前 Provider 余额不足，请更换模型或充值后重试。",
+        "authentication": "当前 Provider API Key 无效或无权访问该模型。",
+        "rate_limited": "当前 Provider 请求过于频繁，请稍后重试。",
+        "schema_incompatible": "当前模型不支持此结构化任务，请更换模型后重试。",
+        "unsupported_protocol": "当前模型使用的 API 协议暂未支持，请更换模型。",
+        "unsupported_model": "当前模型暂未识别，请检查模型名称或更换模型。",
+        "provider_unavailable": "当前 AI Provider 暂时不可用，请稍后重试。",
+    }
+    details = {
+        "reason": str(exc),
+        "category": exc.category,
+        "statusCode": exc.status_code,
+        "providerCode": exc.provider_code,
+    }
+    return error_response(request, "AI_PROVIDER_ERROR", messages.get(exc.category, "AI 服务调用失败"), details, 502)
 
 app.include_router(router, prefix="/api/v1")
