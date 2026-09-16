@@ -114,6 +114,9 @@ def restore_active_provider(db: Session) -> None:
                 if route.task == "side_agent":
                     task_providers.setdefault("side_answer", task_provider)
                     task_providers.setdefault("gap_diagnosis", task_provider)
+                elif route.task == "knowledge_card":
+                    task_providers.setdefault("course_plan", task_provider)
+                    task_providers.setdefault("section_content", task_provider)
                 else:
                     task_providers[route.task] = task_provider
         except (EncryptionError, ValueError):
@@ -140,6 +143,9 @@ def provider_settings(db: Session) -> dict:
         if route.task == "side_agent":
             routes.setdefault("side_answer", model_ref)
             routes.setdefault("gap_diagnosis", model_ref)
+        elif route.task == "knowledge_card":
+            routes.setdefault("course_plan", model_ref)
+            routes.setdefault("section_content", model_ref)
         else:
             routes[route.task] = model_ref
     return {
@@ -342,6 +348,8 @@ async def create_learning_space(payload: CreateLearningSpaceRequest, db: Session
                 title=section.title or f"第 {index + 1} 节",
                 order_index=index,
                 content_markdown=section.content_markdown,
+                content_type=section.content_type,
+                teaching_objective=section.teaching_objective,
             )
         )
     space.root_card_id = card.id
@@ -757,7 +765,14 @@ async def accept_proposal(proposal_id: str, db: Session = Depends(get_db)):
     db.add(card)
     db.flush()
     for index, section in enumerate(draft.sections):
-        db.add(CardSection(card_id=card.id, title=section.title or f"第 {index + 1} 节", order_index=index, content_markdown=section.content_markdown))
+        db.add(CardSection(
+            card_id=card.id,
+            title=section.title or f"第 {index + 1} 节",
+            order_index=index,
+            content_markdown=section.content_markdown,
+            content_type=section.content_type,
+            teaching_objective=section.teaching_objective,
+        ))
     bridge = await bridge_agent.create(source_card.title, card.title)
     db.add(BridgeNote(card_id=source_card.id, related_card_id=card.id, content=bridge.content))
     proposal.status = "accepted"

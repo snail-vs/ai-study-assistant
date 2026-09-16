@@ -491,6 +491,9 @@ export interface components {
             orderIndex: number;
             contentMarkdown: string;
             /** @enum {string} */
+            contentType: "concept" | "practice" | "summary" | "quiz" | "interactive";
+            teachingObjective?: string | null;
+            /** @enum {string} */
             learningStatus?: "unread" | "learning" | "completed";
         };
         TeacherGuidance: {

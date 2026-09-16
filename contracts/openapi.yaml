@@ -611,12 +611,14 @@ components:
         sourceConversationId: { type: string, nullable: true }
     CardSection:
       type: object
-      required: [id, title, orderIndex, contentMarkdown]
+      required: [id, title, orderIndex, contentMarkdown, contentType]
       properties:
         id: { type: string }
         title: { type: string }
         orderIndex: { type: integer }
         contentMarkdown: { type: string }
+        contentType: { type: string, enum: [concept, practice, summary, quiz, interactive] }
+        teachingObjective: { type: string, nullable: true }
         learningStatus: { type: string, enum: [unread, learning, completed] }
     TeacherGuidance:
       type: object

@@ -16,12 +16,15 @@ class TaskDefinition:
 
 
 TASKS = (
-    TaskDefinition("knowledge_card", "生成知识卡", "generation"),
+    TaskDefinition("course_plan", "课程规划", "generation"),
+    TaskDefinition("section_content", "章节内容生成", "generation"),
     TaskDefinition("teacher_guidance", "导师引导", "teaching"),
     TaskDefinition("side_answer", "答疑回复", "conversation"),
     TaskDefinition("gap_diagnosis", "知识断层诊断", "diagnosis"),
     # Legacy route kept so existing settings can be migrated at runtime.
     TaskDefinition("side_agent", "旧版答疑与诊断", "compatibility"),
+    # Legacy route kept so existing settings can be migrated at runtime.
+    TaskDefinition("knowledge_card", "旧版知识卡生成", "compatibility"),
     TaskDefinition("bridge_note", "知识桥接", "generation"),
     TaskDefinition("conversation_title", "会话标题", "utility"),
     TaskDefinition("group_director", "多角色调度", "orchestration"),

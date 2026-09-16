@@ -43,7 +43,8 @@ const selectedModels = ref([])
 const selectedDefaultModel = ref('')
 const taskRoutes = ref({})
 const taskDefinitions = [
-  { id: 'knowledge_card', label: '生成知识卡' },
+  { id: 'course_plan', label: '课程规划' },
+  { id: 'section_content', label: '章节内容生成' },
   { id: 'teacher_guidance', label: '导师引导' },
   { id: 'side_answer', label: '答疑回复' },
   { id: 'gap_diagnosis', label: '知识断层诊断' },
@@ -97,8 +98,16 @@ function renderMessage(content) {
 }
 const isRelatedCard = computed(() => Boolean(cardNavigationContext.value))
 const keyConfigured = computed(() => Boolean(providerStatus.value.providers?.[selectedProvider.value]))
-const knowledgeCardModel = computed(() => providerStatus.value.taskRoutes?.knowledge_card
+const knowledgeCardModel = computed(() => providerStatus.value.taskRoutes?.course_plan
   || (providerStatus.value.activeModel ? `${providerStatus.value.activeProvider}:${providerStatus.value.activeModel}` : 'Mock'))
+const sectionTypeLabels = {
+  concept: '概念讲解',
+  practice: '理解练习',
+  summary: '章节总结',
+  quiz: '课堂测验',
+  interactive: '互动讲解',
+}
+const sectionTypeLabel = computed(() => sectionTypeLabels[section.value?.contentType] || '课程内容')
 const noteEditorDirty = computed(() => noteEditorMode.value !== 'list' && (
   noteEditorTitle.value !== noteEditorInitial.value.title
   || noteEditorContent.value !== noteEditorInitial.value.content
@@ -900,7 +909,7 @@ function nextSection() {
       </aside>
 
       <section class="board panel">
-        <div class="board-meta"><div class="board-location"><button v-if="!showKnowledgeSidebar" class="sidebar-toggle collapsed-toggle" title="展开学习导航" @click="toggleKnowledgeSidebar">› <span>学习导航</span></button><span>第 {{ activeSection + 1 }} 节</span></div><div class="board-actions"><span>课程内容</span><button @click="startNote">＋ 记笔记</button></div></div>
+        <div class="board-meta"><div class="board-location"><button v-if="!showKnowledgeSidebar" class="sidebar-toggle collapsed-toggle" title="展开学习导航" @click="toggleKnowledgeSidebar">› <span>学习导航</span></button><span>第 {{ activeSection + 1 }} 节</span></div><div class="board-actions"><span>{{ sectionTypeLabel }}</span><button @click="startNote">＋ 记笔记</button></div></div>
         <div class="board-scroll">
           <button v-if="isRelatedCard" class="back-main" @click="returnToMain">← 返回来源知识卡</button>
           <article class="markdown">

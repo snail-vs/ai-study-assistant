@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -27,6 +29,24 @@ class TeacherGuidanceDraft(BaseModel):
 
 class CardSectionDraft(BaseModel):
     title: str
+    content_markdown: str
+    content_type: Literal["concept", "practice", "summary", "quiz", "interactive"] = "concept"
+    teaching_objective: str | None = None
+
+
+class SectionPlanDraft(BaseModel):
+    title: str
+    teaching_objective: str
+    content_type: Literal["concept", "practice", "summary", "quiz", "interactive"] = "concept"
+
+
+class KnowledgeCardPlanDraft(BaseModel):
+    title: str
+    summary: str
+    sections: list[SectionPlanDraft]
+
+
+class SectionContentDraft(BaseModel):
     content_markdown: str
 
 

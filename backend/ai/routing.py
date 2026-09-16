@@ -4,6 +4,8 @@ TASK_PROVIDER = {
     "side_answer": "text",
     "gap_diagnosis": "text",
     "knowledge_card": "text",
+    "course_plan": "text",
+    "section_content": "text",
     "bridge_note": "text",
     "note_organizer": "text",
 }

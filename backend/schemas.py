@@ -90,6 +90,8 @@ class CardSectionResponse(ApiModel):
     title: str
     order_index: int = Field(alias="orderIndex")
     content_markdown: str = Field(alias="contentMarkdown")
+    content_type: str = Field(default="concept", alias="contentType")
+    teaching_objective: str | None = Field(default=None, alias="teachingObjective")
     learning_status: str = Field(default="unread", alias="learningStatus")
 
 
