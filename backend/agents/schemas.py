@@ -63,6 +63,7 @@ class QuizQuestion(BaseModel):
 
 
 class QuizAnswerKey(BaseModel):
+    question_id: str
     answer: str | bool | None = None
     explanation: str = ""
     reference_answer: str | None = None
@@ -73,7 +74,7 @@ class QuizDraft(BaseModel):
     title: str = "理解检查"
     objective: str
     questions: list[QuizQuestion]
-    answer_key: dict[str, QuizAnswerKey]
+    answer_key: list[QuizAnswerKey]
 
 
 class ShortAnswerEvaluation(BaseModel):

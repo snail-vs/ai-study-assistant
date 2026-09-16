@@ -686,7 +686,7 @@ async def generate_section_quiz(card_id: str, section_id: str, db: Session = Dep
             ensure_ascii=False,
         )
         activity.answer_key_json = json.dumps(
-            {key: value.model_dump(mode="json", by_alias=True) for key, value in draft.answer_key.items()},
+            {item.question_id: item.model_dump(mode="json", by_alias=True) for item in draft.answer_key},
             ensure_ascii=False,
         )
         activity.status = "ready"
