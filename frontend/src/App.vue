@@ -548,10 +548,6 @@ async function continueRecommendation(item) {
   } catch (err) { error.value = err.message } finally { loading.value = false }
 }
 
-function postponeRecommendation() {
-  selectedRecommendation.value = null
-}
-
 async function deleteRecommendation(item) {
   try {
     await request(`/proposals/${item.proposalId || item.id}/reject`, { method: 'POST' })
@@ -717,7 +713,7 @@ function nextSection() {
         <div class="recommendation-modal-head"><div><span class="recommendation-kicker">学习建议</span><h3>{{ selectedRecommendation.title }}</h3></div><button @click="selectedRecommendation = null">×</button></div>
         <p>{{ selectedRecommendation.reason }}</p>
         <div class="recommendation-source">来自：当前知识卡 · {{ section?.title }}</div>
-        <div class="recommendation-actions"><button class="secondary" @click="postponeRecommendation">暂不处理</button><button class="danger" @click="deleteRecommendation(selectedRecommendation)">删除推荐</button><button class="secondary" @click="continueRecommendation(selectedRecommendation)">继续讨论</button><button class="primary" @click="acceptProposal(selectedRecommendation)">创建关联知识卡</button></div>
+        <div class="recommendation-actions"><button class="danger" @click="deleteRecommendation(selectedRecommendation)">删除推荐</button><button class="secondary" @click="continueRecommendation(selectedRecommendation)">继续讨论</button><button class="primary" @click="acceptProposal(selectedRecommendation)">创建关联知识卡</button></div>
       </section>
     </div>
 
