@@ -71,8 +71,8 @@ bridge_agent = BridgeAgent(gateway)
 provider_state = {
     "active": "mock",
     "active_model": None,
-    "providers": {"deepseek": False, "opencode": False, "openrouter": False},
-    "models": {name: [] for name in ("deepseek", "opencode", "openrouter")},
+    "providers": {"deepseek": False, "google": False, "opencode": False, "openrouter": False},
+    "models": {name: [] for name in ("deepseek", "google", "opencode", "openrouter")},
 }
 
 

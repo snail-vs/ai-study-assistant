@@ -5,6 +5,8 @@ from .model_routing import resolve_model_route
 
 PROVIDER_DEFAULTS = {
     "deepseek": ("https://api.deepseek.com", "deepseek-chat"),
+    # Gemini exposes an OpenAI-compatible endpoint.
+    "google": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash"),
     "openrouter": ("https://openrouter.ai/api/v1", "openrouter/auto"),
     "opencode": ("https://opencode.ai/zen/v1", "deepseek-v4-pro"),
 }

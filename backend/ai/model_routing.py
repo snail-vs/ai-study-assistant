@@ -19,7 +19,7 @@ class ModelRoute:
 ORIGIN_PROVIDERS = (
     OriginProviderDefinition("openai", ("gpt-",), "openai_responses"),
     OriginProviderDefinition("anthropic", ("claude-",), "anthropic_messages"),
-    OriginProviderDefinition("google", ("gemini-",), "google_generative"),
+    OriginProviderDefinition("google", ("gemini-",), "openai_chat_completions"),
     OriginProviderDefinition("deepseek", ("deepseek-",), "openai_chat_completions"),
     OriginProviderDefinition("glm", ("glm-",), "openai_chat_completions"),
     OriginProviderDefinition("qwen", ("qwen-",), "openai_chat_completions"),
