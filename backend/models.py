@@ -36,6 +36,7 @@ class KnowledgeCard(Base):
     title: Mapped[str] = mapped_column(String(200))
     card_type: Mapped[str] = mapped_column(String(20), default="root")
     status: Mapped[str] = mapped_column(String(20), default="draft")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     space: Mapped[LearningSpace] = relationship(back_populates="cards")
     sections: Mapped[list["CardSection"]] = relationship(back_populates="card", cascade="all, delete-orphan")
 

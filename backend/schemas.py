@@ -112,6 +112,7 @@ class KnowledgeCardResponse(ApiModel):
     title: str
     card_type: str = Field(alias="cardType")
     status: str
+    deleted_at: datetime | None = Field(default=None, alias="deletedAt")
     sections: list[CardSectionResponse]
 
 

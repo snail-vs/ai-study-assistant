@@ -586,8 +586,32 @@ async function openCard(target, navigationContext = null) {
 }
 
 async function openHistoryCard(spaceItem, target) {
-  await openHistory(spaceItem)
-  await openCard(target, null)
+  loading.value = true
+  error.value = ''
+  try {
+    space.value = spaceItem
+    rootCard.value = target.cardType === 'root' ? target : null
+    await openCard(target, null)
+    await loadNotes()
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    loading.value = false
+  }
+}
+
+async function deleteHomeCard(item) {
+  if (!window.confirm(`确定删除“${item.card.title}”吗？\n\n知识卡会从首页隐藏，但会话、消息、笔记和关联知识卡都会保留。`)) return
+  try {
+    await request(`/cards/${item.card.id}`, { method: 'DELETE' })
+    historyCards.value = {
+      ...historyCards.value,
+      [item.space.id]: (historyCards.value[item.space.id] || []).filter((cardItem) => cardItem.id !== item.card.id),
+    }
+    if (card.value?.id === item.card.id) goHome()
+  } catch (err) {
+    error.value = err.message
+  }
 }
 
 function openHomeCard(item) {
@@ -685,10 +709,13 @@ function nextSection() {
       </form>
       <div v-if="homeCards.length" class="history">
         <div class="history-title">我的知识卡</div>
-        <button v-for="item in homeCards" :key="item.card.id" class="history-item" @click="openHomeCard(item)">
-          <span>{{ item.card.title }}</span>
-          <small>{{ new Date(item.space.createdAt).toLocaleDateString('zh-CN') }} · 开始学习 →</small>
-        </button>
+        <div v-for="item in homeCards" :key="item.card.id" class="history-item">
+          <button class="history-open" @click="openHomeCard(item)">
+            <span>{{ item.card.title }}</span>
+            <small>{{ new Date(item.space.createdAt).toLocaleDateString('zh-CN') }} · 开始学习 →</small>
+          </button>
+          <button class="history-delete" title="删除知识卡" @click.stop="deleteHomeCard(item)">删除</button>
+        </div>
       </div>
       <p v-if="error" class="error">{{ error }}</p>
     </section>

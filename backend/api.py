@@ -25,6 +25,7 @@ from .models import (
     LearningSpace,
     Message,
     Note,
+    now,
     ProviderCredential,
     TaskModelRoute,
     DefaultModelPreference,
@@ -355,7 +356,7 @@ def list_cards(space_id: str, db: Session = Depends(get_db)):
     return list(
         db.scalars(
             select(KnowledgeCard)
-            .where(KnowledgeCard.space_id == space_id)
+            .where(KnowledgeCard.space_id == space_id, KnowledgeCard.status != "deleted")
             .order_by(KnowledgeCard.card_type, KnowledgeCard.title)
         )
     )
@@ -375,9 +376,21 @@ def create_card(space_id: str, payload: CreateKnowledgeCardRequest, db: Session 
 @router.get("/cards/{card_id}", response_model=KnowledgeCardResponse)
 def get_card(card_id: str, db: Session = Depends(get_db)):
     card = db.get(KnowledgeCard, card_id)
-    if not card:
+    if not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Knowledge card not found")
     return card
+
+
+@router.delete("/cards/{card_id}")
+def delete_card(card_id: str, db: Session = Depends(get_db)):
+    card = db.get(KnowledgeCard, card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Knowledge card not found")
+    if card.status != "deleted":
+        card.status = "deleted"
+        card.deleted_at = now()
+        db.commit()
+    return {"status": "deleted", "cardId": card_id}
 
 
 @router.get("/cards/{card_id}/sections/{section_id}/guidance", response_model=list[TeacherGuidanceResponse])
@@ -398,7 +411,7 @@ def list_teacher_guidance(card_id: str, section_id: str, db: Session = Depends(g
 async def create_section_guidance(card_id: str, section_id: str, db: Session = Depends(get_db)):
     card = db.get(KnowledgeCard, card_id)
     section = db.get(CardSection, section_id)
-    if not card or not section or section.card_id != card_id:
+    if not card or card.status == "deleted" or not section or section.card_id != card_id:
         raise HTTPException(status_code=404, detail="Card section not found")
     existing = db.scalar(
         select(TeacherGuidance)
@@ -426,7 +439,8 @@ async def create_section_guidance(card_id: str, section_id: str, db: Session = D
 
 @router.post("/cards/{card_id}/conversations", response_model=ConversationResponse, status_code=201)
 def create_conversation(card_id: str, payload: CreateConversationRequest, db: Session = Depends(get_db)):
-    if not db.get(KnowledgeCard, card_id):
+    card = db.get(KnowledgeCard, card_id)
+    if not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Knowledge card not found")
     participant_ids = payload.participant_ids or default_participants(payload.conversation_type)
     unknown = [agent_id for agent_id in participant_ids if not get_agent(agent_id)]
@@ -443,12 +457,16 @@ def create_conversation(card_id: str, payload: CreateConversationRequest, db: Se
 
 @router.get("/cards/{card_id}/conversations", response_model=list[ConversationResponse])
 def list_conversations(card_id: str, db: Session = Depends(get_db)):
+    card = db.get(KnowledgeCard, card_id)
+    if not card or card.status == "deleted":
+        raise HTTPException(status_code=404, detail="Knowledge card not found")
     return list(db.scalars(select(Conversation).where(Conversation.card_id == card_id)))
 
 
 @router.get("/cards/{card_id}/proposals", response_model=list[RelatedCardProposalResponse])
 def list_card_proposals(card_id: str, db: Session = Depends(get_db)):
-    if not db.get(KnowledgeCard, card_id):
+    card = db.get(KnowledgeCard, card_id)
+    if not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Knowledge card not found")
     return list(
         db.scalars(
@@ -464,7 +482,9 @@ def list_card_proposals(card_id: str, db: Session = Depends(get_db)):
 
 @router.get("/conversations/{conversation_id}/messages", response_model=list[MessageResponse])
 def list_messages(conversation_id: str, db: Session = Depends(get_db)):
-    if not db.get(Conversation, conversation_id):
+    conversation = db.get(Conversation, conversation_id)
+    card = db.get(KnowledgeCard, conversation.card_id) if conversation else None
+    if not conversation or not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Conversation not found")
     return list(
         db.scalars(
@@ -478,7 +498,8 @@ def list_messages(conversation_id: str, db: Session = Depends(get_db)):
 @router.post("/conversations/{conversation_id}/messages/stream")
 async def stream_message(conversation_id: str, payload: CreateMessageRequest, db: Session = Depends(get_db)) -> StreamingResponse:
     conversation = db.get(Conversation, conversation_id)
-    if not conversation:
+    card = db.get(KnowledgeCard, conversation.card_id) if conversation else None
+    if not conversation or not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     primary_agent_id = conversation.participant_ids[0] if conversation.participant_ids else (
@@ -604,7 +625,7 @@ async def accept_proposal(proposal_id: str, db: Session = Depends(get_db)):
         if card:
             return card
     source_card = db.get(KnowledgeCard, proposal.card_id)
-    if not source_card:
+    if not source_card or source_card.status == "deleted":
         raise HTTPException(status_code=404, detail="Source card not found")
     draft = await main_agent.create_card(f"生成关联知识卡：{proposal.title}\n学习原因：{proposal.reason}")
     card = KnowledgeCard(
@@ -666,7 +687,8 @@ def reject_proposal(proposal_id: str, db: Session = Depends(get_db)):
 
 @router.post("/cards/{card_id}/notes", response_model=NoteResponse, status_code=201)
 def create_note(card_id: str, payload: CreateNoteRequest, db: Session = Depends(get_db)):
-    if not db.get(KnowledgeCard, card_id):
+    card = db.get(KnowledgeCard, card_id)
+    if not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Knowledge card not found")
     values = payload.model_dump()
     values["title"] = values.get("title") or values["content"].splitlines()[0][:200] or "未命名笔记"
@@ -679,6 +701,9 @@ def create_note(card_id: str, payload: CreateNoteRequest, db: Session = Depends(
 
 @router.get("/cards/{card_id}/notes", response_model=list[NoteResponse])
 def list_notes(card_id: str, db: Session = Depends(get_db)):
+    card = db.get(KnowledgeCard, card_id)
+    if not card or card.status == "deleted":
+        raise HTTPException(status_code=404, detail="Knowledge card not found")
     return list(db.scalars(select(Note).where(Note.card_id == card_id).order_by(Note.updated_at.desc())))
 
 

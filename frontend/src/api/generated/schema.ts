@@ -166,7 +166,7 @@ export interface paths {
         get: operations["getKnowledgeCard"];
         put?: never;
         post?: never;
-        delete?: never;
+        delete: operations["deleteKnowledgeCard"];
         options?: never;
         head?: never;
         patch?: never;
@@ -469,7 +469,9 @@ export interface components {
             /** @enum {string} */
             cardType: "root" | "related";
             /** @enum {string} */
-            status: "draft" | "active" | "completed";
+            status: "draft" | "active" | "completed" | "deleted";
+            /** Format: date-time */
+            deletedAt?: string | null;
             sections: components["schemas"]["CardSection"][];
         };
         CreateKnowledgeCardRequest: {
@@ -925,6 +927,32 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    deleteKnowledgeCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cardId: components["parameters"]["CardId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Knowledge card soft-deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "deleted";
+                        cardId: string;
+                    };
+                };
+            };
         };
     };
     listKnowledgeCards: {

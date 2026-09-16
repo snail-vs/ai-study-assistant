@@ -188,6 +188,19 @@ paths:
                 $ref: '#/components/schemas/KnowledgeCard'
         '404':
           $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteKnowledgeCard
+      responses:
+        '200':
+          description: Knowledge card soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, cardId]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  cardId: { type: string }
   /learning-spaces/{spaceId}/cards:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
@@ -582,7 +595,8 @@ components:
         sourceConversationId: { type: string, nullable: true }
         title: { type: string }
         cardType: { type: string, enum: [root, related] }
-        status: { type: string, enum: [draft, active, completed] }
+        status: { type: string, enum: [draft, active, completed, deleted] }
+        deletedAt: { type: string, format: date-time, nullable: true }
         sections:
           type: array
           items: { $ref: '#/components/schemas/CardSection' }
