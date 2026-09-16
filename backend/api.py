@@ -622,8 +622,21 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                     yield f"event: guidance.failed\ndata: {json.dumps({'code': 'TEACHER_GUIDANCE_FAILED', 'message': str(exc)}, ensure_ascii=False)}\n\n"
 
             yield f"event: run.phase\ndata: {json.dumps({'phase': 'diagnosing', 'label': '正在分析你的知识断层'}, ensure_ascii=False)}\n\n"
-            diagnosis = await side_agent.diagnose(payload.content)
-            if diagnosis.diagnosis.has_knowledge_gap:
+            diagnosis = await side_agent.diagnose(
+                payload.content,
+                context=(
+                    f"知识卡：{source_card.title}\n章节：{section.title}\n白板内容：{section.content_markdown}"
+                    if section and source_card else ""
+                ),
+            )
+            logger.info(
+                "side-agent diagnosis: conversation_id=%s has_knowledge_gap=%s missing_topics=%s proposal=%s",
+                conversation.id,
+                diagnosis.diagnosis.has_knowledge_gap,
+                diagnosis.diagnosis.missing_topics,
+                diagnosis.proposal.title if diagnosis.proposal else None,
+            )
+            if diagnosis.diagnosis.has_knowledge_gap or diagnosis.proposal:
                 yield f"event: diagnosis.updated\ndata: {json.dumps(diagnosis.diagnosis.model_dump(by_alias=True), ensure_ascii=False)}\n\n"
                 if diagnosis.proposal:
                     yield f"event: run.phase\ndata: {json.dumps({'phase': 'recommending', 'label': '正在整理相关学习建议'}, ensure_ascii=False)}\n\n"
