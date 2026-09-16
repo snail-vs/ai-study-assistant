@@ -474,9 +474,25 @@ async function loadConversationMessages(conversation) {
   }))
   const activeRun = await request(`/conversations/${conversation.id}/runs/active`)
   if (version !== conversationLoadVersion || activeConversation.value?.id !== conversation.id) return
-  sideRun.value = activeRun
-    ? { active: true, phase: activeRun.phase || 'waiting', label: activeRun.phase === 'guiding' ? '主线老师正在总结引导' : 'AI 正在处理中' }
-    : { active: false, phase: '', label: '' }
+  if (activeRun) {
+    sideRun.value = {
+      active: true,
+      phase: activeRun.phase || 'waiting',
+      label: activeRun.phase === 'guiding' ? '主线老师正在总结引导' : 'AI 正在处理中',
+    }
+    if (!messages.value.some((message) => message.pending)) {
+      messages.value.push({
+        role: 'assistant',
+        content: '',
+        pending: true,
+        senderId: 'side_tutor',
+        senderName: '旁支助教',
+        senderRole: 'assistant',
+      })
+    }
+  } else {
+    sideRun.value = { active: false, phase: '', label: '' }
+  }
 }
 
 async function sendMessage(text = input.value) {
