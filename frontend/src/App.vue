@@ -77,6 +77,9 @@ onUnmounted(() => stopChatResize())
 
 const section = computed(() => card.value?.sections?.[activeSection.value] || null)
 const renderedContent = computed(() => md.render(section.value?.contentMarkdown || '本节内容正在生成。'))
+function renderMessage(content) {
+  return md.render(content || '')
+}
 const isRelatedCard = computed(() => Boolean(cardNavigationContext.value))
 const keyConfigured = computed(() => Boolean(providerStatus.value.providers?.[selectedProvider.value]))
 const knowledgeCardModel = computed(() => providerStatus.value.taskRoutes?.knowledge_card
@@ -836,7 +839,11 @@ function nextSection() {
           </div>
         </div>
         <div class="messages">
-          <div v-for="(message, index) in messages" :key="index" class="message" :class="[message.role, { pending: message.pending }]"><span>{{ message.senderName || (message.role === 'user' ? '你' : 'AI') }}</span><i v-if="message.pending" class="typing-dots"><b></b><b></b><b></b></i>{{ message.content }}</div>
+          <div v-for="(message, index) in messages" :key="index" class="message" :class="[message.role, { pending: message.pending }]">
+            <span>{{ message.senderName || (message.role === 'user' ? '你' : 'AI') }}</span><i v-if="message.pending" class="typing-dots"><b></b><b></b><b></b></i>
+            <div v-if="message.role === 'assistant'" class="message-markdown" v-html="renderMessage(message.content)"></div>
+            <div v-else class="message-plain">{{ message.content }}</div>
+          </div>
           <div v-if="!messages.length" class="chat-empty">从当前章节提出一个问题，开始旁支探索。</div>
           <div v-if="proposal" class="proposal-card">
             <div class="proposal-kicker">检测到一个知识断层</div>
