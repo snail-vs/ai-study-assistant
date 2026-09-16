@@ -87,3 +87,4 @@ button { cursor: pointer; }
 .recommendation-actions .danger { color: #e8a1a1; background: transparent; border: 1px solid #75414d; }
 .recommendation-actions .primary { color: #0c1717; background: #74d2b4; border: 0; font-weight: 700; }
 .teacher-guidance.collapsed .teacher-guidance-head { border-bottom: 0; }
+.related-card { display: block; width: 100%; padding: 10px; border: 1px solid #263f4a; border-radius: 7px; background: #13232d; color: #b8cbd0; text-align: left; font-size: 12px; line-height: 1.45; }.related-card span { color: #6fae9f; margin-right: 8px; }.related-card:hover { border-color: #427467; background: #18302f; color: #e8fff7; }.related-card.active { border-color: #4b806f; background: #1b3b3b; color: #e8fff7; }
