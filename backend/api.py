@@ -564,35 +564,38 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         db.add(assistant)
         db.commit()
         try:
+            # 每次旁支回答后都由主线老师做一次归纳，帮助学生回到当前章节。
+            # 这一步不依赖知识断层诊断；诊断只负责后续的推荐知识卡。
+            section = db.get(CardSection, conversation.section_id) if conversation.section_id else None
+            source_card = db.get(KnowledgeCard, conversation.card_id) if section else None
+            if section and source_card and section.card_id == conversation.card_id:
+                try:
+                    yield f"event: run.phase\ndata: {json.dumps({'phase': 'guiding', 'label': '主线老师正在总结引导'}, ensure_ascii=False)}\n\n"
+                    guidance_draft = await teacher_agent.create_side_followup(
+                        source_card.title,
+                        section.title,
+                        section.content_markdown,
+                        payload.content,
+                        "".join(response_parts),
+                    )
+                    guidance = TeacherGuidance(
+                        card_id=conversation.card_id,
+                        section_id=section.id,
+                        source_conversation_id=conversation.id,
+                        trigger="side_question",
+                        content=guidance_draft.content,
+                    )
+                    db.add(guidance)
+                    db.commit()
+                    db.refresh(guidance)
+                    yield f"event: guidance.updated\ndata: {json.dumps(TeacherGuidanceResponse.model_validate(guidance).model_dump(by_alias=True), default=str, ensure_ascii=False)}\n\n"
+                except Exception as exc:
+                    yield f"event: run.failed\ndata: {json.dumps({'code': 'TEACHER_GUIDANCE_FAILED', 'message': str(exc)}, ensure_ascii=False)}\n\n"
+
             yield f"event: run.phase\ndata: {json.dumps({'phase': 'diagnosing', 'label': '正在分析你的知识断层'}, ensure_ascii=False)}\n\n"
             diagnosis = await side_agent.diagnose(payload.content)
             if diagnosis.diagnosis.has_knowledge_gap:
                 yield f"event: diagnosis.updated\ndata: {json.dumps(diagnosis.diagnosis.model_dump(by_alias=True), ensure_ascii=False)}\n\n"
-                section = db.get(CardSection, conversation.section_id) if conversation.section_id else None
-                source_card = db.get(KnowledgeCard, conversation.card_id) if section else None
-                if section and source_card and section.card_id == conversation.card_id:
-                    try:
-                        yield f"event: run.phase\ndata: {json.dumps({'phase': 'guiding', 'label': '老师正在补充学习引导'}, ensure_ascii=False)}\n\n"
-                        guidance_draft = await teacher_agent.create_side_followup(
-                            source_card.title,
-                            section.title,
-                            section.content_markdown,
-                            payload.content,
-                            "".join(response_parts),
-                        )
-                        guidance = TeacherGuidance(
-                            card_id=conversation.card_id,
-                            section_id=section.id,
-                            source_conversation_id=conversation.id,
-                            trigger="side_question",
-                            content=guidance_draft.content,
-                        )
-                        db.add(guidance)
-                        db.commit()
-                        db.refresh(guidance)
-                        yield f"event: guidance.updated\ndata: {json.dumps(TeacherGuidanceResponse.model_validate(guidance).model_dump(by_alias=True), default=str, ensure_ascii=False)}\n\n"
-                    except Exception as exc:
-                        yield f"event: run.failed\ndata: {json.dumps({'code': 'TEACHER_GUIDANCE_FAILED', 'message': str(exc)}, ensure_ascii=False)}\n\n"
                 if diagnosis.proposal:
                     yield f"event: run.phase\ndata: {json.dumps({'phase': 'recommending', 'label': '正在整理相关学习建议'}, ensure_ascii=False)}\n\n"
                     proposal = diagnosis.proposal.model_dump()
