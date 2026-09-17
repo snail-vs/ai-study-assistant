@@ -6,6 +6,48 @@ info:
 servers:
   - url: /api/v1
 paths:
+  /auth/register:
+    post:
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Registered and signed in
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthUser' }
+  /auth/login:
+    post:
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Signed in
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthUser' }
+  /auth/logout:
+    post:
+      operationId: logout
+      responses:
+        '204': { description: Signed out }
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthUser' }
   /settings/providers:
     get:
       operationId: getProviderSettings
@@ -1016,6 +1058,25 @@ components:
         sourceType: { type: string, enum: [manual, saved_message] }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    RegisterRequest:
+      type: object
+      required: [username, password, inviteCode]
+      properties:
+        username: { type: string, minLength: 3, maxLength: 100 }
+        password: { type: string, minLength: 8, maxLength: 200 }
+        inviteCode: { type: string, minLength: 1, maxLength: 200 }
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, maxLength: 100 }
+        password: { type: string, minLength: 1, maxLength: 200 }
+    AuthUser:
+      type: object
+      required: [id, username]
+      properties:
+        id: { type: string }
+        username: { type: string }
     ErrorResponse:
       type: object
       required: [error]

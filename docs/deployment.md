@@ -58,3 +58,22 @@ GitOps 鉴权和触发语法即可。
 如果不需要带开发数据，删除生产 PVC 中的数据库文件后重新启动即可获得空库。
 不要在生产容器启动命令中执行 `Base.metadata.create_all`，生产结构只由 Alembic 管理。
 
+## 用户注册
+
+公网版本要求登录。先在后端容器或挂载相同数据库的管理环境中生成邀请码：
+
+```bash
+uv run --project backend python -m backend.scripts.create_invite
+```
+
+命令会只输出一次明文邀请码，数据库保存的是哈希值。用户使用邀请码注册
+后，服务端通过 HttpOnly Session Cookie 保持登录状态。生产环境建议设置：
+
+```env
+STUDYCENTER_COOKIE_SECURE=true
+STUDYCENTER_SESSION_DAYS=30
+```
+
+首次注册用户会接管认证功能上线前创建的开发数据；后续用户只能访问自己
+拥有的学习空间及其下属卡片、会话、活动和笔记。Provider Key、默认模型和
+任务模型路由也按用户保存。

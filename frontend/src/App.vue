@@ -3,6 +3,13 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 
 const base = '/api/v1'
+const authChecked = ref(false)
+const authUser = ref(null)
+const authMode = ref('login')
+const authUsername = ref('')
+const authPassword = ref('')
+const authInviteCode = ref('')
+const authLoading = ref(false)
 const goal = ref('')
 const history = ref([])
 const historyCards = ref({})
@@ -89,8 +96,12 @@ const md = new MarkdownIt({ html: false, breaks: false, linkify: true })
 
 onMounted(async () => {
   window.addEventListener('popstate', restoreStudyRoute)
-  await Promise.all([loadHistory(), loadProviderSettings()])
-  await restoreStudyRoute()
+  await checkAuth()
+  if (authUser.value) {
+    await Promise.all([loadHistory(), loadProviderSettings()])
+    await restoreStudyRoute()
+  }
+  authChecked.value = true
 })
 onUnmounted(() => {
   stopChatResize()
@@ -260,11 +271,46 @@ function handleComposerKeydown(event) {
 async function request(path, options = {}) {
   const response = await fetch(`${base}${path}`, {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    credentials: 'same-origin',
     ...options,
   })
   const body = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(body?.error?.message || body?.detail || body?.error?.details?.reason || '请求失败')
   return body
+}
+
+async function checkAuth() {
+  try {
+    authUser.value = await request('/auth/me')
+  } catch (_) {
+    authUser.value = null
+  }
+}
+
+async function submitAuth() {
+  authLoading.value = true
+  error.value = ''
+  try {
+    const path = authMode.value === 'login' ? '/auth/login' : '/auth/register'
+    const body = authMode.value === 'login'
+      ? { username: authUsername.value, password: authPassword.value }
+      : { username: authUsername.value, password: authPassword.value, inviteCode: authInviteCode.value }
+    authUser.value = await request(path, { method: 'POST', body: JSON.stringify(body) })
+    authPassword.value = ''
+    authInviteCode.value = ''
+    await Promise.all([loadHistory(), loadProviderSettings()])
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    authLoading.value = false
+  }
+}
+
+async function logout() {
+  await request('/auth/logout', { method: 'POST' }).catch(() => {})
+  authUser.value = null
+  space.value = null
+  history.value = []
 }
 
 async function persistLearningRuntime(eventType = 'navigation') {
@@ -1054,6 +1100,24 @@ function nextSection() {
 
 <template>
   <main class="shell" :class="`theme-${theme}`">
+    <section v-if="authChecked && !authUser" class="auth-screen">
+      <div class="auth-card">
+        <div class="eyebrow">STUDYCENTER</div>
+        <h1>{{ authMode === 'login' ? '欢迎回来' : '创建学习账号' }}</h1>
+        <p>{{ authMode === 'login' ? '登录后继续你的学习空间。' : '使用邀请码加入 StudyCenter。' }}</p>
+        <form @submit.prevent="submitAuth">
+          <label>用户名<input v-model="authUsername" autocomplete="username" placeholder="用户名" required /></label>
+          <label>密码<input v-model="authPassword" type="password" autocomplete="current-password" placeholder="至少 8 位" required /></label>
+          <label v-if="authMode === 'register'">邀请码<input v-model="authInviteCode" placeholder="输入邀请码" required /></label>
+          <button class="primary auth-submit" :disabled="authLoading">{{ authLoading ? '处理中…' : authMode === 'login' ? '登录' : '注册并登录' }}</button>
+        </form>
+        <p v-if="error" class="error">{{ error }}</p>
+        <button class="auth-switch" @click="authMode = authMode === 'login' ? 'register' : 'login'; error = ''">
+          {{ authMode === 'login' ? '还没有账号？使用邀请码注册' : '已有账号？返回登录' }}
+        </button>
+      </div>
+    </section>
+    <template v-else-if="authUser">
     <header class="topbar">
       <button class="brand" @click="goHome" title="返回首页">Study<span>Center</span></button>
       <div v-if="space" class="crumb">学习空间 / {{ card?.title }} / {{ section?.title || '未开始' }}</div>
@@ -1061,6 +1125,7 @@ function nextSection() {
       <button class="notes-button" @click="openNotes">笔记</button>
       <button class="theme-button" @click="toggleTheme" :title="theme === 'light' ? '切换到深色主题' : '切换到浅色主题'">{{ theme === 'light' ? '深色' : '浅色' }}</button>
       <button class="settings-button" @click="openSettings">设置</button>
+      <button class="settings-button" @click="logout">退出</button>
     </header>
 
     <section v-if="!space" class="welcome">
@@ -1272,5 +1337,6 @@ function nextSection() {
         </form>
       </aside>
     </section>
+    </template>
   </main>
 </template>

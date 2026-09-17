@@ -88,8 +88,10 @@ from .schemas import (
     TeacherGuidanceResponse,
 )
 from .security.encryption import EncryptionError, decrypt_secret, encrypt_secret
+from .security.auth import require_current_user, current_user_id
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_current_user)])
+public_router = APIRouter()
 logger = logging.getLogger("studycenter.api")
 gateway = AIGateway()
 side_agent = SideAgent(gateway)
@@ -141,11 +143,11 @@ def chatgpt_credential(row: ProviderCredential | None) -> ChatGptCredential | No
         return None
 
 
-def persist_chatgpt_token(credential: ChatGptCredential) -> None:
+def persist_chatgpt_token(user_id: str, credential: ChatGptCredential) -> None:
     """Persist a rotated OAuth token from the provider's refresh callback."""
     db = SessionLocal()
     try:
-        row = db.get(ProviderCredential, CHATGPT_PROVIDER)
+        row = db.get(ProviderCredential, (user_id, CHATGPT_PROVIDER))
         if row is None:
             return
         apply_chatgpt_credential(row, credential)
@@ -161,7 +163,7 @@ def build_provider(provider_name: str, model: str | None, row: ProviderCredentia
             "",
             model,
             oauth=chatgpt_credential(row),
-            on_token_refresh=persist_chatgpt_token,
+            on_token_refresh=(lambda credential: persist_chatgpt_token(row.user_id, credential)) if row else None,
         )
     if row is None:
         raise ValueError(f"Provider is not configured: {provider_name}")
@@ -169,30 +171,78 @@ def build_provider(provider_name: str, model: str | None, row: ProviderCredentia
     return create_named_text_provider(provider_name, api_key, model)
 
 
-def restore_active_provider(db: Session) -> None:
-    preference = db.get(DefaultModelPreference, 1)
-    credential = db.get(ProviderCredential, preference.provider_name) if preference else None
+def owned_space(db: Session, space_id: str) -> LearningSpace:
+    space = db.scalar(
+        select(LearningSpace).where(
+            LearningSpace.id == space_id,
+            LearningSpace.user_id == current_user_id(),
+        )
+    )
+    if not space:
+        raise HTTPException(status_code=404, detail="Learning space not found")
+    return space
+
+
+def owned_card(db: Session, card_id: str) -> KnowledgeCard:
+    card = db.scalar(
+        select(KnowledgeCard)
+        .join(LearningSpace, KnowledgeCard.space_id == LearningSpace.id)
+        .where(KnowledgeCard.id == card_id, LearningSpace.user_id == current_user_id())
+    )
+    if not card:
+        raise HTTPException(status_code=404, detail="Knowledge card not found")
+    return card
+
+
+def owned_conversation(db: Session, conversation_id: str) -> Conversation:
+    conversation = db.scalar(
+        select(Conversation)
+        .join(KnowledgeCard, Conversation.card_id == KnowledgeCard.id)
+        .join(LearningSpace, KnowledgeCard.space_id == LearningSpace.id)
+        .where(Conversation.id == conversation_id, LearningSpace.user_id == current_user_id())
+    )
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return conversation
+
+
+def restore_active_provider(db: Session, user_id: str | None = None) -> AIGateway:
+    user_id = user_id or current_user_id()
+    preference = db.scalar(select(DefaultModelPreference).where(DefaultModelPreference.user_id == user_id))
+    credential = (
+        db.get(ProviderCredential, (user_id, preference.provider_name))
+        if preference
+        else None
+    )
     if credential is None:
-        credential = db.scalar(select(ProviderCredential).where(ProviderCredential.is_active.is_(True)))
+        credential = db.scalar(
+            select(ProviderCredential).where(
+                ProviderCredential.user_id == user_id,
+                ProviderCredential.is_active.is_(True),
+            )
+        )
     if not credential:
-        gateway.configure(MockTextProvider())
+        user_gateway = AIGateway(MockTextProvider())
         provider_state["active"] = "mock"
         provider_state["active_model"] = None
-        return
+        return user_gateway
     default_model = preference.model_id if preference and preference.provider_name == credential.provider_name else credential.active_model
     try:
         default_provider = build_provider(credential.provider_name, default_model, credential)
     except EncryptionError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     task_providers = {}
-    routes = list(db.scalars(select(TaskModelRoute)))
+    routes = list(db.scalars(select(TaskModelRoute).where(TaskModelRoute.user_id == user_id)))
     if not routes:
         # Compatibility with task routes saved before routes became global.
         routes = [
-            TaskModelRoute(task=task, provider_name=credential.provider_name, model_id=model)
+            TaskModelRoute(user_id=user_id, task=task, provider_name=credential.provider_name, model_id=model)
             for task, model in json.loads(credential.task_routes_json or "{}").items()
         ]
-    credentials = {item.provider_name: item for item in db.scalars(select(ProviderCredential))}
+    credentials = {
+        item.provider_name: item
+        for item in db.scalars(select(ProviderCredential).where(ProviderCredential.user_id == user_id))
+    }
     for route in routes:
         route_credential = credentials.get(route.provider_name)
         if route.task not in TASK_BY_ID or not route_credential:
@@ -211,24 +261,27 @@ def restore_active_provider(db: Session) -> None:
                     task_providers[route.task] = task_provider
         except (EncryptionError, ValueError):
             continue
-    gateway.configure(default_provider, task_providers)
+    user_gateway = AIGateway()
+    user_gateway.configure(default_provider, task_providers)
     provider_state["active"] = credential.provider_name
     provider_state["active_model"] = default_model
+    return user_gateway
 
 
 def provider_settings(db: Session) -> dict:
-    credentials = list(db.scalars(select(ProviderCredential)))
+    user_id = current_user_id()
+    credentials = list(db.scalars(select(ProviderCredential).where(ProviderCredential.user_id == user_id)))
     providers = {name: False for name in provider_state["providers"]}
     models = {name: [] for name in provider_state["providers"]}
-    preference = db.get(DefaultModelPreference, 1)
-    active = db.get(ProviderCredential, preference.provider_name) if preference else None
+    preference = db.scalar(select(DefaultModelPreference).where(DefaultModelPreference.user_id == user_id))
+    active = db.get(ProviderCredential, (user_id, preference.provider_name)) if preference else None
     if active is None:
-        active = db.scalar(select(ProviderCredential).where(ProviderCredential.is_active.is_(True)))
+        active = db.scalar(select(ProviderCredential).where(ProviderCredential.user_id == user_id, ProviderCredential.is_active.is_(True)))
     for credential in credentials:
         providers[credential.provider_name] = True
         models[credential.provider_name] = json.loads(credential.models_json)
     routes = {}
-    for route in db.scalars(select(TaskModelRoute)):
+    for route in db.scalars(select(TaskModelRoute).where(TaskModelRoute.user_id == user_id)):
         model_ref = f"{route.provider_name}:{route.model_id}"
         if route.task == "side_agent":
             routes.setdefault("side_answer", model_ref)
@@ -248,7 +301,12 @@ def provider_settings(db: Session) -> dict:
 
 
 def validate_task_routes(routes: dict[str, str], db: Session) -> None:
-    credentials = {item.provider_name: item for item in db.scalars(select(ProviderCredential))}
+    credentials = {
+        item.provider_name: item
+        for item in db.scalars(
+            select(ProviderCredential).where(ProviderCredential.user_id == current_user_id())
+        )
+    }
     for task, model_ref in routes.items():
         if task not in TASK_BY_ID:
             raise HTTPException(status_code=400, detail=f"Unknown task route: {task}")
@@ -262,10 +320,11 @@ def validate_task_routes(routes: dict[str, str], db: Session) -> None:
 
 def save_task_routes(routes: dict[str, str], db: Session) -> None:
     validate_task_routes(routes, db)
-    existing = {route.task: route for route in db.scalars(select(TaskModelRoute))}
+    user_id = current_user_id()
+    existing = {route.task: route for route in db.scalars(select(TaskModelRoute).where(TaskModelRoute.user_id == user_id))}
     for task, model_ref in routes.items():
         provider_name, _, model_id = model_ref.partition(":")
-        route = existing.get(task) or TaskModelRoute(task=task)
+        route = existing.get(task) or TaskModelRoute(user_id=user_id, task=task)
         route.provider_name = provider_name
         route.model_id = model_id
         db.add(route)
@@ -283,14 +342,14 @@ def get_provider_settings(db: Session = Depends(get_db)):
 @router.post("/settings/providers/{provider_name}/models", response_model=DiscoverModelsResponse)
 async def discover_models(provider_name: str, payload: DiscoverModelsRequest, db: Session = Depends(get_db)):
     if provider_name == CHATGPT_PROVIDER:
-        credential = db.get(ProviderCredential, CHATGPT_PROVIDER)
+        credential = db.get(ProviderCredential, (current_user_id(), CHATGPT_PROVIDER))
         if credential is None or credential.auth_type != "oauth":
             raise HTTPException(status_code=400, detail="请先完成 ChatGPT 设备码登录")
         provider = create_named_text_provider(provider_name, "")
         return {"models": await provider.list_models()}
     api_key = payload.api_key
     if not api_key:
-        credential = db.get(ProviderCredential, provider_name)
+        credential = db.get(ProviderCredential, (current_user_id(), provider_name))
         if not credential:
             raise HTTPException(status_code=400, detail="Provider is not configured")
         try:
@@ -309,10 +368,11 @@ async def discover_models(provider_name: str, payload: DiscoverModelsRequest, db
 
 @router.put("/settings/providers/{provider_name}", response_model=ProviderSettingsResponse)
 def configure_provider(provider_name: str, payload: ConfigureProviderRequest, db: Session = Depends(get_db)):
+    user_id = current_user_id()
     models = list(dict.fromkeys(payload.models))
     if payload.default_model is not None and payload.default_model not in models:
         raise HTTPException(status_code=400, detail="Default model must be one of the selected models")
-    credential = db.get(ProviderCredential, provider_name)
+    credential = db.get(ProviderCredential, (user_id, provider_name))
     ciphertext: str | None = None
     nonce: str | None = None
     if provider_name == CHATGPT_PROVIDER:
@@ -324,7 +384,7 @@ def configure_provider(provider_name: str, payload: ConfigureProviderRequest, db
                 "",
                 payload.default_model,
                 oauth=chatgpt_credential(credential),
-                on_token_refresh=persist_chatgpt_token,
+                on_token_refresh=lambda token: persist_chatgpt_token(user_id, token),
             )
         except (ValueError, EncryptionError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -345,7 +405,7 @@ def configure_provider(provider_name: str, payload: ConfigureProviderRequest, db
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     gateway.configure(provider)
     if credential is None:
-        credential = ProviderCredential(provider_name=provider_name, api_key_ciphertext="", api_key_nonce="")
+        credential = ProviderCredential(user_id=user_id, provider_name=provider_name)
         db.add(credential)
     if ciphertext is not None:
         credential.api_key_ciphertext = ciphertext
@@ -357,7 +417,7 @@ def configure_provider(provider_name: str, payload: ConfigureProviderRequest, db
         db.flush()
         save_task_routes(payload.task_routes, db)
     credential.is_active = True
-    for other in db.scalars(select(ProviderCredential).where(ProviderCredential.provider_name != provider_name)):
+    for other in db.scalars(select(ProviderCredential).where(ProviderCredential.user_id == user_id, ProviderCredential.provider_name != provider_name)):
         other.is_active = False
     db.commit()
     restore_active_provider(db)
@@ -366,22 +426,25 @@ def configure_provider(provider_name: str, payload: ConfigureProviderRequest, db
 
 @router.put("/settings/model", response_model=ProviderSettingsResponse)
 def select_model(payload: SelectModelRequest, db: Session = Depends(get_db)):
-    preference = db.get(DefaultModelPreference, 1)
-    active_credential = db.get(ProviderCredential, preference.provider_name) if preference else None
+    user_id = current_user_id()
+    preference = db.scalar(select(DefaultModelPreference).where(DefaultModelPreference.user_id == user_id))
+    active_credential = db.get(ProviderCredential, (user_id, preference.provider_name)) if preference else None
     if active_credential is None:
-        active_credential = db.scalar(select(ProviderCredential).where(ProviderCredential.is_active.is_(True)))
+        active_credential = db.scalar(select(ProviderCredential).where(ProviderCredential.user_id == user_id, ProviderCredential.is_active.is_(True)))
     active = active_credential.provider_name if active_credential else "mock"
     provider_name, separator, model_id = payload.model.partition(":")
     if separator:
         active = provider_name
-        active_credential = db.get(ProviderCredential, provider_name)
+        active_credential = db.get(ProviderCredential, (user_id, provider_name))
     else:
         model_id = payload.model
     selected_models = json.loads(active_credential.models_json or "[]") if active_credential else []
     if active == "mock" or model_id not in selected_models:
         raise HTTPException(status_code=400, detail="Model is not available for the active provider")
     restore_active_provider(db)
-    preference = preference or DefaultModelPreference(id=1)
+    if preference is None:
+        next_id = (db.scalar(select(func.max(DefaultModelPreference.id))) or 0) + 1
+        preference = DefaultModelPreference(id=next_id, user_id=user_id)
     preference.provider_name = active
     preference.model_id = model_id
     db.add(preference)
@@ -392,7 +455,7 @@ def select_model(payload: SelectModelRequest, db: Session = Depends(get_db)):
                 "",
                 model_id,
                 oauth=chatgpt_credential(active_credential),
-                on_token_refresh=persist_chatgpt_token,
+                on_token_refresh=lambda token: persist_chatgpt_token(user_id, token),
             )
         )
     else:
@@ -415,7 +478,7 @@ def get_model_routes(db: Session = Depends(get_db)):
 
 @router.put("/settings/model-routes", response_model=ProviderSettingsResponse)
 def configure_model_routes(payload: ConfigureTaskRoutesRequest, db: Session = Depends(get_db)):
-    active = db.scalar(select(ProviderCredential).where(ProviderCredential.is_active.is_(True)))
+    active = db.scalar(select(ProviderCredential).where(ProviderCredential.user_id == current_user_id(), ProviderCredential.is_active.is_(True)))
     if not active:
         raise HTTPException(status_code=400, detail="请先配置一个 AI Provider")
     save_task_routes(payload.routes, db)
@@ -428,7 +491,8 @@ def configure_model_routes(payload: ConfigureTaskRoutesRequest, db: Session = De
 def clear_provider(provider_name: str, db: Session = Depends(get_db)):
     if provider_name not in provider_state["providers"]:
         raise HTTPException(status_code=404, detail="Provider not found")
-    credential = db.get(ProviderCredential, provider_name)
+    user_id = current_user_id()
+    credential = db.get(ProviderCredential, (user_id, provider_name))
     if credential:
         was_active = credential.is_active
         db.delete(credential)
@@ -438,20 +502,20 @@ def clear_provider(provider_name: str, db: Session = Depends(get_db)):
         gateway.configure(MockTextProvider())
         provider_state["active"] = "mock"
         provider_state["active_model"] = None
-    preference = db.get(DefaultModelPreference, 1)
+    preference = db.scalar(select(DefaultModelPreference).where(DefaultModelPreference.user_id == user_id))
     if preference and preference.provider_name == provider_name:
         db.delete(preference)
     db.commit()
     return provider_settings(db)
 
 
-def save_chatgpt_login(credential: ChatGptCredential) -> None:
+def save_chatgpt_login(user_id: str, credential: ChatGptCredential) -> None:
     db = SessionLocal()
     try:
-        row = db.get(ProviderCredential, CHATGPT_PROVIDER)
+        row = db.get(ProviderCredential, (user_id, CHATGPT_PROVIDER))
         if row is None:
             row = ProviderCredential(
-                provider_name=CHATGPT_PROVIDER, api_key_ciphertext="", api_key_nonce=""
+                user_id=user_id, provider_name=CHATGPT_PROVIDER, api_key_ciphertext="", api_key_nonce=""
             )
             db.add(row)
         apply_chatgpt_credential(row, credential)
@@ -463,6 +527,7 @@ def save_chatgpt_login(credential: ChatGptCredential) -> None:
             row.active_model = selected[0] if selected else DEFAULT_CODEX_MODEL
         other_active = db.scalar(
             select(ProviderCredential).where(
+                ProviderCredential.user_id == user_id,
                 ProviderCredential.is_active.is_(True),
                 ProviderCredential.provider_name != CHATGPT_PROVIDER,
             )
@@ -474,7 +539,7 @@ def save_chatgpt_login(credential: ChatGptCredential) -> None:
         db.close()
 
 
-async def run_chatgpt_device_login(session_id: str, device) -> None:
+async def run_chatgpt_device_login(session_id: str, device, user_id: str) -> None:
     session = chatgpt_login_sessions.get(session_id)
     if session is None:
         return
@@ -485,7 +550,7 @@ async def run_chatgpt_device_login(session_id: str, device) -> None:
         session["error"] = str(exc)
         return
     try:
-        save_chatgpt_login(credential)
+        save_chatgpt_login(user_id, credential)
     except Exception as exc:  # noqa: BLE001
         session["status"] = "failed"
         session["error"] = f"凭证保存失败: {exc}"
@@ -504,6 +569,7 @@ async def chatgpt_oauth_login(payload: ChatGptLoginRequest):
             "status": "pending",
             "credential": None,
             "error": None,
+            "user_id": current_user_id(),
             "verifier": authorization.verifier,
             "state": authorization.state,
         }
@@ -512,8 +578,9 @@ async def chatgpt_oauth_login(payload: ChatGptLoginRequest):
         device = await start_device_authorization()
     except ChatGptOAuthError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    session: dict = {"method": "device_code", "status": "pending", "credential": None, "error": None}
-    session["task"] = asyncio.create_task(run_chatgpt_device_login(session_id, device))
+    user_id = current_user_id()
+    session: dict = {"method": "device_code", "status": "pending", "credential": None, "error": None, "user_id": user_id}
+    session["task"] = asyncio.create_task(run_chatgpt_device_login(session_id, device, user_id))
     chatgpt_login_sessions[session_id] = session
     return {
         "sessionId": session_id,
@@ -533,7 +600,7 @@ def chatgpt_oauth_status(payload: ChatGptLoginStatusRequest, db: Session = Depen
     if state == "done":
         credential: ChatGptCredential = session["credential"]
         chatgpt_login_sessions.pop(payload.session_id, None)
-        restore_active_provider(db)
+        restore_active_provider(db, session["user_id"])
         return {
             "state": "done",
             "accountId": credential.account_id,
@@ -569,22 +636,24 @@ async def chatgpt_oauth_complete(
         session["error"] = str(exc)
         return {"state": "failed", "error": str(exc)}
     try:
-        save_chatgpt_login(credential)
+        user_id = session.get("user_id") or current_user_id()
+        save_chatgpt_login(user_id, credential)
     except Exception as exc:  # noqa: BLE001
         session["error"] = f"凭证保存失败: {exc}"
         return {"state": "failed", "error": session["error"]}
     chatgpt_login_sessions.pop(payload.session_id, None)
-    restore_active_provider(db)
+    restore_active_provider(db, user_id)
     return {"state": "done", "accountId": credential.account_id, "expires": credential.expires_at}
 
 
 @router.post("/settings/providers/chatgpt/oauth/logout", response_model=ProviderSettingsResponse)
 def chatgpt_oauth_logout(db: Session = Depends(get_db)):
-    credential = db.get(ProviderCredential, CHATGPT_PROVIDER)
+    user_id = current_user_id()
+    credential = db.get(ProviderCredential, (user_id, CHATGPT_PROVIDER))
     if credential is not None:
         was_active = credential.is_active
         db.delete(credential)
-        preference = db.get(DefaultModelPreference, 1)
+        preference = db.scalar(select(DefaultModelPreference).where(DefaultModelPreference.user_id == user_id))
         if preference and preference.provider_name == CHATGPT_PROVIDER:
             db.delete(preference)
         db.commit()
@@ -592,11 +661,11 @@ def chatgpt_oauth_logout(db: Session = Depends(get_db)):
             gateway.configure(MockTextProvider())
             provider_state["active"] = "mock"
             provider_state["active_model"] = None
-    restore_active_provider(db)
+    restore_active_provider(db, user_id)
     return provider_settings(db)
 
 
-@router.get("/health")
+@public_router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
@@ -608,11 +677,10 @@ def list_agents():
 
 @router.post("/learning-spaces", response_model=LearningSpaceResponse, status_code=status.HTTP_201_CREATED)
 async def create_learning_space(payload: CreateLearningSpaceRequest, db: Session = Depends(get_db)):
-    restore_active_provider(db)
-    space = LearningSpace(title=payload.title, learning_goal=payload.learning_goal)
+    space = LearningSpace(user_id=current_user_id(), title=payload.title, learning_goal=payload.learning_goal)
     db.add(space)
     db.flush()
-    draft = await main_agent.create_card(payload.learning_goal)
+    draft = await MainAgent(restore_active_provider(db)).create_card(payload.learning_goal)
     card = KnowledgeCard(space_id=space.id, title=draft.title, card_type="root", status="active")
     db.add(card)
     db.flush()
@@ -635,19 +703,17 @@ async def create_learning_space(payload: CreateLearningSpaceRequest, db: Session
 
 @router.get("/learning-spaces", response_model=LearningSpaceList)
 def list_learning_spaces(db: Session = Depends(get_db)):
-    return {"items": list(db.scalars(select(LearningSpace).order_by(LearningSpace.created_at.desc())))}
+    return {"items": list(db.scalars(select(LearningSpace).where(LearningSpace.user_id == current_user_id()).order_by(LearningSpace.created_at.desc())))}
 
 
 @router.get("/learning-spaces/{space_id}", response_model=LearningSpaceResponse)
 def get_learning_space(space_id: str, db: Session = Depends(get_db)):
-    space = db.get(LearningSpace, space_id)
-    if not space:
-        raise HTTPException(status_code=404, detail="Learning space not found")
-    return space
+    return owned_space(db, space_id)
 
 
 @router.get("/learning-spaces/{space_id}/runtime", response_model=LearningRuntimeResponse | None)
 def get_learning_runtime(space_id: str, db: Session = Depends(get_db)):
+    owned_space(db, space_id)
     if not db.get(LearningSpace, space_id):
         raise HTTPException(status_code=404, detail="Learning space not found")
     return db.scalar(select(LearningRuntime).where(LearningRuntime.space_id == space_id))
@@ -659,6 +725,7 @@ def update_learning_runtime(
     payload: UpdateLearningRuntimeRequest,
     db: Session = Depends(get_db),
 ):
+    owned_space(db, space_id)
     if not db.get(LearningSpace, space_id):
         raise HTTPException(status_code=404, detail="Learning space not found")
     current_card = db.get(KnowledgeCard, payload.current_card_id)
@@ -710,6 +777,7 @@ def update_learning_runtime(
 
 @router.get("/learning-spaces/{space_id}/cards", response_model=list[KnowledgeCardResponse])
 def list_cards(space_id: str, db: Session = Depends(get_db)):
+    owned_space(db, space_id)
     if not db.get(LearningSpace, space_id):
         raise HTTPException(status_code=404, detail="Learning space not found")
     return list(
@@ -723,6 +791,7 @@ def list_cards(space_id: str, db: Session = Depends(get_db)):
 
 @router.post("/learning-spaces/{space_id}/cards", response_model=KnowledgeCardResponse, status_code=201)
 def create_card(space_id: str, payload: CreateKnowledgeCardRequest, db: Session = Depends(get_db)):
+    owned_space(db, space_id)
     if not db.get(LearningSpace, space_id):
         raise HTTPException(status_code=404, detail="Learning space not found")
     card = KnowledgeCard(space_id=space_id, **payload.model_dump())
@@ -734,7 +803,7 @@ def create_card(space_id: str, payload: CreateKnowledgeCardRequest, db: Session 
 
 @router.get("/cards/{card_id}", response_model=KnowledgeCardResponse)
 def get_card(card_id: str, db: Session = Depends(get_db)):
-    card = db.get(KnowledgeCard, card_id)
+    card = owned_card(db, card_id)
     if not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Knowledge card not found")
     return card
@@ -742,7 +811,7 @@ def get_card(card_id: str, db: Session = Depends(get_db)):
 
 @router.delete("/cards/{card_id}")
 def delete_card(card_id: str, db: Session = Depends(get_db)):
-    card = db.get(KnowledgeCard, card_id)
+    card = owned_card(db, card_id)
     if not card:
         raise HTTPException(status_code=404, detail="Knowledge card not found")
     if card.status != "deleted":
@@ -754,6 +823,7 @@ def delete_card(card_id: str, db: Session = Depends(get_db)):
 
 @router.get("/cards/{card_id}/sections/{section_id}/guidance", response_model=list[TeacherGuidanceResponse])
 def list_teacher_guidance(card_id: str, section_id: str, db: Session = Depends(get_db)):
+    owned_card(db, card_id)
     section = db.get(CardSection, section_id)
     if not section or section.card_id != card_id:
         raise HTTPException(status_code=404, detail="Card section not found")
@@ -768,6 +838,7 @@ def list_teacher_guidance(card_id: str, section_id: str, db: Session = Depends(g
 
 @router.post("/cards/{card_id}/sections/{section_id}/guidance", response_model=TeacherGuidanceResponse, status_code=201)
 async def create_section_guidance(card_id: str, section_id: str, db: Session = Depends(get_db)):
+    owned_card(db, card_id)
     card = db.get(KnowledgeCard, card_id)
     section = db.get(CardSection, section_id)
     if not card or card.status == "deleted" or not section or section.card_id != card_id:
@@ -783,7 +854,9 @@ async def create_section_guidance(card_id: str, section_id: str, db: Session = D
     )
     if existing:
         return existing
-    draft = await teacher_agent.create_section_intro(card.title, section.title, section.content_markdown)
+    draft = await TeacherAgent(restore_active_provider(db)).create_section_intro(
+        card.title, section.title, section.content_markdown
+    )
     guidance = TeacherGuidance(
         card_id=card_id,
         section_id=section_id,
@@ -798,6 +871,7 @@ async def create_section_guidance(card_id: str, section_id: str, db: Session = D
 
 @router.post("/cards/{card_id}/conversations", response_model=ConversationResponse, status_code=201)
 def create_conversation(card_id: str, payload: CreateConversationRequest, db: Session = Depends(get_db)):
+    owned_card(db, card_id)
     card = db.get(KnowledgeCard, card_id)
     if not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Knowledge card not found")
@@ -816,6 +890,7 @@ def create_conversation(card_id: str, payload: CreateConversationRequest, db: Se
 
 @router.get("/cards/{card_id}/conversations", response_model=list[ConversationResponse])
 def list_conversations(card_id: str, db: Session = Depends(get_db)):
+    owned_card(db, card_id)
     card = db.get(KnowledgeCard, card_id)
     if not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Knowledge card not found")
@@ -824,6 +899,7 @@ def list_conversations(card_id: str, db: Session = Depends(get_db)):
 
 @router.get("/cards/{card_id}/proposals", response_model=list[RelatedCardProposalResponse])
 def list_card_proposals(card_id: str, db: Session = Depends(get_db)):
+    owned_card(db, card_id)
     card = db.get(KnowledgeCard, card_id)
     if not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Knowledge card not found")
@@ -873,7 +949,12 @@ def _activity_response(activity: LearningActivity, attempt: ActivityAttempt | No
 
 
 def _get_activity(activity_id: str, db: Session) -> LearningActivity:
-    activity = db.get(LearningActivity, activity_id)
+    activity = db.scalar(
+        select(LearningActivity)
+        .join(KnowledgeCard, LearningActivity.card_id == KnowledgeCard.id)
+        .join(LearningSpace, KnowledgeCard.space_id == LearningSpace.id)
+        .where(LearningActivity.id == activity_id, LearningSpace.user_id == current_user_id())
+    )
     section = db.get(CardSection, activity.section_id) if activity else None
     card = db.get(KnowledgeCard, activity.card_id) if activity else None
     if not activity or not section or not card or card.status == "deleted":
@@ -886,6 +967,7 @@ def _get_activity(activity_id: str, db: Session) -> LearningActivity:
     response_model=list[LearningActivityResponse],
 )
 def list_section_activities(card_id: str, section_id: str, db: Session = Depends(get_db)):
+    owned_card(db, card_id)
     section = db.get(CardSection, section_id)
     card = db.get(KnowledgeCard, card_id)
     if not section or not card or section.card_id != card_id or card.status == "deleted":
@@ -906,6 +988,7 @@ def list_section_activities(card_id: str, section_id: str, db: Session = Depends
     response_model=LearningActivityResponse,
 )
 async def generate_section_quiz(card_id: str, section_id: str, db: Session = Depends(get_db)):
+    owned_card(db, card_id)
     section = db.get(CardSection, section_id)
     card = db.get(KnowledgeCard, card_id)
     if not section or not card or section.card_id != card_id or card.status == "deleted":
@@ -936,8 +1019,7 @@ async def generate_section_quiz(card_id: str, section_id: str, db: Session = Dep
         activity.generation_error = None
         db.commit()
     try:
-        restore_active_provider(db)
-        draft = await assessment_agent.generate_quiz(
+        draft = await AssessmentAgent(restore_active_provider(db)).generate_quiz(
             card.title,
             section.title,
             activity.objective or "检查本节核心内容",
@@ -984,6 +1066,7 @@ async def submit_activity_attempt(
     payload: SubmitActivityAttemptRequest,
     db: Session = Depends(get_db),
 ):
+    _get_activity(activity_id, db)
     activity = _get_activity(activity_id, db)
     if activity.status != "ready":
         raise HTTPException(status_code=409, detail="Learning activity is not ready")
@@ -999,7 +1082,7 @@ async def submit_activity_attempt(
         answer = payload.answers.get(question_id)
         question_type = question.get("type")
         if question_type == "short_answer":
-            evaluation = await assessment_agent.evaluate_short_answer(
+            evaluation = await AssessmentAgent(restore_active_provider(db)).evaluate_short_answer(
                 activity.objective or "",
                 section.content_markdown if section else "",
                 question.get("prompt", ""),
@@ -1049,8 +1132,7 @@ async def submit_activity_attempt(
 
     if card and section:
         try:
-            restore_active_provider(db)
-            guidance = await teacher_agent.create_activity_followup(
+            guidance = await TeacherAgent(restore_active_provider(db)).create_activity_followup(
                 card.title, section.title, activity.objective or "", score, diagnostic,
             )
             db.add(TeacherGuidance(
@@ -1065,8 +1147,7 @@ async def submit_activity_attempt(
             logger.exception("activity mentor follow-up failed: activity_id=%s", activity.id)
     if score < 60 and card and section:
         try:
-            restore_active_provider(db)
-            diagnosis = await side_agent.diagnose(
+            diagnosis = await SideAgent(restore_active_provider(db)).diagnose(
                 "；".join(misconceptions) or diagnostic,
                 context=f"知识卡：{card.title}\n章节：{section.title}\n课程内容：{section.content_markdown}",
             )
@@ -1087,6 +1168,7 @@ async def submit_activity_attempt(
 
 @router.get("/conversations/{conversation_id}/messages", response_model=list[MessageResponse])
 def list_messages(conversation_id: str, db: Session = Depends(get_db)):
+    owned_conversation(db, conversation_id)
     conversation = db.get(Conversation, conversation_id)
     card = db.get(KnowledgeCard, conversation.card_id) if conversation else None
     if not conversation or not card or card.status == "deleted":
@@ -1102,6 +1184,7 @@ def list_messages(conversation_id: str, db: Session = Depends(get_db)):
 
 @router.get("/conversations/{conversation_id}/runs/active", response_model=AIRunResponse | None)
 def get_active_run(conversation_id: str, db: Session = Depends(get_db)):
+    owned_conversation(db, conversation_id)
     run = db.scalar(
         select(AIRun)
         .where(AIRun.conversation_id == conversation_id, AIRun.status.in_(("queued", "running")))
@@ -1117,6 +1200,7 @@ def get_active_run(conversation_id: str, db: Session = Depends(get_db)):
 
 @router.post("/conversations/{conversation_id}/messages/stream")
 async def stream_message(conversation_id: str, payload: CreateMessageRequest, db: Session = Depends(get_db)) -> StreamingResponse:
+    owned_conversation(db, conversation_id)
     conversation = db.get(Conversation, conversation_id)
     card = db.get(KnowledgeCard, conversation.card_id) if conversation else None
     if not conversation or not card or card.status == "deleted":
@@ -1178,7 +1262,7 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         messages.extend({"role": item.role, "content": item.content} for item in history)
         response_parts: list[str] = []
         try:
-            async for delta in gateway.stream_text(messages, task="side_answer"):
+            async for delta in restore_active_provider(db).stream_text(messages, task="side_answer"):
                 response_parts.append(delta)
                 yield f"event: message.delta\ndata: {json.dumps({'messageId': message_id, 'senderId': primary_agent_id, 'delta': delta}, ensure_ascii=False)}\n\n"
         except Exception as exc:
@@ -1247,7 +1331,7 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                     yield f"event: run.phase\ndata: {json.dumps({'phase': 'guiding', 'label': '课程导师正在引导归位'}, ensure_ascii=False)}\n\n"
                     run.phase = "guiding"
                     db.commit()
-                    guidance_draft = await teacher_agent.create_side_followup(
+                    guidance_draft = await TeacherAgent(restore_active_provider(db)).create_side_followup(
                         source_card.title,
                         section.title,
                         section.content_markdown,
@@ -1277,7 +1361,7 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
             yield f"event: run.phase\ndata: {json.dumps({'phase': 'diagnosing', 'label': '正在分析你的知识断层'}, ensure_ascii=False)}\n\n"
             run.phase = "diagnosing"
             db.commit()
-            diagnosis = await side_agent.diagnose(
+            diagnosis = await SideAgent(restore_active_provider(db)).diagnose(
                 payload.content,
                 context=(
                     f"知识卡：{source_card.title}\n章节：{section.title}\n课程内容：{section.content_markdown}"
@@ -1328,6 +1412,7 @@ async def accept_proposal(proposal_id: str, db: Session = Depends(get_db)):
     proposal = db.get(RelatedCardProposal, proposal_id)
     if not proposal:
         raise HTTPException(status_code=404, detail="Proposal not found")
+    owned_card(db, proposal.card_id)
     if proposal.generated_card_id:
         card = db.get(KnowledgeCard, proposal.generated_card_id)
         if card:
@@ -1335,7 +1420,9 @@ async def accept_proposal(proposal_id: str, db: Session = Depends(get_db)):
     source_card = db.get(KnowledgeCard, proposal.card_id)
     if not source_card or source_card.status == "deleted":
         raise HTTPException(status_code=404, detail="Source card not found")
-    draft = await main_agent.create_card(f"生成学习分支知识卡：{proposal.title}\n学习原因：{proposal.reason}")
+    draft = await MainAgent(restore_active_provider(db)).create_card(
+        f"生成学习分支知识卡：{proposal.title}\n学习原因：{proposal.reason}"
+    )
     card = KnowledgeCard(
         space_id=source_card.space_id,
         parent_card_id=source_card.id,
@@ -1356,7 +1443,7 @@ async def accept_proposal(proposal_id: str, db: Session = Depends(get_db)):
             content_type=section.content_type,
             teaching_objective=section.teaching_objective,
         ))
-    bridge = await bridge_agent.create(source_card.title, card.title)
+    bridge = await BridgeAgent(restore_active_provider(db)).create(source_card.title, card.title)
     db.add(BridgeNote(card_id=source_card.id, related_card_id=card.id, content=bridge.content))
     proposal.status = "accepted"
     proposal.generated_card_id = card.id
@@ -1370,6 +1457,7 @@ def start_proposal_discussion(proposal_id: str, db: Session = Depends(get_db)):
     proposal = db.get(RelatedCardProposal, proposal_id)
     if not proposal:
         raise HTTPException(status_code=404, detail="Proposal not found")
+    owned_card(db, proposal.card_id)
     if proposal.generated_card_id:
         raise HTTPException(status_code=400, detail="Proposal has already been accepted")
     conversation = Conversation(
@@ -1395,6 +1483,7 @@ def reject_proposal(proposal_id: str, db: Session = Depends(get_db)):
     proposal = db.get(RelatedCardProposal, proposal_id)
     if not proposal:
         raise HTTPException(status_code=404, detail="Proposal not found")
+    owned_card(db, proposal.card_id)
     proposal.status = "rejected"
     db.commit()
     return {"status": "rejected", "proposalId": proposal_id}
@@ -1402,6 +1491,7 @@ def reject_proposal(proposal_id: str, db: Session = Depends(get_db)):
 
 @router.post("/cards/{card_id}/notes", response_model=NoteResponse, status_code=201)
 def create_note(card_id: str, payload: CreateNoteRequest, db: Session = Depends(get_db)):
+    owned_card(db, card_id)
     card = db.get(KnowledgeCard, card_id)
     if not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Knowledge card not found")
@@ -1416,6 +1506,7 @@ def create_note(card_id: str, payload: CreateNoteRequest, db: Session = Depends(
 
 @router.get("/cards/{card_id}/notes", response_model=list[NoteResponse])
 def list_notes(card_id: str, db: Session = Depends(get_db)):
+    owned_card(db, card_id)
     card = db.get(KnowledgeCard, card_id)
     if not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Knowledge card not found")
@@ -1424,12 +1515,23 @@ def list_notes(card_id: str, db: Session = Depends(get_db)):
 
 @router.get("/notes", response_model=list[NoteResponse])
 def list_all_notes(db: Session = Depends(get_db)):
-    return list(db.scalars(select(Note).order_by(Note.updated_at.desc())))
+    return list(db.scalars(
+        select(Note)
+        .join(KnowledgeCard, Note.card_id == KnowledgeCard.id)
+        .join(LearningSpace, KnowledgeCard.space_id == LearningSpace.id)
+        .where(LearningSpace.user_id == current_user_id())
+        .order_by(Note.updated_at.desc())
+    ))
 
 
 @router.patch("/notes/{note_id}", response_model=NoteResponse)
 def update_note(note_id: str, payload: UpdateNoteRequest, db: Session = Depends(get_db)):
-    note = db.get(Note, note_id)
+    note = db.scalar(
+        select(Note)
+        .join(KnowledgeCard, Note.card_id == KnowledgeCard.id)
+        .join(LearningSpace, KnowledgeCard.space_id == LearningSpace.id)
+        .where(Note.id == note_id, LearningSpace.user_id == current_user_id())
+    )
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
     values = payload.model_dump(exclude_unset=True)
@@ -1445,7 +1547,12 @@ def update_note(note_id: str, payload: UpdateNoteRequest, db: Session = Depends(
 
 @router.delete("/notes/{note_id}")
 def delete_note(note_id: str, db: Session = Depends(get_db)):
-    note = db.get(Note, note_id)
+    note = db.scalar(
+        select(Note)
+        .join(KnowledgeCard, Note.card_id == KnowledgeCard.id)
+        .join(LearningSpace, KnowledgeCard.space_id == LearningSpace.id)
+        .where(Note.id == note_id, LearningSpace.user_id == current_user_id())
+    )
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
     db.delete(note)

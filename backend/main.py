@@ -7,7 +7,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from .api import router
+from .api import public_router, router
+from .auth_api import router as auth_router
 from .ai.base import AIProviderError
 from . import models  # noqa: F401
 
@@ -82,4 +83,6 @@ async def ai_provider_exception_handler(request: Request, exc: AIProviderError):
     }
     return error_response(request, "AI_PROVIDER_ERROR", messages.get(exc.category, "AI 服务调用失败"), details, 502)
 
+app.include_router(public_router, prefix="/api/v1")
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")

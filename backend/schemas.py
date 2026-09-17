@@ -8,6 +8,22 @@ class ApiModel(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
+class RegisterRequest(ApiModel):
+    username: str = Field(min_length=3, max_length=100, pattern=r"^[a-zA-Z0-9_.-]+$")
+    password: str = Field(min_length=8, max_length=200)
+    invite_code: str = Field(alias="inviteCode", min_length=1, max_length=200)
+
+
+class LoginRequest(ApiModel):
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=200)
+
+
+class AuthUserResponse(ApiModel):
+    id: str
+    username: str
+
+
 class ErrorDetail(ApiModel):
     code: str
     message: str

@@ -19,6 +19,7 @@ def now() -> datetime:
 class LearningSpace(Base):
     __tablename__ = "learning_spaces"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     title: Mapped[str] = mapped_column(String(200))
     learning_goal: Mapped[str] = mapped_column(Text)
     root_card_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
@@ -217,6 +218,7 @@ class BridgeNote(Base):
 
 class ProviderCredential(Base):
     __tablename__ = "provider_credentials"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
     provider_name: Mapped[str] = mapped_column(String(50), primary_key=True)
     api_key_ciphertext: Mapped[str] = mapped_column(Text, default="")
     api_key_nonce: Mapped[str] = mapped_column(String(50), default="")
@@ -238,6 +240,7 @@ class ProviderCredential(Base):
 
 class TaskModelRoute(Base):
     __tablename__ = "task_model_routes"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
     task: Mapped[str] = mapped_column(String(80), primary_key=True)
     provider_name: Mapped[str] = mapped_column(String(50))
     model_id: Mapped[str] = mapped_column(String(200))
@@ -247,6 +250,36 @@ class TaskModelRoute(Base):
 class DefaultModelPreference(Base):
     __tablename__ = "default_model_preferences"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True)
     provider_name: Mapped[str] = mapped_column(String(50))
     model_id: Mapped[str] = mapped_column(String(200))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    username: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(300))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class InviteCode(Base):
+    __tablename__ = "invite_codes"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    max_uses: Mapped[int] = mapped_column(Integer, default=1)
+    used_count: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=now)
