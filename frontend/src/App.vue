@@ -1157,7 +1157,7 @@ function nextSection() {
     <div v-if="showSettings" class="modal-backdrop" @click.self="showSettings = false">
       <section class="settings-modal">
         <div class="settings-head"><div><div class="panel-title">模型设置</div><p>Key 会在后端加密保存，前端不会保存明文。</p></div><button @click="showSettings = false">×</button></div>
-        <label>Provider<select v-model="selectedProvider" @change="changeProvider"><option value="deepseek">DeepSeek</option><option value="google">Google Gemini</option><option value="opencode">OpenCode Zen</option><option value="openrouter">OpenRouter</option><option value="chatgpt">ChatGPT (Plus/Pro)</option></select></label>
+        <label>Provider<select v-model="selectedProvider" @change="changeProvider"><option value="deepseek">DeepSeek</option><option value="google">Google Gemini</option><option value="opencode">OpenCode Zen</option><option value="openrouter">OpenRouter</option><option value="anthropic">Anthropic</option><option value="chatgpt">ChatGPT (Plus/Pro)</option></select></label>
         <div v-if="isChatGpt" class="chatgpt-login">
           <div class="catalog-title">ChatGPT Plus/Pro 订阅登录（无需 API Key）</div>
           <div v-if="providerStatus.providers?.chatgpt" class="chatgpt-status">

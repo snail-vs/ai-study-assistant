@@ -102,8 +102,8 @@ assessment_agent = AssessmentAgent(gateway)
 provider_state = {
     "active": "mock",
     "active_model": None,
-    "providers": {"deepseek": False, "google": False, "opencode": False, "openrouter": False, "chatgpt": False},
-    "models": {name: [] for name in ("deepseek", "google", "opencode", "openrouter", "chatgpt")},
+    "providers": {"deepseek": False, "google": False, "opencode": False, "openrouter": False, "anthropic": False, "chatgpt": False},
+    "models": {name: [] for name in ("deepseek", "google", "opencode", "openrouter", "anthropic", "chatgpt")},
 }
 
 # In-flight device-code login sessions, keyed by the session id returned to the

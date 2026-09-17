@@ -2,6 +2,7 @@ from collections.abc import Callable
 
 from .config import load_provider_config
 from .oauth_chatgpt import ChatGptCredential
+from .providers.anthropic import AnthropicMessagesProvider
 from .providers.chatgpt import DEFAULT_CODEX_MODEL, ChatGptCodexProvider
 from .providers.mock import MockTextProvider
 from .providers.openai import OpenAIProvider
@@ -17,11 +18,13 @@ PROVIDER_DEFAULTS = {
     "google": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash"),
     "openrouter": ("https://openrouter.ai/api/v1", "openrouter/auto"),
     "opencode": ("https://opencode.ai/zen/v1", "deepseek-v4-pro"),
+    # Anthropic Messages protocol (official API or compatible gateways).
+    "anthropic": ("https://api.anthropic.com", "claude-sonnet-5"),
     # Subscription login: credentials come from the device-code OAuth flow.
     "chatgpt": ("https://chatgpt.com/backend-api", DEFAULT_CODEX_MODEL),
 }
 
-SUPPORTED_PROTOCOLS = {"openai_chat_completions", "openai_responses"}
+SUPPORTED_PROTOCOLS = {"openai_chat_completions", "openai_responses", "anthropic_messages"}
 
 
 def create_text_provider():
@@ -57,6 +60,16 @@ def create_named_text_provider(
             f"Model {selected_model} uses unsupported protocol {route.protocol}; "
             "this protocol adapter has not been enabled yet",
             category="unsupported_protocol",
+        )
+    if route.protocol == "anthropic_messages":
+        return AnthropicMessagesProvider(
+            base_url,
+            api_key,
+            selected_model,
+            endpoint=route.endpoint,
+            protocol=route.protocol,
+            route=route,
+            capabilities=capabilities_for_route(route, name),
         )
     return OpenAIProvider(
         base_url,
