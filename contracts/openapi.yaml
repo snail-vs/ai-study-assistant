@@ -295,6 +295,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenerationStatus'
+    put:
+      operationId: retryCourseGeneration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLearningSpaceRequest'
+      responses:
+        '200':
+          description: Failed course generation queued again
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningSpace'
+        '409':
+          description: Course generation is not eligible for retry
   /learning-spaces/{spaceId}/runtime:
     parameters:
       - $ref: '#/components/parameters/SpaceId'

@@ -117,6 +117,10 @@ class CreateLearningSpaceRequest(ApiModel):
     learning_goal: str = Field(alias="learningGoal", min_length=1)
 
 
+class RetryLearningSpaceGenerationRequest(CreateLearningSpaceRequest):
+    pass
+
+
 class LearningSpaceResponse(ApiModel):
     id: str
     title: str

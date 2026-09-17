@@ -292,7 +292,7 @@ export interface paths {
             cookie?: never;
         };
         get: operations["getCourseGenerationStatus"];
-        put?: never;
+        put: operations["retryCourseGeneration"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1496,6 +1496,39 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["GenerationStatus"];
                 };
+            };
+        };
+    };
+    retryCourseGeneration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: components["parameters"]["SpaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLearningSpaceRequest"];
+            };
+        };
+        responses: {
+            /** @description Failed course generation queued again */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningSpace"];
+                };
+            };
+            /** @description Course generation is not eligible for retry */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

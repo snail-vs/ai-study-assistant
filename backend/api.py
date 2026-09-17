@@ -58,6 +58,7 @@ from .schemas import (
     CreateConversationRequest,
     CreateLearningSpaceRequest,
     GenerationStatusResponse,
+    RetryLearningSpaceGenerationRequest,
     CreateMessageRequest,
     CreateNoteRequest,
     LearningSpaceList,
@@ -839,6 +840,29 @@ def get_course_generation_status(space_id: str, db: Session = Depends(get_db)):
         "rootCardId": space.root_card_id,
         "updatedAt": space.generation_updated_at or space.created_at,
     }
+
+
+@router.put("/learning-spaces/{space_id}/generation", response_model=LearningSpaceResponse)
+async def retry_course_generation(
+    space_id: str,
+    payload: RetryLearningSpaceGenerationRequest,
+    db: Session = Depends(get_db),
+):
+    space = owned_space(db, space_id)
+    if space.generation_status != "failed":
+        raise HTTPException(status_code=409, detail="Only failed course generations can be retried")
+    if space.root_card_id:
+        raise HTTPException(status_code=409, detail="A completed course cannot be regenerated")
+    space.title = payload.title
+    space.learning_goal = payload.learning_goal
+    space.generation_status = "queued"
+    space.generation_phase = "queued"
+    space.generation_error = None
+    space.generation_updated_at = now()
+    db.commit()
+    db.refresh(space)
+    schedule_course_generation(space.id, space.user_id, space.learning_goal)
+    return space
 
 
 @router.get("/learning-spaces/{space_id}/runtime", response_model=LearningRuntimeResponse | None)

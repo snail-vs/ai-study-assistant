@@ -14,6 +14,7 @@ const goal = ref('')
 const history = ref([])
 const historyCards = ref({})
 const generationNotice = ref('')
+const editingFailedSpace = ref(null)
 const space = ref(null)
 const card = ref(null)
 const rootCard = ref(null)
@@ -726,18 +727,34 @@ async function startLearning() {
   creatingCard.value = true
   error.value = ''
   try {
-    const createdSpace = await request('/learning-spaces', {
-      method: 'POST',
-      body: JSON.stringify({ title: goal.value.trim(), learningGoal: goal.value.trim() }),
-    })
+    const payload = { title: goal.value.trim(), learningGoal: goal.value.trim() }
+    const createdSpace = editingFailedSpace.value
+      ? await request(`/learning-spaces/${editingFailedSpace.value.id}/generation`, {
+        method: 'PUT', body: JSON.stringify(payload),
+      })
+      : await request('/learning-spaces', { method: 'POST', body: JSON.stringify(payload) })
     goal.value = ''
-    generationNotice.value = `课程“${createdSpace.title}”已提交，正在后台生成…`
+    generationNotice.value = editingFailedSpace.value
+      ? `课程“${createdSpace.title}”已重新提交，正在后台生成…`
+      : `课程“${createdSpace.title}”已提交，正在后台生成…`
+    editingFailedSpace.value = null
     await loadHistory()
   } catch (err) {
     error.value = err.message
   } finally {
     creatingCard.value = false
   }
+}
+
+function editFailedGeneration(item) {
+  editingFailedSpace.value = item
+  goal.value = item.learningGoal
+  generationNotice.value = `正在编辑“${item.title}”，修改学习目标后重新生成。`
+}
+
+function cancelFailedGenerationEdit() {
+  editingFailedSpace.value = null
+  goal.value = ''
 }
 
 async function loadHistory() {
@@ -1189,7 +1206,7 @@ function nextSection() {
       <p class="lead">课程设计 Agent 会先生成一张知识卡。之后的课程内容、问题讨论和学习笔记，都围绕它展开。</p>
       <form @submit.prevent="startLearning" class="start-form">
         <textarea v-model="goal" placeholder="例如：我想系统理解 Kubernetes 容器隔离，并能看懂 Namespace 和 cgroups 的关系" autofocus></textarea>
-        <div class="start-options"><span class="route-hint">课程生成使用：{{ knowledgeCardModel }}</span><button :disabled="creatingCard">{{ creatingCard ? '正在生成知识卡…' : '创建知识卡' }}</button></div>
+        <div class="start-options"><span class="route-hint">{{ editingFailedSpace ? `正在重新编辑：${editingFailedSpace.title}` : `课程生成使用：${knowledgeCardModel}` }}</span><button :disabled="creatingCard">{{ creatingCard ? '正在提交…' : editingFailedSpace ? '重新生成课程' : '创建知识卡' }}</button><button v-if="editingFailedSpace" type="button" class="secondary" @click="cancelFailedGenerationEdit">取消</button></div>
         <div v-if="creatingCard" class="create-card-status"><i class="status-spinner"></i><span>正在规划课程结构并生成章节内容…</span></div>
       </form>
       <p v-if="generationNotice" class="generation-notice">{{ generationNotice }}</p>
@@ -1200,6 +1217,7 @@ function nextSection() {
             <span>{{ item.title }}</span>
             <small>{{ item.generationStatus === 'queued' ? '排队中' : item.generationStatus === 'failed' ? `生成失败：${item.generationError || '请重试'}` : '正在生成课程内容…' }}</small>
           </div>
+          <button v-if="item.generationStatus === 'failed'" class="history-delete retry-generation" @click="editFailedGeneration(item)">重新编辑</button>
         </div>
         <div v-for="item in homeCards" :key="item.card.id" class="history-item">
           <button class="history-open" @click="openHomeCard(item)">
