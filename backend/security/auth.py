@@ -97,7 +97,10 @@ def get_current_user(request: Request, db: Session) -> User | None:
     user = db.get(User, session.user_id)
     if not user or not user.is_active:
         return None
-    session.last_seen_at = datetime.utcnow()
+    # 鉴权路径必须保持只读。SQLite 同一时刻只允许一个写事务；若每个
+    # 页面请求都更新 last_seen_at，就会与课程生成、SSE 流式写入等正常
+    # 业务写操作竞争数据库锁。last_seen_at 在登录/创建会话时已记录，
+    # 不应成为请求热路径中的写入。
     _current_user_id.set(user.id)
     return user
 

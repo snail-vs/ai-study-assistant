@@ -209,6 +209,7 @@ class CardSectionResponse(ApiModel):
     content_markdown: str = Field(alias="contentMarkdown")
     content_type: str = Field(default="concept", alias="contentType")
     teaching_objective: str | None = Field(default=None, alias="teachingObjective")
+    quality_report: dict[str, object] = Field(default_factory=dict, alias="qualityReport")
     learning_status: str = Field(default="unread", alias="learningStatus")
 
 

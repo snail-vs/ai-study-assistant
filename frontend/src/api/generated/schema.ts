@@ -747,6 +747,9 @@ export interface components {
             /** @enum {string} */
             contentType: "concept" | "practice" | "summary" | "quiz" | "interactive";
             teachingObjective?: string | null;
+            qualityReport?: {
+                [key: string]: unknown;
+            };
             /** @enum {string} */
             learningStatus?: "unread" | "learning" | "completed";
         };

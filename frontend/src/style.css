@@ -166,9 +166,13 @@ button { cursor: pointer; }
 .theme-light .settings-head p, .theme-light .notes-drawer-head p, .theme-light .recommendation-source { color: #7b8997; }
 .theme-light .settings-modal label, .theme-light .note-target-fields label { color: #627284; }
 .theme-light .settings-modal input, .theme-light .settings-modal select, .theme-light .note-editor input, .theme-light .note-editor textarea, .theme-light .note-target-fields select, .theme-light .masked-key { background: #f8fafb; border-color: #cfdbe3; color: #263342; }
-.theme-light .model-catalog, .theme-light .task-routes, .theme-light .default-model-setting { background: #f5f8fa; border-color: #d5e0e6; }
+.theme-light .model-catalog, .theme-light .task-routes, .theme-light .default-model-setting, .theme-light .model-role-routes { background: #f5f8fa; border-color: #d5e0e6; }
 .theme-light .catalog-title, .theme-light .provider-hint { color: #7b8997; }
 .theme-light .model-check, .theme-light .task-route span { color: #526273; }
+.theme-light .model-role-route { border-color: #dce5ea; }
+.theme-light .model-role-route strong { color: #435565; }
+.theme-light .model-role-route small, .theme-light .default-model-setting > p, .theme-light .model-routing-hint { color: #71808f; }
+.theme-light .advanced-routes-toggle { color: #187c68; }
 .theme-light .note-item { border-color: #e0e6eb; }
 .theme-light .note-item-head strong { color: #263342; }
 .theme-light .note-item p { color: #536273; }
@@ -228,6 +232,8 @@ button { cursor: pointer; }
 .theme-light .activity-nav-item { color: #627284; }.theme-light .activity-nav-item:hover, .theme-light .activity-nav-item.active { background: #e4f4ef; color: #187c68; }.theme-light .activity-nav-item span { color: #8794a1; }.theme-light .activity-nav-item small { color: #8794a1; }.theme-light .quiz-intro { border-color: #e0e6eb; }.theme-light .quiz-intro h2 { color: #263342; }.theme-light .quiz-question { border-color: #e0e6eb; }.theme-light .quiz-question h3 { color: #344454; }.theme-light .quiz-options label { border-color: #d5e0e6; color: #536273; }.theme-light .quiz-options label:has(input:checked) { background: #eef8f5; border-color: #8bc8ba; color: #145d50; }.theme-light .quiz-options textarea { background: #fff; border-color: #cfdbe3; color: #263342; }.theme-light .quiz-result-item { background: #fff7f7; border-color: #e3c3c3; }.theme-light .quiz-result-item.correct { background: #f0f8f7; border-color: #c9e0db; }.theme-light .quiz-result-item > div { color: #985050; }.theme-light .quiz-result-item.correct > div { color: #187c68; }.theme-light .quiz-result-item p, .theme-light .quiz-diagnostic { color: #536273; }
 .chatgpt-login { margin-top: 18px; padding: 12px; background: #0d1520; border: 1px solid #2b3c52; border-radius: 7px; }
 .chatgpt-status { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: #c5d2df; font-size: 12px; }
+.chatgpt-status .model-fetch-button { margin-left: auto; border: 1px solid #4b6b85; background: transparent; color: #187c68; border-radius: 6px; padding: 6px 10px; font-size: 11px; }
+.chatgpt-status .model-fetch-button:disabled { cursor: wait; opacity: .55; }
 .chatgpt-status .secondary { margin-left: auto; border: 1px solid #3b4d66; background: transparent; color: #9eafc3; border-radius: 6px; padding: 6px 10px; font-size: 11px; }
 .chatgpt-dot { width: 8px; height: 8px; border-radius: 50%; background: #ff8b8b; }
 .chatgpt-dot.ok { background: #74d2b4; }
@@ -240,6 +246,38 @@ button { cursor: pointer; }
 .device-code { margin: 10px 0; padding: 12px; border: 1px dashed #4b6b85; border-radius: 7px; background: #121b28; color: #9fd8c5; font-size: 22px; letter-spacing: .18em; text-align: center; }
 .theme-light .chatgpt-login { background: #f8fafb; border-color: #cfdbe3; }
 .theme-light .chatgpt-status { color: #344454; }
+.theme-light .chatgpt-status .model-fetch-button { color: #187c68; border-color: #8bc8ba; }
 .theme-light .chatgpt-pending p { color: #536273; }
 .theme-light .chatgpt-pending input { background: #fff; border-color: #cfdbe3; color: #263342; }
 .theme-light .device-code { background: #fff; color: #187c68; }
+
+/* Compact model settings layout. */
+.chatgpt-status .secondary { margin-left: 0; }
+.settings-modal { max-height: calc(100vh - 32px); overflow-y: auto; }
+.model-assignments { display: grid; gap: 12px; margin-top: 14px; }
+.model-assignments .default-model-setting { margin-top: 0; }
+.default-model-setting > p, .model-routing-hint { margin: 0 0 9px; color: #71849b; font-size: 11px; line-height: 1.5; }
+.model-role-routes { padding: 12px; border: 1px solid #2b3c52; border-radius: 7px; background: #0d1520; }
+.model-role-routes > .catalog-title { margin-bottom: 3px; }
+.model-role-route { display: grid !important; grid-template-columns: minmax(0, 1fr) 176px; align-items: center; gap: 12px; margin: 10px 0 0 !important; padding-top: 10px; border-top: 1px solid #23364a; }
+.model-role-route > span { display: grid; gap: 3px; min-width: 0; }
+.model-role-route strong { color: #c5d2df; font-size: 12px; font-weight: 600; }
+.model-role-route small { color: #71849b; font-size: 10px; line-height: 1.4; }
+.settings-modal .model-role-route select { width: 100%; margin-top: 0; padding: 8px; }
+.advanced-routes-toggle { display: flex; align-items: center; gap: 5px; margin-top: 13px; padding: 0; border: 0; background: transparent; color: #83cdb7; font-size: 11px; }
+.advanced-routes-toggle:hover { color: #b9eddf; }
+.advanced-routes-toggle span { font-size: 14px; line-height: 1; }
+.model-role-routes .task-routes { margin-top: 10px; }
+.model-assignment-actions { display: flex; justify-content: flex-end; margin-top: 14px; }
+.model-assignment-actions .primary { padding: 9px 13px; border: 0; border-radius: 6px; background: #74d2b4; color: #0c1717; font-size: 12px; font-weight: 700; }
+.model-assignment-actions .primary:disabled { cursor: wait; opacity: .55; }
+.task-routes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.task-routes .catalog-title { grid-column: 1 / -1; margin-bottom: 0; }
+.task-route { display: grid; gap: 5px; min-width: 0; margin: 0 !important; }
+.task-route span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.settings-modal .task-route select { width: 100%; }
+@media (max-width: 560px) {
+  .task-routes { grid-template-columns: 1fr; }
+  .task-routes .catalog-title { grid-column: auto; }
+  .model-role-route { grid-template-columns: 1fr; gap: 7px; }
+}

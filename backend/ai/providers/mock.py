@@ -52,6 +52,26 @@ class MockTextProvider:
         if task == "section_content":
             prompt = messages[-1]["content"] if messages else ""
             return {"content_markdown": f"## 本节内容\n\n这是根据以下教学规划生成的 Mock 内容：\n\n{prompt}"}
+        if task == "section_review":
+            return {
+                "correctness": 4,
+                "goal_alignment": 4,
+                "clarity": 4,
+                "information_density": 4,
+                "blocking_issues": [],
+                "repair_instructions": [],
+            }
+        if task == "section_repair":
+            return {"content_markdown": "## 核心解释\n\n这是修订后的紧凑课程内容。\n\n## 理解检查\n\n请用一句话复述核心关系。"}
+        if task == "side_answer_plan":
+            return {
+                "intent": "definition",
+                "direct_answer": "先回答当前问题的核心定义。",
+                "key_points": ["只保留理解当前章节所需的信息"],
+                "needs_example": False,
+                "possible_knowledge_gap": False,
+                "target_length": "short",
+            }
         if task == "quiz_generation":
             return {
                 "title": "理解检查",

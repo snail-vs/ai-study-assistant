@@ -32,6 +32,7 @@ class CardSectionDraft(BaseModel):
     content_markdown: str
     content_type: Literal["concept", "practice", "summary", "quiz", "interactive"] = "concept"
     teaching_objective: str | None = None
+    quality_report: dict[str, object] = Field(default_factory=dict)
 
 
 class SectionPlanDraft(BaseModel):
@@ -48,6 +49,49 @@ class KnowledgeCardPlanDraft(BaseModel):
 
 class SectionContentDraft(BaseModel):
     content_markdown: str
+
+
+class SectionQualityReview(BaseModel):
+    correctness: int = Field(ge=0, le=4)
+    goal_alignment: int = Field(ge=0, le=4)
+    clarity: int = Field(ge=0, le=4)
+    information_density: int = Field(ge=0, le=4)
+    blocking_issues: list[str] = Field(default_factory=list)
+    repair_instructions: list[str] = Field(default_factory=list)
+
+    @property
+    def needs_revision(self) -> bool:
+        scores = (
+            self.correctness,
+            self.goal_alignment,
+            self.clarity,
+            self.information_density,
+        )
+        return bool(self.blocking_issues) or min(scores) < 3 or sum(scores) < 12
+
+
+class SectionQualityReport(BaseModel):
+    initial_review: SectionQualityReview
+    final_review: SectionQualityReview
+    revision_attempted: bool = False
+    quality_status: Literal["passed", "needs_attention"] = "passed"
+
+
+class AnswerPlanDraft(BaseModel):
+    intent: Literal[
+        "definition",
+        "mechanism",
+        "comparison",
+        "application",
+        "debugging",
+        "misconception",
+        "other",
+    ]
+    direct_answer: str
+    key_points: list[str] = Field(default_factory=list, max_length=4)
+    needs_example: bool
+    possible_knowledge_gap: bool
+    target_length: Literal["short", "medium", "long"] = "short"
 
 
 class QuizOption(BaseModel):

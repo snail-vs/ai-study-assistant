@@ -55,22 +55,49 @@ const theme = ref(localStorage.getItem('studycenter.theme') || 'light')
 const showSettings = ref(false)
 const selectedProvider = ref('deepseek')
 const apiKey = ref('')
-const providerStatus = ref({ activeProvider: 'mock', providers: {} })
+const providerStatus = ref({ activeProvider: null, providers: {} })
+const selectableProviders = ['deepseek', 'google', 'opencode', 'openrouter', 'anthropic', 'chatgpt']
 const availableModels = ref([])
 const selectedModels = ref([])
 const selectedDefaultModel = ref('')
 const taskRoutes = ref({})
+const showAdvancedRoutes = ref(false)
+const savingModelAssignments = ref(false)
 const taskDefinitions = [
   { id: 'course_plan', label: '课程规划' },
   { id: 'section_content', label: '章节内容生成' },
+  { id: 'section_review', label: '章节质量审查' },
+  { id: 'section_repair', label: '章节内容修订' },
   { id: 'quiz_generation', label: '理解检查生成' },
   { id: 'quiz_evaluation', label: '理解检查评估' },
   { id: 'teacher_guidance', label: '导师引导' },
   { id: 'side_answer', label: '答疑回复' },
+  { id: 'side_answer_plan', label: '答疑规划' },
   { id: 'gap_diagnosis', label: '知识断层诊断' },
   { id: 'bridge_note', label: '知识桥接' },
   { id: 'conversation_title', label: '会话标题' },
   { id: 'group_director', label: '多角色调度' },
+]
+// 后端仍按任务保存路由；设置页按学习体验中的模型角色归类，避免让用户面对内部任务名。
+const modelRoleDefinitions = [
+  {
+    id: 'course',
+    label: '课程设计与内容生成',
+    hint: '课程规划、章节生成、内容修订、理解检查生成',
+    tasks: ['course_plan', 'section_content', 'section_repair', 'quiz_generation'],
+  },
+  {
+    id: 'quality',
+    label: '质量审查与知识诊断',
+    hint: '章节审查、理解检查评估、知识断层诊断',
+    tasks: ['section_review', 'quiz_evaluation', 'gap_diagnosis'],
+  },
+  {
+    id: 'interaction',
+    label: '课堂实时互动',
+    hint: '导师引导、课程讨论、知识桥接、多角色调度与会话标题',
+    tasks: ['teacher_guidance', 'side_answer', 'side_answer_plan', 'bridge_note', 'conversation_title', 'group_director'],
+  },
 ]
 const allModelOptions = computed(() => {
   const options = Object.entries(providerStatus.value.models || {}).flatMap(([provider, models]) => (
@@ -127,7 +154,7 @@ const isRelatedCard = computed(() => navigationStack.value.length > 0)
 const keyConfigured = computed(() => Boolean(providerStatus.value.providers?.[selectedProvider.value]))
 const isChatGpt = computed(() => selectedProvider.value === 'chatgpt')
 const knowledgeCardModel = computed(() => providerStatus.value.taskRoutes?.course_plan
-  || (providerStatus.value.activeModel ? `${providerStatus.value.activeProvider}:${providerStatus.value.activeModel}` : 'Mock'))
+  || (providerStatus.value.activeModel ? `${providerStatus.value.activeProvider}:${providerStatus.value.activeModel}` : '未配置模型'))
 const sectionTypeLabels = {
   concept: '概念讲解',
   practice: '理解练习',
@@ -419,7 +446,9 @@ function retryQuiz() {
 
 async function openSettings() {
   await loadProviderSettings()
-  selectedProvider.value = providerStatus.value.activeProvider === 'mock' ? 'deepseek' : providerStatus.value.activeProvider
+  selectedProvider.value = selectableProviders.includes(providerStatus.value.activeProvider)
+    ? providerStatus.value.activeProvider
+    : 'deepseek'
   selectedModels.value = [...(providerStatus.value.models?.[selectedProvider.value] || [])]
   selectedDefaultModel.value = providerStatus.value.activeModel
     ? `${providerStatus.value.activeProvider}:${providerStatus.value.activeModel}` : ''
@@ -427,6 +456,7 @@ async function openSettings() {
   availableModels.value = [...selectedModels.value]
   apiKey.value = ''
   editingKey.value = false
+  showAdvancedRoutes.value = false
   showSettings.value = true
 }
 
@@ -534,9 +564,6 @@ async function removeNote(item) {
 function changeProvider() {
   availableModels.value = [...(providerStatus.value.models?.[selectedProvider.value] || [])]
   selectedModels.value = [...availableModels.value]
-  taskRoutes.value = providerStatus.value.activeProvider === selectedProvider.value
-    ? { ...(providerStatus.value.taskRoutes || {}) }
-    : {}
   apiKey.value = ''
   editingKey.value = false
   stopChatgptPolling()
@@ -620,11 +647,26 @@ async function logoutChatgpt() {
 function ensureDefaultModel() {
 }
 
+function roleRouteValue(role) {
+  const configured = new Set(role.tasks.map((task) => taskRoutes.value[task] || ''))
+  return configured.size === 1 ? [...configured][0] : '__custom__'
+}
+
+function setRoleRoute(role, model) {
+  if (model === '__custom__') return
+  const next = { ...taskRoutes.value }
+  for (const task of role.tasks) {
+    if (model) next[task] = model
+    else delete next[task]
+  }
+  taskRoutes.value = next
+}
+
 async function loadProviderSettings() {
   try {
     providerStatus.value = await request('/settings/providers')
   } catch (_) {
-    // Keep the page usable with Mock when settings are unavailable.
+    // Keep the page usable when settings are temporarily unavailable.
   }
 }
 
@@ -648,24 +690,28 @@ async function saveProvider() {
   savingSettings.value = true
   try {
     providerStatus.value = await request(`/settings/providers/${selectedProvider.value}`, {
-      method: 'PUT', body: JSON.stringify({ ...(apiKey.value.trim() ? { apiKey: apiKey.value.trim() } : {}), models: selectedModels.value, taskRoutes: Object.fromEntries(Object.entries(taskRoutes.value).filter(([, model]) => model)) }),
+      method: 'PUT', body: JSON.stringify({ ...(apiKey.value.trim() ? { apiKey: apiKey.value.trim() } : {}), models: selectedModels.value }),
     })
-    if (selectedDefaultModel.value) {
-      providerStatus.value = await request('/settings/model', { method: 'PUT', body: JSON.stringify({ model: selectedDefaultModel.value }) })
-    }
-    availableModels.value = []
-    selectedModels.value = []
     apiKey.value = ''
     editingKey.value = false
-    showSettings.value = false
   } catch (err) { error.value = err.message } finally { savingSettings.value = false }
 }
 
-async function useMock() {
-  if (providerStatus.value.activeProvider !== 'mock') {
-    await request(`/settings/providers/${providerStatus.value.activeProvider}`, { method: 'DELETE' })
+async function saveModelAssignments() {
+  if (!selectedDefaultModel.value) {
+    error.value = '请先选择全局默认模型'
+    return
   }
-  providerStatus.value = await request('/settings/providers')
+  savingModelAssignments.value = true
+  error.value = ''
+  try {
+    const routes = Object.fromEntries(Object.entries(taskRoutes.value).filter(([, model]) => model))
+    await request('/settings/model-routes', { method: 'PUT', body: JSON.stringify({ routes }) })
+    providerStatus.value = await request('/settings/model', {
+      method: 'PUT', body: JSON.stringify({ model: selectedDefaultModel.value }),
+    })
+    taskRoutes.value = { ...(providerStatus.value.taskRoutes || {}) }
+  } catch (err) { error.value = err.message } finally { savingModelAssignments.value = false }
 }
 
 async function startLearning() {
@@ -1163,6 +1209,7 @@ function nextSection() {
           <div v-if="providerStatus.providers?.chatgpt" class="chatgpt-status">
             <span class="chatgpt-dot ok"></span>
             <span>已登录</span>
+            <button class="model-fetch-button" :disabled="fetchingModels" @click="fetchModels">{{ fetchingModels ? '获取中…' : '获取模型' }}</button>
             <button class="secondary" @click="logoutChatgpt">退出登录</button>
           </div>
           <div v-else-if="chatgptLogin.status === 'pending'" class="chatgpt-pending">
@@ -1186,11 +1233,34 @@ function nextSection() {
           </div>
         </div>
         <label v-if="!isChatGpt">API Key<div class="key-row"><input v-if="editingKey || !keyConfigured" v-model="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" /><div v-else class="masked-key">*****</div><button v-if="keyConfigured && !editingKey" class="edit-key" @click="editingKey = true">编辑</button><button :disabled="fetchingModels || (!apiKey && !keyConfigured)" @click="fetchModels">{{ fetchingModels ? '获取中…' : '获取模型' }}</button></div></label>
-        <div v-if="isChatGpt" class="provider-actions"><button :disabled="fetchingModels || !keyConfigured" @click="fetchModels">{{ fetchingModels ? '获取中…' : '获取模型' }}</button></div>
         <div v-if="availableModels.length" class="model-catalog"><div class="catalog-title">选择此 Provider 可使用的模型</div><label v-for="model in availableModels" :key="model" class="model-check"><input v-model="selectedModels" type="checkbox" :value="model" /><span>{{ model }}</span></label></div>
-        <div class="provider-actions"><button class="secondary" @click="useMock">切换 Mock</button><button class="primary" :disabled="savingSettings || ((!apiKey && !keyConfigured) || !selectedModels.length)" @click="saveProvider">{{ savingSettings ? '保存中…' : '保存 Provider' }}</button></div>
-        <div v-if="allModelOptions.length" class="default-model-setting"><div class="catalog-title">全局默认模型（跨 Provider）</div><select v-model="selectedDefaultModel"><option value="">请选择默认模型</option><option v-for="option in allModelOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></div>
-        <div v-if="allModelOptions.length" class="task-routes"><div class="catalog-title">任务模型路由（跨 Provider；不设置则使用当前默认模型）</div><label v-for="task in taskDefinitions" :key="task.id" class="task-route"><span>{{ task.label }}</span><select v-model="taskRoutes[task.id]"><option value="">跟随默认模型</option><option v-for="option in allModelOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></div>
+        <div class="provider-actions"><button class="primary" :disabled="savingSettings || ((!apiKey && !keyConfigured) || !selectedModels.length)" @click="saveProvider">{{ savingSettings ? '保存中…' : '保存 Provider' }}</button></div>
+        <section v-if="allModelOptions.length" class="model-assignments">
+          <div class="default-model-setting">
+            <div class="catalog-title">全局默认模型</div>
+            <p>未单独指定的任务将使用此模型。</p>
+            <select v-model="selectedDefaultModel"><option value="">请选择默认模型</option><option v-for="option in allModelOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select>
+          </div>
+          <div class="model-role-routes">
+            <div class="catalog-title">模型分工</div>
+            <p class="model-routing-hint">按学习流程选择模型；不设置则跟随全局默认模型。</p>
+            <label v-for="role in modelRoleDefinitions" :key="role.id" class="model-role-route">
+              <span><strong>{{ role.label }}</strong><small>{{ role.hint }}</small></span>
+              <select :value="roleRouteValue(role)" @change="setRoleRoute(role, $event.target.value)">
+                <option value="">跟随默认模型</option>
+                <option v-if="roleRouteValue(role) === '__custom__'" value="__custom__" disabled>已在高级设置中分别配置</option>
+                <option v-for="option in allModelOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+              </select>
+            </label>
+            <button class="advanced-routes-toggle" @click="showAdvancedRoutes = !showAdvancedRoutes">{{ showAdvancedRoutes ? '收起高级任务路由' : '高级任务路由' }} <span>{{ showAdvancedRoutes ? '⌃' : '⌄' }}</span></button>
+            <div v-if="showAdvancedRoutes" class="task-routes">
+              <div class="catalog-title">单项覆盖</div>
+              <p class="model-routing-hint">只在确有需要时修改；单项设置会覆盖所属模型分工。</p>
+              <label v-for="task in taskDefinitions" :key="task.id" class="task-route"><span>{{ task.label }}</span><select v-model="taskRoutes[task.id]"><option value="">跟随默认模型</option><option v-for="option in allModelOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
+            </div>
+            <div class="model-assignment-actions"><button class="primary" :disabled="savingModelAssignments" @click="saveModelAssignments">{{ savingModelAssignments ? '保存中…' : '保存模型分工' }}</button></div>
+          </div>
+        </section>
         <div class="provider-hint">已配置：{{ Object.entries(providerStatus.providers).filter(([, value]) => value).map(([key]) => key).join('、') || '暂无' }}</div>
       </section>
     </div>

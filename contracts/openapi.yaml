@@ -856,6 +856,9 @@ components:
         contentMarkdown: { type: string }
         contentType: { type: string, enum: [concept, practice, summary, quiz, interactive] }
         teachingObjective: { type: string, nullable: true }
+        qualityReport:
+          type: object
+          additionalProperties: true
         learningStatus: { type: string, enum: [unread, learning, completed] }
     LearningNavigationEntry:
       type: object

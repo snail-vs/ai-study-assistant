@@ -18,10 +18,13 @@ class TaskDefinition:
 TASKS = (
     TaskDefinition("course_plan", "课程规划", "generation"),
     TaskDefinition("section_content", "章节内容生成", "generation"),
+    TaskDefinition("section_review", "章节质量审查", "quality"),
+    TaskDefinition("section_repair", "章节内容修订", "quality"),
     TaskDefinition("quiz_generation", "理解检查生成", "generation"),
     TaskDefinition("quiz_evaluation", "理解检查评估", "assessment"),
     TaskDefinition("teacher_guidance", "导师引导", "teaching"),
     TaskDefinition("side_answer", "答疑回复", "conversation"),
+    TaskDefinition("side_answer_plan", "答疑规划", "conversation"),
     TaskDefinition("gap_diagnosis", "知识断层诊断", "diagnosis"),
     # Legacy route kept so existing settings can be migrated at runtime.
     TaskDefinition("side_agent", "旧版答疑与诊断", "compatibility"),

@@ -51,8 +51,17 @@ class CardSection(Base):
     content_markdown: Mapped[str] = mapped_column(Text, default="")
     content_type: Mapped[str] = mapped_column(String(30), default="concept", server_default="concept")
     teaching_objective: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quality_report_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
     learning_status: Mapped[str] = mapped_column(String(20), default="unread")
     card: Mapped[KnowledgeCard] = relationship(back_populates="sections")
+
+    @property
+    def quality_report(self) -> dict:
+        try:
+            value = json.loads(self.quality_report_json)
+            return value if isinstance(value, dict) else {}
+        except (TypeError, json.JSONDecodeError):
+            return {}
 
 
 class LearningRuntime(Base):

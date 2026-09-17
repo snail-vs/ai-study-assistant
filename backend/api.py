@@ -725,6 +725,7 @@ async def create_learning_space(payload: CreateLearningSpaceRequest, db: Session
                 content_markdown=section.content_markdown,
                 content_type=section.content_type,
                 teaching_objective=section.teaching_objective,
+                quality_report_json=json.dumps(section.quality_report, ensure_ascii=False),
             )
         )
     space.root_card_id = card.id
@@ -1267,23 +1268,46 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         message_id = str(uuid4())
         yield f"event: run.started\ndata: {json.dumps({'conversationId': conversation_id, 'runId': run.id, 'phase': 'waiting', 'label': '正在等待 AI 响应'}, ensure_ascii=False)}\n\n"
         yield f"event: message.started\ndata: {json.dumps({'conversationId': conversation_id, 'messageId': message_id, 'senderId': primary_agent_id, 'senderName': primary_agent.name if primary_agent else primary_agent_id, 'senderRole': primary_agent.role if primary_agent else 'assistant'}, ensure_ascii=False)}\n\n"
-        yield f"event: run.phase\ndata: {json.dumps({'phase': 'answering', 'label': '答疑助教正在回答'}, ensure_ascii=False)}\n\n"
-        run.phase = "answering"
-        db.commit()
         answer_section = db.get(CardSection, conversation.section_id) if conversation.section_id else None
         if not answer_section and payload.section_id:
             candidate = db.get(CardSection, payload.section_id)
             if candidate and candidate.card_id == conversation.card_id:
                 answer_section = candidate
         messages = [{"role": "system", "content": QA_TUTOR_SYSTEM}]
+        answer_context = ""
         if answer_section:
+            answer_context = (
+                f"当前知识卡：{card.title}\n当前章节：{answer_section.title}\n"
+                f"课程内容：{answer_section.content_markdown[:6000]}"
+            )
+            messages.append({
+                "role": "system",
+                "content": answer_context,
+            })
+        try:
+            yield f"event: run.phase\ndata: {json.dumps({'phase': 'planning', 'label': '正在理解问题并组织回答'}, ensure_ascii=False)}\n\n"
+            run.phase = "planning"
+            db.commit()
+            answer_plan = await SideAgent(restore_active_provider(db)).plan_answer(
+                payload.content,
+                context=answer_context,
+            )
+            length_budget = {"short": "80～200", "medium": "200～400", "long": "400～700"}[answer_plan.target_length]
             messages.append({
                 "role": "system",
                 "content": (
-                    f"当前知识卡：{card.title}\n当前章节：{answer_section.title}\n"
-                    f"课程内容：{answer_section.content_markdown[:6000]}"
+                    "请严格依据下面的回答计划作答，不要扩展计划之外的背景知识。\n"
+                    f"回答类型：{answer_plan.intent}\n直接答案：{answer_plan.direct_answer}\n"
+                    f"必要要点：{json.dumps(answer_plan.key_points, ensure_ascii=False)}\n"
+                    f"是否需要例子：{'是' if answer_plan.needs_example else '否'}\n"
+                    f"目标长度：{length_budget} 个中文字符。"
                 ),
             })
+        except Exception:
+            logger.exception("side answer planning failed; falling back to direct answer")
+        yield f"event: run.phase\ndata: {json.dumps({'phase': 'answering', 'label': '答疑助教正在回答'}, ensure_ascii=False)}\n\n"
+        run.phase = "answering"
+        db.commit()
         if conversation.root_question:
             messages.append({"role": "system", "content": f"本讨论的起始问题：{conversation.root_question}"})
         history = list(db.scalars(
@@ -1474,6 +1498,7 @@ async def accept_proposal(proposal_id: str, db: Session = Depends(get_db)):
             content_markdown=section.content_markdown,
             content_type=section.content_type,
             teaching_objective=section.teaching_objective,
+            quality_report_json=json.dumps(section.quality_report, ensure_ascii=False),
         ))
     bridge = await BridgeAgent(restore_active_provider(db)).create(source_card.title, card.title)
     db.add(BridgeNote(card_id=source_card.id, related_card_id=card.id, content=bridge.content))

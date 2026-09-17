@@ -2,8 +2,8 @@ import logging
 
 from pydantic import ValidationError
 
-from .prompts import GAP_DIAGNOSIS_SYSTEM
-from .schemas import SideAgentResult
+from .prompts import ANSWER_PLANNER_SYSTEM, GAP_DIAGNOSIS_SYSTEM
+from .schemas import AnswerPlanDraft, SideAgentResult
 from ..ai.gateway import AIGateway
 
 
@@ -13,6 +13,17 @@ logger = logging.getLogger("studycenter.ai.side_agent")
 class SideAgent:
     def __init__(self, gateway: AIGateway | None = None) -> None:
         self.gateway = gateway or AIGateway()
+
+    async def plan_answer(self, question: str, context: str = "") -> AnswerPlanDraft:
+        result = await self.gateway.structured(
+            [
+                {"role": "system", "content": ANSWER_PLANNER_SYSTEM},
+                {"role": "user", "content": f"当前内容：{context}\n用户问题：{question}"},
+            ],
+            task="side_answer_plan",
+            schema=AnswerPlanDraft.model_json_schema(),
+        )
+        return AnswerPlanDraft.model_validate(result)
 
     async def diagnose(self, question: str, context: str = "") -> SideAgentResult:
         result = await self.gateway.structured(
