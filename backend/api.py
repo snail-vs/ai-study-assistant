@@ -345,8 +345,16 @@ async def discover_models(provider_name: str, payload: DiscoverModelsRequest, db
         credential = db.get(ProviderCredential, (current_user_id(), CHATGPT_PROVIDER))
         if credential is None or credential.auth_type != "oauth":
             raise HTTPException(status_code=400, detail="请先完成 ChatGPT 设备码登录")
-        provider = create_named_text_provider(provider_name, "")
-        return {"models": await provider.list_models()}
+        try:
+            provider = create_named_text_provider(
+                provider_name,
+                "",
+                oauth=chatgpt_credential(credential),
+            )
+            models = await provider.list_models()
+        except Exception as exc:  # noqa: BLE001 - preserve provider error details for the client
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return {"models": models}
     api_key = payload.api_key
     if not api_key:
         credential = db.get(ProviderCredential, (current_user_id(), provider_name))
@@ -539,6 +547,28 @@ def save_chatgpt_login(user_id: str, credential: ChatGptCredential) -> None:
         db.close()
 
 
+async def refresh_chatgpt_models(user_id: str, credential: ChatGptCredential) -> None:
+    """Best-effort: replace the fallback catalog with the account's real one."""
+    try:
+        provider = create_named_text_provider(CHATGPT_PROVIDER, "", oauth=credential)
+        models = await provider.list_models()
+    except Exception:  # noqa: BLE001 - login already succeeded; keep the fallback
+        return
+    if not models:
+        return
+    db = SessionLocal()
+    try:
+        row = db.get(ProviderCredential, (user_id, CHATGPT_PROVIDER))
+        if row is None:
+            return
+        row.models_json = json.dumps(models)
+        if row.active_model not in models:
+            row.active_model = models[0]
+        db.commit()
+    finally:
+        db.close()
+
+
 async def run_chatgpt_device_login(session_id: str, device, user_id: str) -> None:
     session = chatgpt_login_sessions.get(session_id)
     if session is None:
@@ -555,6 +585,7 @@ async def run_chatgpt_device_login(session_id: str, device, user_id: str) -> Non
         session["status"] = "failed"
         session["error"] = f"凭证保存失败: {exc}"
         return
+    await refresh_chatgpt_models(user_id, credential)
     session["status"] = "done"
     session["credential"] = credential
 
@@ -641,6 +672,7 @@ async def chatgpt_oauth_complete(
     except Exception as exc:  # noqa: BLE001
         session["error"] = f"凭证保存失败: {exc}"
         return {"state": "failed", "error": session["error"]}
+    await refresh_chatgpt_models(user_id, credential)
     chatgpt_login_sessions.pop(payload.session_id, None)
     restore_active_provider(db, user_id)
     return {"state": "done", "accountId": credential.account_id, "expires": credential.expires_at}

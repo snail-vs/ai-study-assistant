@@ -7,6 +7,7 @@ refreshed transparently (locally by expiry, or once on a server-side 401).
 """
 
 import json
+import os
 from collections.abc import AsyncIterator, Callable, Sequence
 from typing import Any
 
@@ -18,14 +19,22 @@ from ..structured import parse_json_text, provider_error, strict_json_schema
 
 CODEX_BASE_URL = "https://chatgpt.com/backend-api"
 CODEX_ENDPOINT = f"{CODEX_BASE_URL}/codex/responses"
+CODEX_MODELS_ENDPOINT = f"{CODEX_BASE_URL}/codex/models"
+# The Codex catalog endpoint filters models by the client version it is told:
+# older versions hide newer models, and a sufficiently old one returns an empty
+# list. Send a high version so the account's full catalog is always returned.
+# Override with CHATGPT_CODEX_CLIENT_VERSION when a specific version is needed.
+CODEX_CLIENT_VERSION = os.getenv("CHATGPT_CODEX_CLIENT_VERSION", "9.9.9")
 DEFAULT_CODEX_MODEL = "gpt-5.5"
 DEFAULT_INSTRUCTIONS = "You are a helpful assistant."
-# The subscription endpoint exposes a fixed Codex model catalog (no /models API).
+# Initial fallback used only when the catalog request fails right after login;
+# the settings page normally refreshes this from the account's real catalog.
 CODEX_MODELS = (
     "gpt-5.5",
-    "gpt-5.4",
-    "gpt-5.4-mini",
-    "gpt-5.3-codex-spark",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-6-astra",
 )
 
 TokenRefreshCallback = Callable[[ChatGptCredential], None]
@@ -48,7 +57,50 @@ class ChatGptCodexProvider:
         self.endpoint = endpoint
 
     async def list_models(self) -> list[str]:
-        return list(CODEX_MODELS)
+        await self._ensure_credential()
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    response = await client.get(
+                        CODEX_MODELS_ENDPOINT,
+                        params={"client_version": CODEX_CLIENT_VERSION},
+                        headers=self._models_headers(),
+                    )
+                if response.status_code == 401 and attempt == 0:
+                    await self._refresh()
+                    continue
+                if response.status_code >= 400:
+                    body = (await response.aread()).decode(errors="replace")
+                    raise provider_error(response.status_code, body)
+                payload = response.json()
+                if isinstance(payload, dict):
+                    raw_models = payload.get("models")
+                    if not isinstance(raw_models, list):
+                        raw_models = payload.get("data", [])
+                else:
+                    raw_models = payload
+                if not isinstance(raw_models, list):
+                    raise AIProviderError("ChatGPT 模型接口返回格式无效", category="invalid_response")
+                models: list[str] = []
+                for item in raw_models:
+                    if isinstance(item, dict):
+                        model_id = item.get("slug") or item.get("id") or item.get("model")
+                    else:
+                        model_id = item
+                    if isinstance(model_id, str) and model_id and model_id not in models:
+                        models.append(model_id)
+                if not models:
+                    keys = ", ".join(sorted(payload.keys())) if isinstance(payload, dict) else type(payload).__name__
+                    raise AIProviderError(
+                        f"ChatGPT 模型接口返回空列表（响应字段: {keys or '无'}）",
+                        category="invalid_response",
+                    )
+                return models
+            except httpx.HTTPError as exc:
+                raise AIProviderError(
+                    f"ChatGPT 模型列表连接失败: {exc}", category="provider_unavailable"
+                ) from exc
+        raise AIProviderError("ChatGPT 模型列表获取失败")
 
     def _headers(self) -> dict[str, str]:
         if self.credential is None:
@@ -62,6 +114,15 @@ class ChatGptCodexProvider:
             "accept": "text/event-stream",
             "Content-Type": "application/json",
         }
+
+    def _models_headers(self) -> dict[str, str]:
+        headers = self._headers()
+        # The Codex catalog is originator/version aware. Use the Codex client
+        # identity for discovery; inference keeps StudyCenter's identity.
+        headers["originator"] = "codex_cli_rs"
+        headers["User-Agent"] = f"codex-cli/{CODEX_CLIENT_VERSION}"
+        headers["Accept"] = "application/json"
+        return headers
 
     def _split_instructions(
         self, messages: Sequence[dict[str, Any]]
