@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: studycenter
+  namespace: studycenter
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: studycenter.pyshell.top
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: studycenter-frontend
+                port:
+                  number: 80
+

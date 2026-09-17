@@ -1,0 +1,87 @@
+name: Build and Deploy StudyCenter
+run-name: StudyCenter · ${{ gitea.ref_name }} · ${{ gitea.sha }}
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  workflow_dispatch:
+
+jobs:
+  build-and-update-gitops:
+    runs-on: ci-docker
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout application
+        shell: bash
+        env:
+          REPO: ${{ gitea.repository }}
+          REF: ${{ gitea.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -t rsa -p 2222 -H 192.168.0.201 >> ~/.ssh/known_hosts
+          git clone --depth 1 --single-branch --branch "$REF" \
+            "ssh://gitea@192.168.0.201:2222/${REPO}.git" .
+
+      - name: Login to home registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.REGISTRY_PASSWORD }}" \
+            | docker login 192.168.0.202:5000 \
+              -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+
+      - name: Build and push images
+        id: image
+        shell: bash
+        env:
+          SHA: ${{ gitea.sha }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA="$(echo "$SHA" | head -c 7)"
+          TIMESTAMP="$(TZ=Asia/Shanghai date +%Y%m%d%H%M)"
+          TAG="main-${SHORT_SHA}-${TIMESTAMP}"
+          BACKEND_IMAGE="192.168.0.202:5000/snail/studycenter-backend:${TAG}"
+          FRONTEND_IMAGE="192.168.0.202:5000/snail/studycenter-frontend:${TAG}"
+
+          docker build -f backend/Dockerfile -t "$BACKEND_IMAGE" .
+          docker build -f frontend/Dockerfile -t "$FRONTEND_IMAGE" .
+          docker push "$BACKEND_IMAGE"
+          docker push "$FRONTEND_IMAGE"
+
+          echo "backend_image=$BACKEND_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "frontend_image=$FRONTEND_IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Update GitOps repository
+        shell: bash
+        env:
+          BACKEND_IMAGE: ${{ steps.image.outputs.backend_image }}
+          FRONTEND_IMAGE: ${{ steps.image.outputs.frontend_image }}
+        run: |
+          set -euo pipefail
+          GITOPS_DIR="$(mktemp -d)"
+          trap 'rm -rf -- "$GITOPS_DIR"' EXIT
+          git clone --depth 1 --single-branch --branch main \
+            ssh://gitea@192.168.0.201:2222/snail/gitops.git "$GITOPS_DIR"
+          cd "$GITOPS_DIR"
+          git config user.name 'CI Bot'
+          git config user.email 'ci@git.pyshell.top'
+
+          sed -i "s|image: 192.168.0.202:5000/snail/studycenter-backend:.*|image: ${BACKEND_IMAGE}|" \
+            apps/studycenter/backend-deployment.yaml
+          sed -i "s|image: 192.168.0.202:5000/snail/studycenter-frontend:.*|image: ${FRONTEND_IMAGE}|" \
+            apps/studycenter/frontend-deployment.yaml
+
+          git add apps/studycenter/backend-deployment.yaml apps/studycenter/frontend-deployment.yaml
+          if git diff --cached --quiet; then
+            echo 'GitOps image tags are already current.'
+            exit 0
+          fi
+          git commit -m "chore: update studycenter images to ${BACKEND_IMAGE##*:} [CI]"
+          git push origin main
+

@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: studycenter
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: ssh://gitea@192.168.0.201:2222/snail/gitops.git
+    targetRevision: main
+    path: apps/studycenter
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: studycenter
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+

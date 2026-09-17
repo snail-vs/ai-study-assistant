@@ -1,0 +1,15 @@
+.git
+.gitignore
+.codegraph
+.env
+.env.*
+!.env.example
+backend/.venv
+backend/__pycache__
+backend/*.db
+backend/*.db-*
+frontend/node_modules
+frontend/dist
+**/__pycache__
+**/*.pyc
+
