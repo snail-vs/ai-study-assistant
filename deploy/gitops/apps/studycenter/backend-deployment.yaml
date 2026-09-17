@@ -40,6 +40,20 @@ spec:
                   key: encryption-key
             - name: AI_PROVIDER
               value: auto
+            # ChatGPT Codex requires internet egress; route external HTTP(S)
+            # requests through the household proxy while keeping cluster traffic local.
+            - name: HTTP_PROXY
+              value: http://192.168.0.254:7890
+            - name: HTTPS_PROXY
+              value: http://192.168.0.254:7890
+            - name: NO_PROXY
+              value: localhost,127.0.0.1,::1,.svc,.cluster.local,192.168.0.0/16
+            - name: http_proxy
+              value: http://192.168.0.254:7890
+            - name: https_proxy
+              value: http://192.168.0.254:7890
+            - name: no_proxy
+              value: localhost,127.0.0.1,::1,.svc,.cluster.local,192.168.0.0/16
           volumeMounts:
             - name: data
               mountPath: /data
@@ -73,4 +87,3 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: studycenter-data
-
