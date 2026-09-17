@@ -77,3 +77,9 @@ STUDYCENTER_SESSION_DAYS=30
 首次注册用户会接管认证功能上线前创建的开发数据；后续用户只能访问自己
 拥有的学习空间及其下属卡片、会话、活动和笔记。Provider Key、默认模型和
 任务模型路由也按用户保存。
+
+如果用户已经注册，但旧数据仍显示为空，可以手动执行一次归属补迁移：
+
+```bash
+uv run --project backend python -m backend.scripts.claim_legacy_data USERNAME
+```

@@ -102,7 +102,7 @@ def get_current_user(request: Request, db: Session) -> User | None:
     return user
 
 
-def require_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+async def require_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = get_current_user(request, db)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="请先登录")
