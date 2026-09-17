@@ -88,6 +88,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/providers/chatgpt/oauth/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["completeChatGptLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/providers/chatgpt/oauth/logout": {
         parameters: {
             query?: never;
@@ -599,9 +615,12 @@ export interface components {
         };
         ChatGptLogin: {
             sessionId: string;
-            userCode: string;
-            verificationUri: string;
-            intervalSeconds: number;
+            /** @enum {string} */
+            method: "device_code" | "browser";
+            authUrl?: string | null;
+            userCode?: string | null;
+            verificationUri?: string | null;
+            intervalSeconds?: number | null;
         };
         ChatGptLoginStatus: {
             /** @enum {string} */
@@ -985,9 +1004,19 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default device_code
+                     * @enum {string}
+                     */
+                    method?: "device_code" | "browser";
+                };
+            };
+        };
         responses: {
-            /** @description Device-code login started */
+            /** @description Login started (device code or browser PKCE) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1014,6 +1043,33 @@ export interface operations {
         };
         responses: {
             /** @description Device-code login status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatGptLoginStatus"];
+                };
+            };
+        };
+    };
+    completeChatGptLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionId: string;
+                    input: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Browser PKCE login completion */
             200: {
                 headers: {
                     [name: string]: unknown;

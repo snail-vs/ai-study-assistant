@@ -75,7 +75,7 @@ const allModelOptions = computed(() => {
 })
 const fetchingModels = ref(false)
 const editingKey = ref(false)
-const chatgptLogin = ref({ status: 'idle', userCode: '', verificationUri: '', sessionId: '', error: '' })
+const chatgptLogin = ref({ status: 'idle', method: 'device_code', userCode: '', verificationUri: '', authUrl: '', input: '', sessionId: '', error: '' })
 let chatgptPollTimer = null
 const proposal = ref(null)
 const recommendations = ref([])
@@ -490,7 +490,11 @@ function changeProvider() {
   apiKey.value = ''
   editingKey.value = false
   stopChatgptPolling()
-  chatgptLogin.value = { status: 'idle', userCode: '', verificationUri: '', sessionId: '', error: '' }
+  resetChatgptLogin()
+}
+
+function resetChatgptLogin() {
+  chatgptLogin.value = { status: 'idle', method: 'device_code', userCode: '', verificationUri: '', authUrl: '', input: '', sessionId: '', error: '' }
 }
 
 function stopChatgptPolling() {
@@ -500,15 +504,38 @@ function stopChatgptPolling() {
   }
 }
 
-async function startChatgptLogin() {
+async function startChatgptLogin(method = 'device_code') {
   stopChatgptPolling()
-  chatgptLogin.value = { status: 'starting', userCode: '', verificationUri: '', sessionId: '', error: '' }
+  chatgptLogin.value = { status: 'starting', method, userCode: '', verificationUri: '', authUrl: '', input: '', sessionId: '', error: '' }
   try {
-    const result = await request('/settings/providers/chatgpt/oauth/login', { method: 'POST', body: JSON.stringify({}) })
-    chatgptLogin.value = { status: 'pending', userCode: result.userCode, verificationUri: result.verificationUri, sessionId: result.sessionId, error: '' }
+    const result = await request('/settings/providers/chatgpt/oauth/login', { method: 'POST', body: JSON.stringify({ method }) })
+    if (method === 'browser') {
+      chatgptLogin.value = { status: 'browser', method, userCode: '', verificationUri: '', authUrl: result.authUrl, input: '', sessionId: result.sessionId, error: '' }
+      return
+    }
+    chatgptLogin.value = { status: 'pending', method, userCode: result.userCode, verificationUri: result.verificationUri, authUrl: '', input: '', sessionId: result.sessionId, error: '' }
     chatgptPollTimer = setInterval(pollChatgptLogin, Math.max(2, result.intervalSeconds || 5) * 1000)
   } catch (err) {
     chatgptLogin.value = { ...chatgptLogin.value, status: 'failed', error: err.message }
+  }
+}
+
+async function completeChatgptLogin() {
+  const sessionId = chatgptLogin.value.sessionId
+  const input = chatgptLogin.value.input.trim()
+  if (!sessionId || !input) return
+  chatgptLogin.value = { ...chatgptLogin.value, error: '' }
+  try {
+    const result = await request('/settings/providers/chatgpt/oauth/complete', { method: 'POST', body: JSON.stringify({ sessionId, input }) })
+    if (result.state === 'done') {
+      resetChatgptLogin()
+      chatgptLogin.value = { ...chatgptLogin.value, status: 'done' }
+      await loadProviderSettings()
+    } else {
+      chatgptLogin.value = { ...chatgptLogin.value, error: result.error || '授权失败' }
+    }
+  } catch (err) {
+    chatgptLogin.value = { ...chatgptLogin.value, error: err.message }
   }
 }
 
@@ -520,7 +547,8 @@ async function pollChatgptLogin() {
     if (result.state === 'pending') return
     stopChatgptPolling()
     if (result.state === 'done') {
-      chatgptLogin.value = { status: 'done', userCode: '', verificationUri: '', sessionId: '', error: '' }
+      resetChatgptLogin()
+      chatgptLogin.value = { ...chatgptLogin.value, status: 'done' }
       await loadProviderSettings()
     } else if (result.state === 'failed') {
       chatgptLogin.value = { ...chatgptLogin.value, status: 'failed', error: result.error || '登录失败' }
@@ -535,7 +563,7 @@ async function logoutChatgpt() {
   stopChatgptPolling()
   try {
     providerStatus.value = await request('/settings/providers/chatgpt/oauth/logout', { method: 'POST', body: JSON.stringify({}) })
-    chatgptLogin.value = { status: 'idle', userCode: '', verificationUri: '', sessionId: '', error: '' }
+    resetChatgptLogin()
   } catch (err) { error.value = err.message }
 }
 
@@ -1061,7 +1089,7 @@ function nextSection() {
         <div class="settings-head"><div><div class="panel-title">模型设置</div><p>Key 会在后端加密保存，前端不会保存明文。</p></div><button @click="showSettings = false">×</button></div>
         <label>Provider<select v-model="selectedProvider" @change="changeProvider"><option value="deepseek">DeepSeek</option><option value="google">Google Gemini</option><option value="opencode">OpenCode Zen</option><option value="openrouter">OpenRouter</option><option value="chatgpt">ChatGPT (Plus/Pro)</option></select></label>
         <div v-if="isChatGpt" class="chatgpt-login">
-          <div class="catalog-title">ChatGPT Plus/Pro 订阅登录（设备码，无需 API Key）</div>
+          <div class="catalog-title">ChatGPT Plus/Pro 订阅登录（无需 API Key）</div>
           <div v-if="providerStatus.providers?.chatgpt" class="chatgpt-status">
             <span class="chatgpt-dot ok"></span>
             <span>已登录</span>
@@ -1072,8 +1100,18 @@ function nextSection() {
             <div class="device-code">{{ chatgptLogin.userCode }}</div>
             <p class="provider-hint">等待授权中…</p>
           </div>
+          <div v-else-if="chatgptLogin.status === 'browser'" class="chatgpt-pending">
+            <p>1. 打开 <a :href="chatgptLogin.authUrl" target="_blank" rel="noopener">授权链接</a> 完成登录。</p>
+            <p>2. 页面会跳转到 <code>localhost:1455</code>（可能显示无法访问），复制地址栏里的完整 URL 粘到下面：</p>
+            <input v-model="chatgptLogin.input" placeholder="http://localhost:1455/auth/callback?code=...&state=..." />
+            <button class="primary" :disabled="!chatgptLogin.input.trim()" @click="completeChatgptLogin">完成授权</button>
+            <p v-if="chatgptLogin.error" class="error">{{ chatgptLogin.error }}</p>
+          </div>
           <div v-else>
-            <button class="primary" :disabled="chatgptLogin.status === 'starting'" @click="startChatgptLogin">{{ chatgptLogin.status === 'starting' ? '请求中…' : '设备码登录' }}</button>
+            <div class="provider-actions">
+              <button class="secondary" :disabled="chatgptLogin.status === 'starting'" @click="startChatgptLogin('browser')">浏览器授权</button>
+              <button class="primary" :disabled="chatgptLogin.status === 'starting'" @click="startChatgptLogin('device_code')">设备码登录</button>
+            </div>
             <p v-if="chatgptLogin.error" class="error">{{ chatgptLogin.error }}</p>
           </div>
         </div>

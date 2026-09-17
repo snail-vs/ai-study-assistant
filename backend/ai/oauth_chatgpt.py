@@ -1,26 +1,37 @@
-"""OpenAI Codex (ChatGPT Plus/Pro) device-code OAuth client.
+"""OpenAI Codex (ChatGPT Plus/Pro) OAuth client.
 
-Implements the same subscription-login flow the Codex CLI uses, so ChatGPT
-Plus/Pro models can be called without an API key. Only the headless
-device-code flow is implemented (no localhost callback server needed).
+Implements the same subscription-login flows the Codex CLI uses, so ChatGPT
+Plus/Pro models can be called without an API key:
+
+- ``device_code``: headless device authorization (requires the account's
+  "device code authorization for Codex" setting).
+- ``browser``: PKCE authorization code flow. The redirect URI is the fixed
+  ``localhost:1455`` callback used by the Codex client, so remote deployments
+  complete it by pasting the callback URL/code back into the app.
 """
 
 import asyncio
 import base64
+import hashlib
 import json
+import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 
 CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 AUTH_BASE_URL = "https://auth.openai.com"
+AUTHORIZE_URL = f"{AUTH_BASE_URL}/oauth/authorize"
 TOKEN_URL = f"{AUTH_BASE_URL}/oauth/token"
 DEVICE_USER_CODE_URL = f"{AUTH_BASE_URL}/api/accounts/deviceauth/usercode"
 DEVICE_TOKEN_URL = f"{AUTH_BASE_URL}/api/accounts/deviceauth/token"
 DEVICE_VERIFICATION_URI = f"{AUTH_BASE_URL}/codex/device"
 DEVICE_REDIRECT_URI = f"{AUTH_BASE_URL}/deviceauth/callback"
+BROWSER_REDIRECT_URI = "http://localhost:1455/auth/callback"
+SCOPE = "openid profile email offline_access"
 JWT_CLAIM_PATH = "https://api.openai.com/auth"
 DEVICE_CODE_TIMEOUT_SECONDS = 15 * 60
 EXPIRY_SKEW_MS = 60_000
@@ -47,6 +58,65 @@ class DeviceAuthorization:
     user_code: str
     interval_seconds: int = 5
     verification_uri: str = field(default=DEVICE_VERIFICATION_URI)
+
+
+@dataclass
+class BrowserAuthorization:
+    verifier: str
+    state: str
+    url: str
+
+
+def _base64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode().rstrip("=")
+
+
+def generate_pkce() -> tuple[str, str]:
+    verifier = _base64url(secrets.token_bytes(32))
+    challenge = _base64url(hashlib.sha256(verifier.encode()).digest())
+    return verifier, challenge
+
+
+def create_browser_authorization(originator: str = "pi") -> BrowserAuthorization:
+    verifier, challenge = generate_pkce()
+    state = secrets.token_hex(16)
+    params = {
+        "response_type": "code",
+        "client_id": CLIENT_ID,
+        "redirect_uri": BROWSER_REDIRECT_URI,
+        "scope": SCOPE,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "state": state,
+        "id_token_add_organizations": "true",
+        "codex_cli_simplified_flow": "true",
+        "originator": originator,
+    }
+    return BrowserAuthorization(verifier=verifier, state=state, url=f"{AUTHORIZE_URL}?{urlencode(params)}")
+
+
+def parse_authorization_input(value: str) -> tuple[str | None, str | None]:
+    """Extract (code, state) from a pasted redirect URL, query string, or code."""
+    text = value.strip()
+    if not text:
+        return None, None
+    if text.startswith(("http://", "https://")):
+        params = parse_qs(urlparse(text).query)
+        return _first(params, "code"), _first(params, "state")
+    if "code=" in text:
+        params = parse_qs(text)
+        return _first(params, "code"), _first(params, "state")
+    if "#" in text:
+        code, _, state = text.partition("#")
+        return code or None, state or None
+    return text, None
+
+
+def _first(params: dict[str, list[str]], key: str) -> str | None:
+    values = params.get(key)
+    if not values:
+        return None
+    return values[0] or None
 
 
 def extract_account_id(access_token: str) -> str:

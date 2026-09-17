@@ -70,9 +70,17 @@ paths:
   /settings/providers/chatgpt/oauth/login:
     post:
       operationId: startChatGptLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                method: { type: string, enum: [device_code, browser], default: device_code }
       responses:
         '200':
-          description: Device-code login started
+          description: Login started (device code or browser PKCE)
           content:
             application/json:
               schema:
@@ -92,6 +100,26 @@ paths:
       responses:
         '200':
           description: Device-code login status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatGptLoginStatus'
+  /settings/providers/chatgpt/oauth/complete:
+    post:
+      operationId: completeChatGptLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, input]
+              properties:
+                sessionId: { type: string }
+                input: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: Browser PKCE login completion
           content:
             application/json:
               schema:
@@ -707,12 +735,14 @@ components:
           items: { type: string }
     ChatGptLogin:
       type: object
-      required: [sessionId, userCode, verificationUri, intervalSeconds]
+      required: [sessionId, method]
       properties:
         sessionId: { type: string }
-        userCode: { type: string }
-        verificationUri: { type: string }
-        intervalSeconds: { type: integer }
+        method: { type: string, enum: [device_code, browser] }
+        authUrl: { type: string, nullable: true }
+        userCode: { type: string, nullable: true }
+        verificationUri: { type: string, nullable: true }
+        intervalSeconds: { type: integer, nullable: true }
     ChatGptLoginStatus:
       type: object
       required: [state]

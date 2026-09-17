@@ -11,8 +11,12 @@ from sqlalchemy.orm import Session
 
 from .ai.gateway import AIGateway
 from .ai.oauth_chatgpt import (
+    BROWSER_REDIRECT_URI,
     ChatGptCredential,
     ChatGptOAuthError,
+    create_browser_authorization,
+    exchange_authorization_code,
+    parse_authorization_input,
     poll_device_authorization,
     start_device_authorization,
 )
@@ -67,7 +71,9 @@ from .schemas import (
     DiscoverModelsRequest,
     DiscoverModelsResponse,
     ProviderSettingsResponse,
+    ChatGptLoginRequest,
     ChatGptLoginResponse,
+    ChatGptLoginCompleteRequest,
     ChatGptLoginStatusRequest,
     ChatGptLoginStatusResponse,
     SelectModelRequest,
@@ -489,17 +495,29 @@ async def run_chatgpt_device_login(session_id: str, device) -> None:
 
 
 @router.post("/settings/providers/chatgpt/oauth/login", response_model=ChatGptLoginResponse)
-async def chatgpt_oauth_login():
+async def chatgpt_oauth_login(payload: ChatGptLoginRequest):
+    session_id = str(uuid4())
+    if payload.method == "browser":
+        authorization = create_browser_authorization()
+        chatgpt_login_sessions[session_id] = {
+            "method": "browser",
+            "status": "pending",
+            "credential": None,
+            "error": None,
+            "verifier": authorization.verifier,
+            "state": authorization.state,
+        }
+        return {"sessionId": session_id, "method": "browser", "authUrl": authorization.url}
     try:
         device = await start_device_authorization()
     except ChatGptOAuthError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    session_id = str(uuid4())
-    session: dict = {"status": "pending", "credential": None, "error": None}
+    session: dict = {"method": "device_code", "status": "pending", "credential": None, "error": None}
     session["task"] = asyncio.create_task(run_chatgpt_device_login(session_id, device))
     chatgpt_login_sessions[session_id] = session
     return {
         "sessionId": session_id,
+        "method": "device_code",
         "userCode": device.user_code,
         "verificationUri": device.verification_uri,
         "intervalSeconds": device.interval_seconds,
@@ -526,6 +544,38 @@ def chatgpt_oauth_status(payload: ChatGptLoginStatusRequest, db: Session = Depen
         chatgpt_login_sessions.pop(payload.session_id, None)
         return {"state": "failed", "error": error}
     return {"state": "pending"}
+
+
+@router.post("/settings/providers/chatgpt/oauth/complete", response_model=ChatGptLoginStatusResponse)
+async def chatgpt_oauth_complete(
+    payload: ChatGptLoginCompleteRequest, db: Session = Depends(get_db)
+):
+    session = chatgpt_login_sessions.get(payload.session_id)
+    if session is None:
+        return {"state": "unknown"}
+    if session.get("method") != "browser":
+        raise HTTPException(status_code=400, detail="当前登录会话不是浏览器授权")
+    try:
+        code, state = parse_authorization_input(payload.input)
+        expected_state = session.get("state")
+        if state and expected_state and state != expected_state:
+            raise ChatGptOAuthError("state 校验失败，请重新发起登录")
+        if not code:
+            raise ChatGptOAuthError("未在输入中找到授权码")
+        credential = await exchange_authorization_code(
+            code, session["verifier"], redirect_uri=BROWSER_REDIRECT_URI
+        )
+    except ChatGptOAuthError as exc:
+        session["error"] = str(exc)
+        return {"state": "failed", "error": str(exc)}
+    try:
+        save_chatgpt_login(credential)
+    except Exception as exc:  # noqa: BLE001
+        session["error"] = f"凭证保存失败: {exc}"
+        return {"state": "failed", "error": session["error"]}
+    chatgpt_login_sessions.pop(payload.session_id, None)
+    restore_active_provider(db)
+    return {"state": "done", "accountId": credential.account_id, "expires": credential.expires_at}
 
 
 @router.post("/settings/providers/chatgpt/oauth/logout", response_model=ProviderSettingsResponse)

@@ -218,8 +218,13 @@ button { cursor: pointer; }
 .chatgpt-dot.ok { background: #74d2b4; }
 .chatgpt-pending p { color: #aab9ca; font-size: 12px; line-height: 1.6; }
 .chatgpt-pending a { color: #74d2b4; word-break: break-all; }
+.chatgpt-pending code { color: #9fd8c5; font-size: 11px; }
+.chatgpt-pending input { box-sizing: border-box; width: 100%; margin: 8px 0; padding: 9px; border-radius: 6px; border: 1px solid #30415a; background: #121b28; color: #e8edf5; }
+.chatgpt-pending .primary { border: 0; border-radius: 6px; background: #74d2b4; color: #0c1717; padding: 9px 13px; font-size: 12px; font-weight: 700; }
+.chatgpt-pending .primary:disabled { opacity: .55; }
 .device-code { margin: 10px 0; padding: 12px; border: 1px dashed #4b6b85; border-radius: 7px; background: #121b28; color: #9fd8c5; font-size: 22px; letter-spacing: .18em; text-align: center; }
 .theme-light .chatgpt-login { background: #f8fafb; border-color: #cfdbe3; }
 .theme-light .chatgpt-status { color: #344454; }
 .theme-light .chatgpt-pending p { color: #536273; }
+.theme-light .chatgpt-pending input { background: #fff; border-color: #cfdbe3; color: #263342; }
 .theme-light .device-code { background: #fff; color: #187c68; }

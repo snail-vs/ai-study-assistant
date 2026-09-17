@@ -63,15 +63,26 @@ class DiscoverModelsResponse(ApiModel):
     models: list[str]
 
 
+class ChatGptLoginRequest(ApiModel):
+    method: Literal["device_code", "browser"] = "device_code"
+
+
 class ChatGptLoginResponse(ApiModel):
     session_id: str = Field(alias="sessionId")
-    user_code: str = Field(alias="userCode")
-    verification_uri: str = Field(alias="verificationUri")
-    interval_seconds: int = Field(alias="intervalSeconds")
+    method: Literal["device_code", "browser"]
+    auth_url: str | None = Field(default=None, alias="authUrl")
+    user_code: str | None = Field(default=None, alias="userCode")
+    verification_uri: str | None = Field(default=None, alias="verificationUri")
+    interval_seconds: int | None = Field(default=None, alias="intervalSeconds")
 
 
 class ChatGptLoginStatusRequest(ApiModel):
     session_id: str = Field(alias="sessionId")
+
+
+class ChatGptLoginCompleteRequest(ApiModel):
+    session_id: str = Field(alias="sessionId")
+    input: str = Field(min_length=1)
 
 
 class ChatGptLoginStatusResponse(ApiModel):
