@@ -46,6 +46,10 @@ const noteEditorInitial = ref({ title: '', content: '' })
 const noteTargetCardId = ref('')
 const noteTargetSectionId = ref('')
 const loading = ref(false)
+const creatingCard = ref(false)
+const savingSettings = ref(false)
+const creatingBranch = ref(false)
+const startingDiscussion = ref(false)
 const error = ref('')
 const theme = ref(localStorage.getItem('studycenter.theme') || 'light')
 const showSettings = ref(false)
@@ -641,7 +645,7 @@ async function fetchModels() {
 
 async function saveProvider() {
   if ((!apiKey.value.trim() && !keyConfigured.value) || !selectedModels.value.length) return
-  loading.value = true
+  savingSettings.value = true
   try {
     providerStatus.value = await request(`/settings/providers/${selectedProvider.value}`, {
       method: 'PUT', body: JSON.stringify({ ...(apiKey.value.trim() ? { apiKey: apiKey.value.trim() } : {}), models: selectedModels.value, taskRoutes: Object.fromEntries(Object.entries(taskRoutes.value).filter(([, model]) => model)) }),
@@ -654,7 +658,7 @@ async function saveProvider() {
     apiKey.value = ''
     editingKey.value = false
     showSettings.value = false
-  } catch (err) { error.value = err.message } finally { loading.value = false }
+  } catch (err) { error.value = err.message } finally { savingSettings.value = false }
 }
 
 async function useMock() {
@@ -666,7 +670,7 @@ async function useMock() {
 
 async function startLearning() {
   if (!goal.value.trim()) return
-  loading.value = true
+  creatingCard.value = true
   error.value = ''
   try {
     space.value = await request('/learning-spaces', {
@@ -698,7 +702,7 @@ async function startLearning() {
   } catch (err) {
     error.value = err.message
   } finally {
-    loading.value = false
+    creatingCard.value = false
   }
 }
 
@@ -902,7 +906,7 @@ async function sendMessage(text = input.value) {
 
 async function acceptProposal(item = proposal.value) {
   if (!item) return
-  loading.value = true
+  creatingBranch.value = true
   try {
     const sourceEntry = { cardId: card.value.id, sectionId: section.value?.id || null }
     const generatedCard = await request(`/proposals/${item.proposalId || item.id}/accept`, { method: 'POST' })
@@ -910,11 +914,11 @@ async function acceptProposal(item = proposal.value) {
     recommendations.value = recommendations.value.filter((recommendation) => recommendation.id !== item.id && recommendation.proposalId !== item.proposalId)
     proposal.value = null
     selectedRecommendation.value = null
-  } catch (err) { error.value = err.message } finally { loading.value = false }
+  } catch (err) { error.value = err.message } finally { creatingBranch.value = false }
 }
 
 async function continueRecommendation(item) {
-  loading.value = true
+  startingDiscussion.value = true
   error.value = ''
   try {
     const conversation = await request(`/proposals/${item.proposalId || item.id}/discussion`, { method: 'POST' })
@@ -925,7 +929,7 @@ async function continueRecommendation(item) {
     selectedRecommendation.value = null
     await sendMessage(`我想先了解“${item.title}”，请先说明它和当前章节的关系，以及我是否需要为它创建学习分支。`)
     await loadRecommendations()
-  } catch (err) { error.value = err.message } finally { loading.value = false }
+  } catch (err) { error.value = err.message } finally { startingDiscussion.value = false }
 }
 
 async function deleteRecommendation(item) {
@@ -1121,7 +1125,7 @@ function nextSection() {
     <header class="topbar">
       <button class="brand" @click="goHome" title="返回首页">Study<span>Center</span></button>
       <div v-if="space" class="crumb">学习空间 / {{ card?.title }} / {{ section?.title || '未开始' }}</div>
-      <div class="status">{{ loading ? 'AI 正在准备内容…' : `课程生成：${knowledgeCardModel}` }}</div>
+      <div class="status">{{ space ? `课程生成：${knowledgeCardModel}` : '已登录' }}</div>
       <button class="notes-button" @click="openNotes">笔记</button>
       <button class="theme-button" @click="toggleTheme" :title="theme === 'light' ? '切换到深色主题' : '切换到浅色主题'">{{ theme === 'light' ? '深色' : '浅色' }}</button>
       <button class="settings-button" @click="openSettings">设置</button>
@@ -1134,7 +1138,8 @@ function nextSection() {
       <p class="lead">课程设计 Agent 会先生成一张知识卡。之后的课程内容、问题讨论和学习笔记，都围绕它展开。</p>
       <form @submit.prevent="startLearning" class="start-form">
         <textarea v-model="goal" placeholder="例如：我想系统理解 Kubernetes 容器隔离，并能看懂 Namespace 和 cgroups 的关系" autofocus></textarea>
-        <div class="start-options"><span class="route-hint">课程生成使用：{{ knowledgeCardModel }}</span><button :disabled="loading">创建知识卡</button></div>
+        <div class="start-options"><span class="route-hint">课程生成使用：{{ knowledgeCardModel }}</span><button :disabled="creatingCard">{{ creatingCard ? '正在生成知识卡…' : '创建知识卡' }}</button></div>
+        <div v-if="creatingCard" class="create-card-status"><i class="status-spinner"></i><span>正在规划课程结构并生成章节内容…</span></div>
       </form>
       <div v-if="homeCards.length" class="history">
         <div class="history-title">我的知识卡</div>
@@ -1183,7 +1188,7 @@ function nextSection() {
         <label v-if="!isChatGpt">API Key<div class="key-row"><input v-if="editingKey || !keyConfigured" v-model="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" /><div v-else class="masked-key">*****</div><button v-if="keyConfigured && !editingKey" class="edit-key" @click="editingKey = true">编辑</button><button :disabled="fetchingModels || (!apiKey && !keyConfigured)" @click="fetchModels">{{ fetchingModels ? '获取中…' : '获取模型' }}</button></div></label>
         <div v-if="isChatGpt && !availableModels.length" class="provider-actions"><button :disabled="fetchingModels || !keyConfigured" @click="fetchModels">{{ fetchingModels ? '获取中…' : '获取模型' }}</button></div>
         <div v-if="availableModels.length" class="model-catalog"><div class="catalog-title">选择此 Provider 可使用的模型</div><label v-for="model in availableModels" :key="model" class="model-check"><input v-model="selectedModels" type="checkbox" :value="model" /><span>{{ model }}</span></label></div>
-        <div class="provider-actions"><button class="secondary" @click="useMock">切换 Mock</button><button class="primary" :disabled="loading || ((!apiKey && !keyConfigured) || !selectedModels.length)" @click="saveProvider">保存 Provider</button></div>
+        <div class="provider-actions"><button class="secondary" @click="useMock">切换 Mock</button><button class="primary" :disabled="savingSettings || ((!apiKey && !keyConfigured) || !selectedModels.length)" @click="saveProvider">{{ savingSettings ? '保存中…' : '保存 Provider' }}</button></div>
         <div v-if="allModelOptions.length" class="default-model-setting"><div class="catalog-title">全局默认模型（跨 Provider）</div><select v-model="selectedDefaultModel"><option value="">请选择默认模型</option><option v-for="option in allModelOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></div>
         <div v-if="allModelOptions.length" class="task-routes"><div class="catalog-title">任务模型路由（跨 Provider；不设置则使用当前默认模型）</div><label v-for="task in taskDefinitions" :key="task.id" class="task-route"><span>{{ task.label }}</span><select v-model="taskRoutes[task.id]"><option value="">跟随默认模型</option><option v-for="option in allModelOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label></div>
         <div class="provider-hint">已配置：{{ Object.entries(providerStatus.providers).filter(([, value]) => value).map(([key]) => key).join('、') || '暂无' }}</div>
@@ -1219,7 +1224,7 @@ function nextSection() {
         <div class="recommendation-modal-head"><div><span class="recommendation-kicker">学习建议</span><h3>{{ selectedRecommendation.title }}</h3></div><button @click="selectedRecommendation = null">×</button></div>
         <p>{{ selectedRecommendation.reason }}</p>
         <div class="recommendation-source">来自：当前知识卡 · {{ section?.title }}</div>
-        <div class="recommendation-actions"><button class="danger" @click="deleteRecommendation(selectedRecommendation)">删除建议</button><button class="secondary" @click="continueRecommendation(selectedRecommendation)">继续讨论</button><button class="primary" @click="acceptProposal(selectedRecommendation)">创建学习分支</button></div>
+            <div class="recommendation-actions"><button class="danger" :disabled="creatingBranch || startingDiscussion" @click="deleteRecommendation(selectedRecommendation)">删除建议</button><button class="secondary" :disabled="creatingBranch || startingDiscussion" @click="continueRecommendation(selectedRecommendation)">{{ startingDiscussion ? '正在创建讨论…' : '继续讨论' }}</button><button class="primary" :disabled="creatingBranch || startingDiscussion" @click="acceptProposal(selectedRecommendation)">{{ creatingBranch ? '正在创建分支…' : '创建学习分支' }}</button></div>
       </section>
     </div>
 
@@ -1326,7 +1331,7 @@ function nextSection() {
             <div class="proposal-kicker">发现一个前置知识缺口</div>
             <strong>{{ proposal.title }}</strong>
             <p>{{ proposal.reason }}</p>
-            <div class="proposal-actions"><button @click="selectedRecommendation = proposal">查看建议</button><button @click="acceptProposal">创建学习分支</button></div>
+            <div class="proposal-actions"><button @click="selectedRecommendation = proposal">查看建议</button><button :disabled="creatingBranch" @click="acceptProposal">{{ creatingBranch ? '正在创建…' : '创建学习分支' }}</button></div>
           </div>
         </div>
         <div v-if="sideRun.active" class="chat-run-status"><i class="status-spinner"></i>{{ sideRun.label }}</div>

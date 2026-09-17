@@ -221,6 +221,10 @@ button { cursor: pointer; }
 .auth-submit { width: 100%; margin-top: 6px; padding: 11px; border: 0; border-radius: 7px; background: #74d2b4; color: #0c1717; font-weight: 700; }
 .auth-submit:disabled { opacity: .55; cursor: wait; }
 .auth-switch { width: 100%; margin-top: 18px; border: 0; background: transparent; color: #74d2b4; font-size: 12px; }
+.create-card-status { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: #718da0; font-size: 12px; }
+.create-card-status .status-spinner { flex: 0 0 auto; }
+.start-form button:disabled, .recommendation-actions button:disabled, .proposal-actions button:disabled { cursor: wait; opacity: .55; }
+.theme-light .create-card-status { color: #718b88; }
 .theme-light .activity-nav-item { color: #627284; }.theme-light .activity-nav-item:hover, .theme-light .activity-nav-item.active { background: #e4f4ef; color: #187c68; }.theme-light .activity-nav-item span { color: #8794a1; }.theme-light .activity-nav-item small { color: #8794a1; }.theme-light .quiz-intro { border-color: #e0e6eb; }.theme-light .quiz-intro h2 { color: #263342; }.theme-light .quiz-question { border-color: #e0e6eb; }.theme-light .quiz-question h3 { color: #344454; }.theme-light .quiz-options label { border-color: #d5e0e6; color: #536273; }.theme-light .quiz-options label:has(input:checked) { background: #eef8f5; border-color: #8bc8ba; color: #145d50; }.theme-light .quiz-options textarea { background: #fff; border-color: #cfdbe3; color: #263342; }.theme-light .quiz-result-item { background: #fff7f7; border-color: #e3c3c3; }.theme-light .quiz-result-item.correct { background: #f0f8f7; border-color: #c9e0db; }.theme-light .quiz-result-item > div { color: #985050; }.theme-light .quiz-result-item.correct > div { color: #187c68; }.theme-light .quiz-result-item p, .theme-light .quiz-diagnostic { color: #536273; }
 .chatgpt-login { margin-top: 18px; padding: 12px; background: #0d1520; border: 1px solid #2b3c52; border-radius: 7px; }
 .chatgpt-status { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: #c5d2df; font-size: 12px; }
