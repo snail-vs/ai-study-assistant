@@ -281,3 +281,69 @@ button { cursor: pointer; }
   .task-routes .catalog-title { grid-column: auto; }
   .model-role-route { grid-template-columns: 1fr; gap: 7px; }
 }
+
+/* Mobile classroom: keep the lesson readable and open navigation/discussion on demand. */
+.mobile-discussion-toggle, .mobile-chat-close { display: none; }
+.chat-head-actions { display: flex; align-items: center; gap: 10px; }
+
+@media (max-width: 767px) {
+  body { min-width: 0; width: 100%; overflow-x: hidden; }
+  .topbar { height: 58px; padding: 0 12px; gap: 9px; }
+  .brand { flex: 0 0 auto; font-size: 18px; }
+  .crumb { display: none; }
+  .status { min-width: 0; flex: 1; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+  .topbar .notes-button, .topbar .theme-button, .topbar .settings-button { padding: 6px 7px; font-size: 11px; white-space: nowrap; }
+  .topbar > button:last-child { display: none; }
+
+  .welcome { width: 100%; padding: 12vh 20px 48px; }
+  .welcome h1 { font-size: clamp(34px, 10vw, 46px); }
+  .lead { font-size: 15px; line-height: 1.65; }
+  .start-form { margin-top: 26px; }
+  .start-form textarea { min-height: 150px; font-size: 14px; }
+  .start-options { align-items: flex-start; flex-direction: column; }
+  .start-options button { align-self: flex-end; padding: 0 16px; }
+  .history { margin-top: 34px; }
+
+  .workspace, .workspace.sidebar-collapsed { display: block; height: calc(100dvh - 58px); min-height: 0; padding: 0; }
+  .workspace .sidebar { display: none; }
+  .workspace:not(.sidebar-collapsed) .sidebar { position: fixed; z-index: 18; inset: 58px auto 0 0; display: block; width: min(320px, 88vw); height: calc(100dvh - 58px); overflow-y: auto; padding: 18px 12px; border-radius: 0 12px 12px 0; box-shadow: 18px 0 50px #0008; }
+  .workspace:not(.sidebar-collapsed)::before { content: ''; position: fixed; z-index: 17; inset: 58px 0 0; background: #02060c66; pointer-events: none; }
+  .workspace .board { width: 100%; height: 100%; min-height: 0; border: 0; border-radius: 0; padding: 14px 12px 10px; }
+  .board-meta { min-height: 30px; letter-spacing: .04em; }
+  .board-actions { gap: 7px; }
+  .board-actions > span { display: none; }
+  .board-actions button { padding: 5px 7px; font-size: 11px; }
+  .mobile-discussion-toggle { display: inline-block; }
+  .markdown { margin: 30px auto 48px; }
+  .markdown h2 { font-size: 28px; line-height: 1.2; margin-bottom: 22px; }
+  .content { font-size: 15px; line-height: 1.8; }
+  .content pre { max-width: 100%; padding: 11px; font-size: 12px; }
+  .content table { display: block; overflow-x: auto; font-size: 12px; }
+  .section-navigation { margin: 0 2px 9px; padding: 8px 2px; }
+  .section-navigation button { padding: 6px 4px; }
+  .teacher-guidance { margin: 0 2px 8px; }
+  .teacher-guidance-body { max-height: 118px; }
+
+  .resize-handle { display: none; }
+  .workspace .chat { display: none; }
+  .workspace.mobile-discussion-open .chat { position: fixed; z-index: 20; inset: 58px 0 0; display: flex; width: auto; height: calc(100dvh - 58px); min-height: 0; border: 0; border-radius: 0; box-shadow: 0 -16px 50px #0009; }
+  .chat-head { padding: 14px 16px; }
+  .conversation-trigger .panel-title { max-width: 52vw; }
+  .mobile-chat-close { display: inline-block; padding: 0; border: 0; background: transparent; color: #9eafc3; font-size: 25px; line-height: 1; }
+  .messages { padding: 14px 16px; }
+  .composer { padding: 10px 12px max(10px, env(safe-area-inset-bottom)); }
+  .composer textarea { min-height: 54px; height: 54px; font-size: 14px; }
+  .composer button { flex: 0 0 auto; padding: 0 10px; }
+  .conversation-menu-backdrop { inset: 58px 0 0; }
+  .conversation-menu-backdrop .conversation-list { max-height: min(55vh, 360px); }
+
+  .modal-backdrop { padding: 10px; place-items: end center; }
+  .settings-modal { width: 100%; max-height: calc(100dvh - 20px); border-radius: 12px; padding: 18px; }
+  .settings-head { margin-bottom: 16px; }
+  .settings-modal label { margin-top: 13px; }
+  .model-catalog { max-height: 150px; }
+  .notes-drawer { width: 100%; padding: 18px; border-left: 0; border-radius: 14px 14px 0 0; }
+  .notes-drawer-head { margin-bottom: 17px; }
+  .recommendation-backdrop { padding: 12px; place-items: end center; }
+  .recommendation-modal { width: 100%; max-height: calc(100dvh - 24px); overflow-y: auto; }
+}

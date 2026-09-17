@@ -32,6 +32,7 @@ const showTeacherGuidance = ref(true)
 const conversations = ref([])
 const activeConversation = ref(null)
 const showConversationList = ref(false)
+const showMobileDiscussion = ref(false)
 const messages = ref([])
 const input = ref('')
 const sideRun = ref({ active: false, phase: '', label: '' })
@@ -1302,7 +1303,7 @@ function nextSection() {
       正在恢复学习空间…
     </section>
 
-    <section v-if="space && card" class="workspace" :class="{ 'sidebar-collapsed': !showKnowledgeSidebar }" :style="{ '--chat-width': `${chatWidth}px` }">
+    <section v-if="space && card" class="workspace" :class="{ 'sidebar-collapsed': !showKnowledgeSidebar, 'mobile-discussion-open': showMobileDiscussion }" :style="{ '--chat-width': `${chatWidth}px` }">
       <aside class="sidebar panel">
         <div class="sidebar-head"><div class="panel-title">学习导航</div><button class="sidebar-toggle" title="收起学习导航" @click="toggleKnowledgeSidebar">‹</button></div>
         <div class="tree-label">章节目录</div>
@@ -1324,7 +1325,7 @@ function nextSection() {
       </aside>
 
       <section class="board panel">
-        <div class="board-meta"><div class="board-location"><button v-if="!showKnowledgeSidebar" class="sidebar-toggle collapsed-toggle" title="展开学习导航" @click="toggleKnowledgeSidebar">› <span>学习导航</span></button><span>第 {{ activeSection + 1 }} 节</span></div><div class="board-actions"><span>{{ learningView === 'activity' ? '理解检查' : sectionTypeLabel }}</span><button @click="startNote">＋ 记笔记</button></div></div>
+        <div class="board-meta"><div class="board-location"><button v-if="!showKnowledgeSidebar" class="sidebar-toggle collapsed-toggle" title="展开学习导航" @click="toggleKnowledgeSidebar">› <span>学习导航</span></button><span>第 {{ activeSection + 1 }} 节</span></div><div class="board-actions"><span>{{ learningView === 'activity' ? '理解检查' : sectionTypeLabel }}</span><button @click="startNote">＋ 记笔记</button><button class="mobile-discussion-toggle" @click="showMobileDiscussion = true">讨论</button></div></div>
         <div class="board-scroll">
           <button v-if="isRelatedCard" class="back-main" @click="returnToMain">← 返回来源知识卡</button>
           <section v-if="learningView === 'activity'" class="quiz-screen">
@@ -1379,7 +1380,7 @@ function nextSection() {
       <aside class="chat panel">
         <div class="chat-head">
           <div class="chat-heading"><span class="chat-region-label">讨论区</span><button class="conversation-trigger" :disabled="sideRun.active" @click="showConversationList = !showConversationList" :aria-expanded="showConversationList"><span class="panel-title">{{ activeConversation?.title || '新问题讨论' }}</span><span class="conversation-trigger-icon">⌄</span></button></div>
-          <button class="new-chat" :disabled="sideRun.active" @click="activeConversation = null; messages = []; showConversationList = false">＋ 新建讨论</button>
+          <div class="chat-head-actions"><button class="new-chat" :disabled="sideRun.active" @click="activeConversation = null; messages = []; showConversationList = false">＋ 新建讨论</button><button class="mobile-chat-close" aria-label="关闭讨论区" @click="showMobileDiscussion = false">×</button></div>
         </div>
         <div v-if="showConversationList" class="conversation-menu-backdrop" @click="showConversationList = false">
           <div class="conversation-list" @click.stop>
