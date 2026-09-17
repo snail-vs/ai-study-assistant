@@ -16,5 +16,4 @@ COPY backend /app/backend
 EXPOSE 8000
 
 # Migrations run against the same DATABASE_URL used by the application.
-CMD ["sh", "-c", "cd /app/backend && uv run alembic upgrade head && cd /app && exec uv run --project backend uvicorn backend.main:app --host 0.0.0.0 --port 8000"]
-
+CMD ["sh", "-c", "cd /app/backend && /app/backend/.venv/bin/alembic upgrade head && exec /app/backend/.venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000"]
