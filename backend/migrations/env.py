@@ -9,7 +9,7 @@ from sqlalchemy import engine_from_config, pool
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from backend import models  # noqa: F401
-from backend.db import Base
+from backend.db import Base, DATABASE_URL
 
 config = context.config
 if config.config_file_name is not None:
@@ -17,9 +17,7 @@ if config.config_file_name is not None:
 
 # Keep migrations and the application on the same database.  The default
 # alembic.ini value is only a local-development fallback.
-database_url = os.getenv("DATABASE_URL")
-if database_url:
-    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
 
 target_metadata = Base.metadata
 
