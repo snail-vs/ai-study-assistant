@@ -23,6 +23,10 @@ class LearningSpace(Base):
     title: Mapped[str] = mapped_column(String(200))
     learning_goal: Mapped[str] = mapped_column(Text)
     root_card_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    generation_status: Mapped[str] = mapped_column(String(20), default="completed", server_default="completed")
+    generation_phase: Mapped[str] = mapped_column(String(30), default="completed", server_default="completed")
+    generation_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    generation_updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=now, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     cards: Mapped[list["KnowledgeCard"]] = relationship(back_populates="space")
 

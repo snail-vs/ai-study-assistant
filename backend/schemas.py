@@ -122,12 +122,24 @@ class LearningSpaceResponse(ApiModel):
     title: str
     learning_goal: str = Field(alias="learningGoal")
     root_card_id: str | None = Field(alias="rootCardId")
+    generation_status: str = Field(alias="generationStatus")
+    generation_phase: str = Field(alias="generationPhase")
+    generation_error: str | None = Field(default=None, alias="generationError")
     created_at: datetime = Field(alias="createdAt")
 
 
 class LearningSpaceList(ApiModel):
     items: list[LearningSpaceResponse]
     next_cursor: str | None = Field(default=None, alias="nextCursor")
+
+
+class GenerationStatusResponse(ApiModel):
+    space_id: str = Field(alias="spaceId")
+    status: str
+    phase: str
+    error: str | None = None
+    root_card_id: str | None = Field(default=None, alias="rootCardId")
+    updated_at: datetime = Field(alias="updatedAt")
 
 
 class LearningNavigationEntry(ApiModel):

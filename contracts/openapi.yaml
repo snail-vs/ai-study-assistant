@@ -254,8 +254,8 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateLearningSpaceRequest'
       responses:
-        '201':
-          description: Learning space created
+        '202':
+          description: Learning space queued for asynchronous generation
           content:
             application/json:
               schema:
@@ -283,6 +283,18 @@ paths:
                 $ref: '#/components/schemas/LearningSpace'
         '404':
           $ref: '#/components/responses/NotFound'
+  /learning-spaces/{spaceId}/generation:
+    parameters:
+      - $ref: '#/components/parameters/SpaceId'
+    get:
+      operationId: getCourseGenerationStatus
+      responses:
+        '200':
+          description: Course generation status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerationStatus'
   /learning-spaces/{spaceId}/runtime:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
@@ -806,13 +818,26 @@ components:
         learningGoal: { type: string, minLength: 1 }
     LearningSpace:
       type: object
-      required: [id, title, learningGoal, rootCardId, createdAt]
+      required: [id, title, learningGoal, rootCardId, generationStatus, generationPhase, createdAt]
       properties:
         id: { type: string }
         title: { type: string }
         learningGoal: { type: string }
         rootCardId: { type: string, nullable: true }
+        generationStatus: { type: string, enum: [queued, running, completed, failed] }
+        generationPhase: { type: string, enum: [queued, generating, saving, completed, failed] }
+        generationError: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
+    GenerationStatus:
+      type: object
+      required: [spaceId, status, phase, rootCardId, updatedAt]
+      properties:
+        spaceId: { type: string }
+        status: { type: string, enum: [queued, running, completed, failed] }
+        phase: { type: string, enum: [queued, generating, saving, completed, failed] }
+        error: { type: string, nullable: true }
+        rootCardId: { type: string, nullable: true }
+        updatedAt: { type: string, format: date-time }
     LearningSpaceList:
       type: object
       required: [items]

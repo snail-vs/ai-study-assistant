@@ -13,6 +13,7 @@ const authLoading = ref(false)
 const goal = ref('')
 const history = ref([])
 const historyCards = ref({})
+const generationNotice = ref('')
 const space = ref(null)
 const card = ref(null)
 const rootCard = ref(null)
@@ -139,6 +140,7 @@ onUnmounted(() => {
   stopChatResize()
   stopChatgptPolling()
   window.removeEventListener('popstate', restoreStudyRoute)
+  if (generationPollTimer) clearInterval(generationPollTimer)
 })
 
 const section = computed(() => card.value?.sections?.[activeSection.value] || null)
@@ -180,6 +182,10 @@ const homeCards = computed(() => history.value.flatMap((spaceItem) => (
     space: spaceItem,
   }))
 )))
+const creatingSpaces = computed(() => history.value.filter((item) => (
+  item.generationStatus === 'queued' || item.generationStatus === 'running' || item.generationStatus === 'failed'
+)))
+let generationPollTimer = null
 const noteCardOptions = computed(() => {
   const cards = homeCards.value.map((item) => item.card)
   if (card.value && !cards.some((item) => item.id === card.value.id)) cards.unshift(card.value)
@@ -720,32 +726,13 @@ async function startLearning() {
   creatingCard.value = true
   error.value = ''
   try {
-    space.value = await request('/learning-spaces', {
+    const createdSpace = await request('/learning-spaces', {
       method: 'POST',
       body: JSON.stringify({ title: goal.value.trim(), learningGoal: goal.value.trim() }),
     })
-    card.value = await request(`/cards/${space.value.rootCardId}`)
-    rootCard.value = card.value
-    learningView.value = 'content'
-    activeActivity.value = null
-    activityResult.value = null
-    await loadTeacherGuidance()
-    await loadRecommendations()
-    await loadRelatedCards()
-    await loadSectionActivities()
-    const main = await request(`/cards/${card.value.id}/conversations`, {
-      method: 'POST',
-      body: JSON.stringify({ conversationType: 'main', title: '课程导师', rootQuestion: goal.value }),
-    })
-    conversations.value = [main]
-    activeConversation.value = main
-    showConversationList.value = false
-    messages.value = []
-    navigationStack.value = []
-    await loadNotes()
+    goal.value = ''
+    generationNotice.value = `课程“${createdSpace.title}”已提交，正在后台生成…`
     await loadHistory()
-    syncStudyUrl({ replace: true })
-    await persistLearningRuntime('course_started')
   } catch (err) {
     error.value = err.message
   } finally {
@@ -755,7 +742,17 @@ async function startLearning() {
 
 async function loadHistory() {
   try {
-    history.value = (await request('/learning-spaces')).items || []
+    const nextHistory = (await request('/learning-spaces')).items || []
+    const previousStatuses = new Map(history.value.map((item) => [item.id, item.generationStatus]))
+    for (const item of nextHistory) {
+      const previous = previousStatuses.get(item.id)
+      if (previous && previous !== item.generationStatus && item.generationStatus === 'completed') {
+        generationNotice.value = `课程“${item.title}”已生成完成。`
+      } else if (previous && previous !== item.generationStatus && item.generationStatus === 'failed') {
+        generationNotice.value = `课程“${item.title}”生成失败：${item.generationError || '请重试。'}`
+      }
+    }
+    history.value = nextHistory
     const entries = await Promise.all(history.value.map(async (item) => {
       try {
         return [item.id, await request(`/learning-spaces/${item.id}/cards`)]
@@ -764,6 +761,13 @@ async function loadHistory() {
       }
     }))
     historyCards.value = Object.fromEntries(entries)
+    const hasPending = history.value.some((item) => item.generationStatus === 'queued' || item.generationStatus === 'running')
+    if (hasPending && !generationPollTimer) {
+      generationPollTimer = setInterval(() => loadHistory(), 3000)
+    } else if (!hasPending && generationPollTimer) {
+      clearInterval(generationPollTimer)
+      generationPollTimer = null
+    }
   } catch (_) {
     // The empty state remains usable if the API is temporarily unavailable.
   }
@@ -1188,8 +1192,15 @@ function nextSection() {
         <div class="start-options"><span class="route-hint">课程生成使用：{{ knowledgeCardModel }}</span><button :disabled="creatingCard">{{ creatingCard ? '正在生成知识卡…' : '创建知识卡' }}</button></div>
         <div v-if="creatingCard" class="create-card-status"><i class="status-spinner"></i><span>正在规划课程结构并生成章节内容…</span></div>
       </form>
-      <div v-if="homeCards.length" class="history">
+      <p v-if="generationNotice" class="generation-notice">{{ generationNotice }}</p>
+      <div v-if="homeCards.length || creatingSpaces.length" class="history">
         <div class="history-title">我的知识卡</div>
+        <div v-for="item in creatingSpaces" :key="item.id" class="history-item generation-item">
+          <div class="history-open">
+            <span>{{ item.title }}</span>
+            <small>{{ item.generationStatus === 'queued' ? '排队中' : item.generationStatus === 'failed' ? `生成失败：${item.generationError || '请重试'}` : '正在生成课程内容…' }}</small>
+          </div>
+        </div>
         <div v-for="item in homeCards" :key="item.card.id" class="history-item">
           <button class="history-open" @click="openHomeCard(item)">
             <span>{{ item.card.title }}</span>

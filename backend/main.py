@@ -7,12 +7,17 @@ from fastapi.exceptions import RequestValidationError
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from .api import public_router, router
+from .api import public_router, resume_pending_course_generations, router
 from .auth_api import router as auth_router
 from .ai.base import AIProviderError
 from . import models  # noqa: F401
 
 app = FastAPI(title="StudyCenter API", version="0.1.0")
+
+
+@app.on_event("startup")
+async def resume_course_generations() -> None:
+    await resume_pending_course_generations()
 logger = logging.getLogger("studycenter.ai")
 app.add_middleware(
     CORSMiddleware,

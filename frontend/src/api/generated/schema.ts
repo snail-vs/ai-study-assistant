@@ -282,6 +282,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/learning-spaces/{spaceId}/generation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: components["parameters"]["SpaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getCourseGenerationStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/learning-spaces/{spaceId}/runtime": {
         parameters: {
             query?: never;
@@ -706,8 +724,24 @@ export interface components {
             title: string;
             learningGoal: string;
             rootCardId: string | null;
+            /** @enum {string} */
+            generationStatus: "queued" | "running" | "completed" | "failed";
+            /** @enum {string} */
+            generationPhase: "queued" | "generating" | "saving" | "completed" | "failed";
+            generationError?: string | null;
             /** Format: date-time */
             createdAt: string;
+        };
+        GenerationStatus: {
+            spaceId: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "completed" | "failed";
+            /** @enum {string} */
+            phase: "queued" | "generating" | "saving" | "completed" | "failed";
+            error?: string | null;
+            rootCardId: string | null;
+            /** Format: date-time */
+            updatedAt: string;
         };
         LearningSpaceList: {
             items: components["schemas"]["LearningSpace"][];
@@ -1409,8 +1443,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Learning space created */
-            201: {
+            /** @description Learning space queued for asynchronous generation */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1441,6 +1475,28 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    getCourseGenerationStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: components["parameters"]["SpaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Course generation status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationStatus"];
+                };
+            };
         };
     };
     getLearningRuntime: {
