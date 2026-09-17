@@ -25,7 +25,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                providerName: "deepseek" | "opencode" | "openrouter";
+                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "chatgpt";
             };
             cookie?: never;
         };
@@ -43,13 +43,61 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                providerName: "deepseek" | "opencode" | "openrouter";
+                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "chatgpt";
             };
             cookie?: never;
         };
         get?: never;
         put?: never;
         post: operations["discoverProviderModels"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/providers/chatgpt/oauth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["startChatGptLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/providers/chatgpt/oauth/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["getChatGptLoginStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/providers/chatgpt/oauth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["logoutChatGpt"];
         delete?: never;
         options?: never;
         head?: never;
@@ -549,6 +597,19 @@ export interface components {
         DiscoverModelsResponse: {
             models: string[];
         };
+        ChatGptLogin: {
+            sessionId: string;
+            userCode: string;
+            verificationUri: string;
+            intervalSeconds: number;
+        };
+        ChatGptLoginStatus: {
+            /** @enum {string} */
+            state: "pending" | "done" | "failed" | "unknown";
+            accountId?: string | null;
+            expires?: number | null;
+            error?: string | null;
+        };
         HealthResponse: {
             /** @example ok */
             status: string;
@@ -848,7 +909,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                providerName: "deepseek" | "opencode" | "openrouter";
+                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "chatgpt";
             };
             cookie?: never;
         };
@@ -874,7 +935,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                providerName: "deepseek" | "opencode" | "openrouter";
+                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "chatgpt";
             };
             cookie?: never;
         };
@@ -896,7 +957,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                providerName: "deepseek" | "opencode" | "openrouter";
+                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "chatgpt";
             };
             cookie?: never;
         };
@@ -913,6 +974,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DiscoverModelsResponse"];
+                };
+            };
+        };
+    };
+    startChatGptLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Device-code login started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatGptLogin"];
+                };
+            };
+        };
+    };
+    getChatGptLoginStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Device-code login status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatGptLoginStatus"];
+                };
+            };
+        };
+    };
+    logoutChatGpt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ChatGPT logged out */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderSettings"];
                 };
             };
         };

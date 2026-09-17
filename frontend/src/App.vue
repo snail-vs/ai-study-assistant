@@ -75,6 +75,8 @@ const allModelOptions = computed(() => {
 })
 const fetchingModels = ref(false)
 const editingKey = ref(false)
+const chatgptLogin = ref({ status: 'idle', userCode: '', verificationUri: '', sessionId: '', error: '' })
+let chatgptPollTimer = null
 const proposal = ref(null)
 const recommendations = ref([])
 const selectedRecommendation = ref(null)
@@ -92,6 +94,7 @@ onMounted(async () => {
 })
 onUnmounted(() => {
   stopChatResize()
+  stopChatgptPolling()
   window.removeEventListener('popstate', restoreStudyRoute)
 })
 
@@ -107,6 +110,7 @@ function renderMessage(content) {
 }
 const isRelatedCard = computed(() => navigationStack.value.length > 0)
 const keyConfigured = computed(() => Boolean(providerStatus.value.providers?.[selectedProvider.value]))
+const isChatGpt = computed(() => selectedProvider.value === 'chatgpt')
 const knowledgeCardModel = computed(() => providerStatus.value.taskRoutes?.course_plan
   || (providerStatus.value.activeModel ? `${providerStatus.value.activeProvider}:${providerStatus.value.activeModel}` : 'Mock'))
 const sectionTypeLabels = {
@@ -485,6 +489,54 @@ function changeProvider() {
     : {}
   apiKey.value = ''
   editingKey.value = false
+  stopChatgptPolling()
+  chatgptLogin.value = { status: 'idle', userCode: '', verificationUri: '', sessionId: '', error: '' }
+}
+
+function stopChatgptPolling() {
+  if (chatgptPollTimer) {
+    clearInterval(chatgptPollTimer)
+    chatgptPollTimer = null
+  }
+}
+
+async function startChatgptLogin() {
+  stopChatgptPolling()
+  chatgptLogin.value = { status: 'starting', userCode: '', verificationUri: '', sessionId: '', error: '' }
+  try {
+    const result = await request('/settings/providers/chatgpt/oauth/login', { method: 'POST', body: JSON.stringify({}) })
+    chatgptLogin.value = { status: 'pending', userCode: result.userCode, verificationUri: result.verificationUri, sessionId: result.sessionId, error: '' }
+    chatgptPollTimer = setInterval(pollChatgptLogin, Math.max(2, result.intervalSeconds || 5) * 1000)
+  } catch (err) {
+    chatgptLogin.value = { ...chatgptLogin.value, status: 'failed', error: err.message }
+  }
+}
+
+async function pollChatgptLogin() {
+  const sessionId = chatgptLogin.value.sessionId
+  if (!sessionId) return
+  try {
+    const result = await request('/settings/providers/chatgpt/oauth/status', { method: 'POST', body: JSON.stringify({ sessionId }) })
+    if (result.state === 'pending') return
+    stopChatgptPolling()
+    if (result.state === 'done') {
+      chatgptLogin.value = { status: 'done', userCode: '', verificationUri: '', sessionId: '', error: '' }
+      await loadProviderSettings()
+    } else if (result.state === 'failed') {
+      chatgptLogin.value = { ...chatgptLogin.value, status: 'failed', error: result.error || '登录失败' }
+    }
+  } catch (err) {
+    stopChatgptPolling()
+    chatgptLogin.value = { ...chatgptLogin.value, status: 'failed', error: err.message }
+  }
+}
+
+async function logoutChatgpt() {
+  stopChatgptPolling()
+  try {
+    providerStatus.value = await request('/settings/providers/chatgpt/oauth/logout', { method: 'POST', body: JSON.stringify({}) })
+    chatgptLogin.value = { status: 'idle', userCode: '', verificationUri: '', sessionId: '', error: '' }
+  } catch (err) { error.value = err.message }
 }
 
 function ensureDefaultModel() {
@@ -1007,8 +1059,26 @@ function nextSection() {
     <div v-if="showSettings" class="modal-backdrop" @click.self="showSettings = false">
       <section class="settings-modal">
         <div class="settings-head"><div><div class="panel-title">模型设置</div><p>Key 会在后端加密保存，前端不会保存明文。</p></div><button @click="showSettings = false">×</button></div>
-        <label>Provider<select v-model="selectedProvider" @change="changeProvider"><option value="deepseek">DeepSeek</option><option value="google">Google Gemini</option><option value="opencode">OpenCode Zen</option><option value="openrouter">OpenRouter</option></select></label>
-        <label>API Key<div class="key-row"><input v-if="editingKey || !keyConfigured" v-model="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" /><div v-else class="masked-key">*****</div><button v-if="keyConfigured && !editingKey" class="edit-key" @click="editingKey = true">编辑</button><button :disabled="fetchingModels || (!apiKey && !keyConfigured)" @click="fetchModels">{{ fetchingModels ? '获取中…' : '获取模型' }}</button></div></label>
+        <label>Provider<select v-model="selectedProvider" @change="changeProvider"><option value="deepseek">DeepSeek</option><option value="google">Google Gemini</option><option value="opencode">OpenCode Zen</option><option value="openrouter">OpenRouter</option><option value="chatgpt">ChatGPT (Plus/Pro)</option></select></label>
+        <div v-if="isChatGpt" class="chatgpt-login">
+          <div class="catalog-title">ChatGPT Plus/Pro 订阅登录（设备码，无需 API Key）</div>
+          <div v-if="providerStatus.providers?.chatgpt" class="chatgpt-status">
+            <span class="chatgpt-dot ok"></span>
+            <span>已登录</span>
+            <button class="secondary" @click="logoutChatgpt">退出登录</button>
+          </div>
+          <div v-else-if="chatgptLogin.status === 'pending'" class="chatgpt-pending">
+            <p>在浏览器打开 <a :href="chatgptLogin.verificationUri" target="_blank" rel="noopener">{{ chatgptLogin.verificationUri }}</a> 并输入设备码：</p>
+            <div class="device-code">{{ chatgptLogin.userCode }}</div>
+            <p class="provider-hint">等待授权中…</p>
+          </div>
+          <div v-else>
+            <button class="primary" :disabled="chatgptLogin.status === 'starting'" @click="startChatgptLogin">{{ chatgptLogin.status === 'starting' ? '请求中…' : '设备码登录' }}</button>
+            <p v-if="chatgptLogin.error" class="error">{{ chatgptLogin.error }}</p>
+          </div>
+        </div>
+        <label v-if="!isChatGpt">API Key<div class="key-row"><input v-if="editingKey || !keyConfigured" v-model="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" /><div v-else class="masked-key">*****</div><button v-if="keyConfigured && !editingKey" class="edit-key" @click="editingKey = true">编辑</button><button :disabled="fetchingModels || (!apiKey && !keyConfigured)" @click="fetchModels">{{ fetchingModels ? '获取中…' : '获取模型' }}</button></div></label>
+        <div v-if="isChatGpt && !availableModels.length" class="provider-actions"><button :disabled="fetchingModels || !keyConfigured" @click="fetchModels">{{ fetchingModels ? '获取中…' : '获取模型' }}</button></div>
         <div v-if="availableModels.length" class="model-catalog"><div class="catalog-title">选择此 Provider 可使用的模型</div><label v-for="model in availableModels" :key="model" class="model-check"><input v-model="selectedModels" type="checkbox" :value="model" /><span>{{ model }}</span></label></div>
         <div class="provider-actions"><button class="secondary" @click="useMock">切换 Mock</button><button class="primary" :disabled="loading || ((!apiKey && !keyConfigured) || !selectedModels.length)" @click="saveProvider">保存 Provider</button></div>
         <div v-if="allModelOptions.length" class="default-model-setting"><div class="catalog-title">全局默认模型（跨 Provider）</div><select v-model="selectedDefaultModel"><option value="">请选择默认模型</option><option v-for="option in allModelOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></div>

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -9,7 +10,14 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .ai.gateway import AIGateway
-from .ai.registry import create_named_text_provider
+from .ai.oauth_chatgpt import (
+    ChatGptCredential,
+    ChatGptOAuthError,
+    poll_device_authorization,
+    start_device_authorization,
+)
+from .ai.providers.chatgpt import CODEX_MODELS, DEFAULT_CODEX_MODEL
+from .ai.registry import CHATGPT_PROVIDER, create_named_text_provider
 from .ai.providers.mock import MockTextProvider
 from .ai.tasks import TASK_BY_ID, TASKS
 from .agents.bridge_agent import BridgeAgent
@@ -19,7 +27,7 @@ from .agents.side_agent import SideAgent
 from .agents.teacher_agent import TeacherAgent
 from .agents.prompts import QA_TUTOR_SYSTEM
 from .agents.registry import default_participants, get_agent, AGENTS
-from .db import get_db
+from .db import SessionLocal, get_db
 from .models import (
     BridgeNote,
     CardSection,
@@ -59,6 +67,9 @@ from .schemas import (
     DiscoverModelsRequest,
     DiscoverModelsResponse,
     ProviderSettingsResponse,
+    ChatGptLoginResponse,
+    ChatGptLoginStatusRequest,
+    ChatGptLoginStatusResponse,
     SelectModelRequest,
     ConfigureTaskRoutesRequest,
     TaskRouteResponse,
@@ -83,9 +94,73 @@ assessment_agent = AssessmentAgent(gateway)
 provider_state = {
     "active": "mock",
     "active_model": None,
-    "providers": {"deepseek": False, "google": False, "opencode": False, "openrouter": False},
-    "models": {name: [] for name in ("deepseek", "google", "opencode", "openrouter")},
+    "providers": {"deepseek": False, "google": False, "opencode": False, "openrouter": False, "chatgpt": False},
+    "models": {name: [] for name in ("deepseek", "google", "opencode", "openrouter", "chatgpt")},
 }
+
+# In-flight device-code login sessions, keyed by the session id returned to the
+# client. Completed/failed sessions are removed when the client polls them.
+chatgpt_login_sessions: dict[str, dict] = {}
+
+
+def apply_chatgpt_credential(row: ProviderCredential, credential: ChatGptCredential) -> None:
+    access_ciphertext, access_nonce = encrypt_secret(credential.access_token)
+    refresh_ciphertext, refresh_nonce = encrypt_secret(credential.refresh_token)
+    row.auth_type = "oauth"
+    row.oauth_access_ciphertext = access_ciphertext
+    row.oauth_access_nonce = access_nonce
+    row.oauth_refresh_ciphertext = refresh_ciphertext
+    row.oauth_refresh_nonce = refresh_nonce
+    row.oauth_expires_at = credential.expires_at
+    row.oauth_account_id = credential.account_id
+
+
+def chatgpt_credential(row: ProviderCredential | None) -> ChatGptCredential | None:
+    if (
+        row is None
+        or row.auth_type != "oauth"
+        or not row.oauth_access_ciphertext
+        or not row.oauth_refresh_ciphertext
+        or not row.oauth_account_id
+    ):
+        return None
+    try:
+        return ChatGptCredential(
+            access_token=decrypt_secret(row.oauth_access_ciphertext, row.oauth_access_nonce or ""),
+            refresh_token=decrypt_secret(row.oauth_refresh_ciphertext, row.oauth_refresh_nonce or ""),
+            expires_at=row.oauth_expires_at or 0,
+            account_id=row.oauth_account_id,
+        )
+    except EncryptionError:
+        return None
+
+
+def persist_chatgpt_token(credential: ChatGptCredential) -> None:
+    """Persist a rotated OAuth token from the provider's refresh callback."""
+    db = SessionLocal()
+    try:
+        row = db.get(ProviderCredential, CHATGPT_PROVIDER)
+        if row is None:
+            return
+        apply_chatgpt_credential(row, credential)
+        db.commit()
+    finally:
+        db.close()
+
+
+def build_provider(provider_name: str, model: str | None, row: ProviderCredential | None):
+    if provider_name == CHATGPT_PROVIDER:
+        return create_named_text_provider(
+            provider_name,
+            "",
+            model,
+            oauth=chatgpt_credential(row),
+            on_token_refresh=persist_chatgpt_token,
+        )
+    if row is None:
+        raise ValueError(f"Provider is not configured: {provider_name}")
+    api_key = decrypt_secret(row.api_key_ciphertext, row.api_key_nonce)
+    return create_named_text_provider(provider_name, api_key, model)
 
 
 def restore_active_provider(db: Session) -> None:
@@ -98,12 +173,11 @@ def restore_active_provider(db: Session) -> None:
         provider_state["active"] = "mock"
         provider_state["active_model"] = None
         return
+    default_model = preference.model_id if preference and preference.provider_name == credential.provider_name else credential.active_model
     try:
-        api_key = decrypt_secret(credential.api_key_ciphertext, credential.api_key_nonce)
+        default_provider = build_provider(credential.provider_name, default_model, credential)
     except EncryptionError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    default_model = preference.model_id if preference and preference.provider_name == credential.provider_name else credential.active_model
-    default_provider = create_named_text_provider(credential.provider_name, api_key, default_model)
     task_providers = {}
     routes = list(db.scalars(select(TaskModelRoute)))
     if not routes:
@@ -118,10 +192,9 @@ def restore_active_provider(db: Session) -> None:
         if route.task not in TASK_BY_ID or not route_credential:
             continue
         try:
-            route_key = decrypt_secret(route_credential.api_key_ciphertext, route_credential.api_key_nonce)
             selected_models = json.loads(route_credential.models_json or "[]")
             if route.model_id in selected_models:
-                task_provider = create_named_text_provider(route.provider_name, route_key, route.model_id)
+                task_provider = build_provider(route.provider_name, route.model_id, route_credential)
                 if route.task == "side_agent":
                     task_providers.setdefault("side_answer", task_provider)
                     task_providers.setdefault("gap_diagnosis", task_provider)
@@ -203,6 +276,12 @@ def get_provider_settings(db: Session = Depends(get_db)):
 
 @router.post("/settings/providers/{provider_name}/models", response_model=DiscoverModelsResponse)
 async def discover_models(provider_name: str, payload: DiscoverModelsRequest, db: Session = Depends(get_db)):
+    if provider_name == CHATGPT_PROVIDER:
+        credential = db.get(ProviderCredential, CHATGPT_PROVIDER)
+        if credential is None or credential.auth_type != "oauth":
+            raise HTTPException(status_code=400, detail="请先完成 ChatGPT 设备码登录")
+        provider = create_named_text_provider(provider_name, "")
+        return {"models": await provider.list_models()}
     api_key = payload.api_key
     if not api_key:
         credential = db.get(ProviderCredential, provider_name)
@@ -228,26 +307,43 @@ def configure_provider(provider_name: str, payload: ConfigureProviderRequest, db
     if payload.default_model is not None and payload.default_model not in models:
         raise HTTPException(status_code=400, detail="Default model must be one of the selected models")
     credential = db.get(ProviderCredential, provider_name)
-    api_key = payload.api_key
-    if not api_key:
-        if credential is None:
-            raise HTTPException(status_code=400, detail="API Key is required for a new provider")
+    ciphertext: str | None = None
+    nonce: str | None = None
+    if provider_name == CHATGPT_PROVIDER:
+        if credential is None or credential.auth_type != "oauth":
+            raise HTTPException(status_code=400, detail="请先完成 ChatGPT 设备码登录")
         try:
-            api_key = decrypt_secret(credential.api_key_ciphertext, credential.api_key_nonce)
-        except EncryptionError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-    try:
-        if payload.api_key:
-            ciphertext, nonce = encrypt_secret(api_key)
-        gateway.configure(create_named_text_provider(provider_name, api_key, payload.default_model))
-    except (ValueError, EncryptionError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+            provider = create_named_text_provider(
+                provider_name,
+                "",
+                payload.default_model,
+                oauth=chatgpt_credential(credential),
+                on_token_refresh=persist_chatgpt_token,
+            )
+        except (ValueError, EncryptionError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    else:
+        api_key = payload.api_key
+        if not api_key:
+            if credential is None:
+                raise HTTPException(status_code=400, detail="API Key is required for a new provider")
+            try:
+                api_key = decrypt_secret(credential.api_key_ciphertext, credential.api_key_nonce)
+            except EncryptionError as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+        try:
+            if payload.api_key:
+                ciphertext, nonce = encrypt_secret(api_key)
+            provider = create_named_text_provider(provider_name, api_key, payload.default_model)
+        except (ValueError, EncryptionError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    gateway.configure(provider)
     if credential is None:
-        credential = ProviderCredential(provider_name=provider_name)
+        credential = ProviderCredential(provider_name=provider_name, api_key_ciphertext="", api_key_nonce="")
         db.add(credential)
-    if payload.api_key:
+    if ciphertext is not None:
         credential.api_key_ciphertext = ciphertext
-        credential.api_key_nonce = nonce
+        credential.api_key_nonce = nonce or ""
     credential.models_json = json.dumps(models)
     if credential.active_model is None and models:
         credential.active_model = models[0]
@@ -283,7 +379,18 @@ def select_model(payload: SelectModelRequest, db: Session = Depends(get_db)):
     preference.provider_name = active
     preference.model_id = model_id
     db.add(preference)
-    gateway.configure(create_named_text_provider(active, decrypt_secret(active_credential.api_key_ciphertext, active_credential.api_key_nonce), model_id))
+    if active == CHATGPT_PROVIDER:
+        gateway.configure(
+            create_named_text_provider(
+                active,
+                "",
+                model_id,
+                oauth=chatgpt_credential(active_credential),
+                on_token_refresh=persist_chatgpt_token,
+            )
+        )
+    else:
+        gateway.configure(create_named_text_provider(active, decrypt_secret(active_credential.api_key_ciphertext, active_credential.api_key_nonce), model_id))
     db.commit()
     provider_state["active"] = active
     provider_state["active_model"] = model_id
@@ -329,6 +436,113 @@ def clear_provider(provider_name: str, db: Session = Depends(get_db)):
     if preference and preference.provider_name == provider_name:
         db.delete(preference)
     db.commit()
+    return provider_settings(db)
+
+
+def save_chatgpt_login(credential: ChatGptCredential) -> None:
+    db = SessionLocal()
+    try:
+        row = db.get(ProviderCredential, CHATGPT_PROVIDER)
+        if row is None:
+            row = ProviderCredential(
+                provider_name=CHATGPT_PROVIDER, api_key_ciphertext="", api_key_nonce=""
+            )
+            db.add(row)
+        apply_chatgpt_credential(row, credential)
+        selected = json.loads(row.models_json or "[]")
+        if not selected:
+            selected = list(CODEX_MODELS)
+            row.models_json = json.dumps(selected)
+        if row.active_model is None:
+            row.active_model = selected[0] if selected else DEFAULT_CODEX_MODEL
+        other_active = db.scalar(
+            select(ProviderCredential).where(
+                ProviderCredential.is_active.is_(True),
+                ProviderCredential.provider_name != CHATGPT_PROVIDER,
+            )
+        )
+        if other_active is None:
+            row.is_active = True
+        db.commit()
+    finally:
+        db.close()
+
+
+async def run_chatgpt_device_login(session_id: str, device) -> None:
+    session = chatgpt_login_sessions.get(session_id)
+    if session is None:
+        return
+    try:
+        credential = await poll_device_authorization(device)
+    except Exception as exc:  # noqa: BLE001 - surface any failure to the polling client
+        session["status"] = "failed"
+        session["error"] = str(exc)
+        return
+    try:
+        save_chatgpt_login(credential)
+    except Exception as exc:  # noqa: BLE001
+        session["status"] = "failed"
+        session["error"] = f"凭证保存失败: {exc}"
+        return
+    session["status"] = "done"
+    session["credential"] = credential
+
+
+@router.post("/settings/providers/chatgpt/oauth/login", response_model=ChatGptLoginResponse)
+async def chatgpt_oauth_login():
+    try:
+        device = await start_device_authorization()
+    except ChatGptOAuthError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    session_id = str(uuid4())
+    session: dict = {"status": "pending", "credential": None, "error": None}
+    session["task"] = asyncio.create_task(run_chatgpt_device_login(session_id, device))
+    chatgpt_login_sessions[session_id] = session
+    return {
+        "sessionId": session_id,
+        "userCode": device.user_code,
+        "verificationUri": device.verification_uri,
+        "intervalSeconds": device.interval_seconds,
+    }
+
+
+@router.post("/settings/providers/chatgpt/oauth/status", response_model=ChatGptLoginStatusResponse)
+def chatgpt_oauth_status(payload: ChatGptLoginStatusRequest, db: Session = Depends(get_db)):
+    session = chatgpt_login_sessions.get(payload.session_id)
+    if session is None:
+        return {"state": "unknown"}
+    state = session.get("status")
+    if state == "done":
+        credential: ChatGptCredential = session["credential"]
+        chatgpt_login_sessions.pop(payload.session_id, None)
+        restore_active_provider(db)
+        return {
+            "state": "done",
+            "accountId": credential.account_id,
+            "expires": credential.expires_at,
+        }
+    if state == "failed":
+        error = session.get("error") or "登录失败"
+        chatgpt_login_sessions.pop(payload.session_id, None)
+        return {"state": "failed", "error": error}
+    return {"state": "pending"}
+
+
+@router.post("/settings/providers/chatgpt/oauth/logout", response_model=ProviderSettingsResponse)
+def chatgpt_oauth_logout(db: Session = Depends(get_db)):
+    credential = db.get(ProviderCredential, CHATGPT_PROVIDER)
+    if credential is not None:
+        was_active = credential.is_active
+        db.delete(credential)
+        preference = db.get(DefaultModelPreference, 1)
+        if preference and preference.provider_name == CHATGPT_PROVIDER:
+            db.delete(preference)
+        db.commit()
+        if was_active:
+            gateway.configure(MockTextProvider())
+            provider_state["active"] = "mock"
+            provider_state["active_model"] = None
+    restore_active_provider(db)
     return provider_settings(db)
 
 

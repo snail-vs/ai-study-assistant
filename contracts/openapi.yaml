@@ -21,7 +21,7 @@ paths:
       - name: providerName
         in: path
         required: true
-        schema: { type: string, enum: [deepseek, opencode, openrouter] }
+        schema: { type: string, enum: [deepseek, google, opencode, openrouter, chatgpt] }
     put:
       operationId: configureProvider
       requestBody:
@@ -51,7 +51,7 @@ paths:
       - name: providerName
         in: path
         required: true
-        schema: { type: string, enum: [deepseek, opencode, openrouter] }
+        schema: { type: string, enum: [deepseek, google, opencode, openrouter, chatgpt] }
     post:
       operationId: discoverProviderModels
       requestBody:
@@ -67,6 +67,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DiscoverModelsResponse'
+  /settings/providers/chatgpt/oauth/login:
+    post:
+      operationId: startChatGptLogin
+      responses:
+        '200':
+          description: Device-code login started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatGptLogin'
+  /settings/providers/chatgpt/oauth/status:
+    post:
+      operationId: getChatGptLoginStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId]
+              properties:
+                sessionId: { type: string }
+      responses:
+        '200':
+          description: Device-code login status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatGptLoginStatus'
+  /settings/providers/chatgpt/oauth/logout:
+    post:
+      operationId: logoutChatGpt
+      responses:
+        '200':
+          description: ChatGPT logged out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderSettings'
   /settings/model:
     put:
       operationId: selectModel
@@ -666,6 +705,22 @@ components:
         models:
           type: array
           items: { type: string }
+    ChatGptLogin:
+      type: object
+      required: [sessionId, userCode, verificationUri, intervalSeconds]
+      properties:
+        sessionId: { type: string }
+        userCode: { type: string }
+        verificationUri: { type: string }
+        intervalSeconds: { type: integer }
+    ChatGptLoginStatus:
+      type: object
+      required: [state]
+      properties:
+        state: { type: string, enum: [pending, done, failed, unknown] }
+        accountId: { type: string, nullable: true }
+        expires: { type: integer, nullable: true }
+        error: { type: string, nullable: true }
     HealthResponse:
       type: object
       required: [status]

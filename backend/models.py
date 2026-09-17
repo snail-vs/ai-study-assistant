@@ -2,7 +2,7 @@ from datetime import datetime
 import json
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -218,8 +218,15 @@ class BridgeNote(Base):
 class ProviderCredential(Base):
     __tablename__ = "provider_credentials"
     provider_name: Mapped[str] = mapped_column(String(50), primary_key=True)
-    api_key_ciphertext: Mapped[str] = mapped_column(Text)
-    api_key_nonce: Mapped[str] = mapped_column(String(50))
+    api_key_ciphertext: Mapped[str] = mapped_column(Text, default="")
+    api_key_nonce: Mapped[str] = mapped_column(String(50), default="")
+    auth_type: Mapped[str] = mapped_column(String(20), default="api_key", server_default="api_key")
+    oauth_access_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    oauth_access_nonce: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    oauth_refresh_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    oauth_refresh_nonce: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    oauth_expires_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    oauth_account_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     encryption_key_version: Mapped[int] = mapped_column(Integer, default=1)
     models_json: Mapped[str] = mapped_column(Text, default="[]")
     active_model: Mapped[str | None] = mapped_column(String(200), nullable=True)

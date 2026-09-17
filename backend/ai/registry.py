@@ -1,9 +1,15 @@
+from collections.abc import Callable
+
 from .config import load_provider_config
+from .oauth_chatgpt import ChatGptCredential
+from .providers.chatgpt import DEFAULT_CODEX_MODEL, ChatGptCodexProvider
 from .providers.mock import MockTextProvider
 from .providers.openai import OpenAIProvider
 from .model_routing import resolve_model_route
 from .base import AICompatibilityError
 from .capabilities import capabilities_for_route
+
+CHATGPT_PROVIDER = "chatgpt"
 
 PROVIDER_DEFAULTS = {
     "deepseek": ("https://api.deepseek.com", "deepseek-chat"),
@@ -11,6 +17,8 @@ PROVIDER_DEFAULTS = {
     "google": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash"),
     "openrouter": ("https://openrouter.ai/api/v1", "openrouter/auto"),
     "opencode": ("https://opencode.ai/zen/v1", "deepseek-v4-pro"),
+    # Subscription login: credentials come from the device-code OAuth flow.
+    "chatgpt": ("https://chatgpt.com/backend-api", DEFAULT_CODEX_MODEL),
 }
 
 SUPPORTED_PROTOCOLS = {"openai_chat_completions", "openai_responses"}
@@ -23,7 +31,16 @@ def create_text_provider():
     return OpenAIProvider(config.base_url, config.api_key or "", config.model)
 
 
-def create_named_text_provider(name: str, api_key: str, model: str | None = None):
+def create_named_text_provider(
+    name: str,
+    api_key: str,
+    model: str | None = None,
+    *,
+    oauth: ChatGptCredential | None = None,
+    on_token_refresh: Callable[[ChatGptCredential], None] | None = None,
+):
+    if name == CHATGPT_PROVIDER:
+        return ChatGptCodexProvider(model, oauth, on_token_refresh=on_token_refresh)
     if name not in PROVIDER_DEFAULTS:
         raise ValueError(f"Unsupported provider: {name}")
     base_url, default_model = PROVIDER_DEFAULTS[name]

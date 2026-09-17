@@ -63,6 +63,24 @@ class DiscoverModelsResponse(ApiModel):
     models: list[str]
 
 
+class ChatGptLoginResponse(ApiModel):
+    session_id: str = Field(alias="sessionId")
+    user_code: str = Field(alias="userCode")
+    verification_uri: str = Field(alias="verificationUri")
+    interval_seconds: int = Field(alias="intervalSeconds")
+
+
+class ChatGptLoginStatusRequest(ApiModel):
+    session_id: str = Field(alias="sessionId")
+
+
+class ChatGptLoginStatusResponse(ApiModel):
+    state: Literal["pending", "done", "failed", "unknown"]
+    account_id: str | None = Field(default=None, alias="accountId")
+    expires: int | None = None
+    error: str | None = None
+
+
 class SelectModelRequest(ApiModel):
     model: str = Field(min_length=1)
 
