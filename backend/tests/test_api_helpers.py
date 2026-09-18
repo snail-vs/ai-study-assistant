@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 from fastapi import HTTPException
 
 from backend import api
+from backend.services import activity_workflow
 
 
 class OwnershipHelperTests(unittest.TestCase):
@@ -97,7 +98,7 @@ class ActivityResponseHelperTests(unittest.TestCase):
             }, ensure_ascii=False),
         )
 
-        response = api._activity_attempt_response(attempt)
+        response = activity_workflow.activity_attempt_response(attempt)
 
         self.assertEqual(response["results"], [{
             "questionId": "q1",
@@ -121,13 +122,13 @@ class ActivityResponseHelperTests(unittest.TestCase):
         self.assertNotIn("privateProviderPayload", encoded)
 
     def test_attempt_response_handles_none_and_invalid_follow_up_shape(self):
-        self.assertIsNone(api._activity_attempt_response(None))
+        self.assertIsNone(activity_workflow.activity_attempt_response(None))
         attempt = SimpleNamespace(
             id="attempt-2", activity_id="activity-2", status="evaluated", score=None,
             mastery_level=None, diagnostic_summary=None, created_at=None, completed_at=None,
             result_json=json.dumps({"items": [{"questionId": "q1"}], "followUp": "invalid"}),
         )
-        response = api._activity_attempt_response(attempt)
+        response = activity_workflow.activity_attempt_response(attempt)
         self.assertEqual(response["results"], [{"questionId": "q1"}])
         self.assertIsNone(response["followUp"])
 
@@ -143,8 +144,11 @@ class ActivityResponseHelperTests(unittest.TestCase):
             mastery_level="mastered", diagnostic_summary="完成", result_json='{"items": []}',
             created_at=None, completed_at=None,
         )
-        with patch("backend.api._activity_attempt_response", wraps=api._activity_attempt_response) as projector:
-            response = api._activity_response(activity, attempt)
+        with patch(
+            "backend.services.activity_workflow.activity_attempt_response",
+            wraps=activity_workflow.activity_attempt_response,
+        ) as projector:
+            response = activity_workflow.activity_response(activity, attempt)
         self.assertEqual(response["questions"], [{"id": "q1", "prompt": "问题"}])
         self.assertNotIn("answerKey", response)
         self.assertEqual(response["latestAttempt"]["id"], "attempt-1")
@@ -156,7 +160,7 @@ class ActivityResponseHelperTests(unittest.TestCase):
             activity_type="quiz", title="测验", objective=None, status="generating",
             content_json="{}", created_at=None,
         )
-        response = api._activity_response(activity)
+        response = activity_workflow.activity_response(activity)
         self.assertEqual(response["questions"], [])
         self.assertIsNone(response["latestAttempt"])
 
