@@ -263,7 +263,7 @@ class CreateKnowledgeCardRequest(ApiModel):
 class CreateMessageRequest(ApiModel):
     content: str = Field(min_length=1)
     client_message_id: str | None = Field(default=None, alias="clientMessageId")
-    section_id: str | None = Field(default=None, alias="sectionId")
+    section_id: str = Field(alias="sectionId")
 
 
 class MessageResponse(ApiModel):
@@ -291,7 +291,7 @@ class AIRunResponse(ApiModel):
 
 
 class CreateConversationRequest(ApiModel):
-    section_id: str | None = Field(default=None, alias="sectionId")
+    section_id: str = Field(alias="sectionId")
     conversation_type: Literal["main", "side"] = Field(alias="conversationType")
     title: str
     root_question: str = Field(alias="rootQuestion")

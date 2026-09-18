@@ -871,7 +871,7 @@ export interface components {
             createdAt: string;
         };
         CreateConversationRequest: {
-            sectionId?: string | null;
+            sectionId: string;
             /** @enum {string} */
             conversationType: "main" | "side";
             title: string;
@@ -892,7 +892,7 @@ export interface components {
         Conversation: {
             id: string;
             cardId: string;
-            sectionId?: string | null;
+            sectionId: string;
             /** @enum {string} */
             conversationType: "main" | "side";
             title: string;
@@ -924,6 +924,7 @@ export interface components {
         CreateMessageRequest: {
             content: string;
             clientMessageId?: string | null;
+            sectionId: string;
         };
         Message: {
             id: string;
@@ -1681,7 +1682,9 @@ export interface operations {
     };
     listConversations: {
         parameters: {
-            query?: never;
+            query: {
+                sectionId: string;
+            };
             header?: never;
             path: {
                 cardId: components["parameters"]["CardId"];
@@ -1690,7 +1693,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Conversations for a card */
+            /** @description Conversations for one course section */
             200: {
                 headers: {
                     [name: string]: unknown;

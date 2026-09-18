@@ -262,6 +262,7 @@ async function restoreStudyRoute() {
       activeSection.value = requestedSection
       await loadTeacherGuidance()
       await loadRelatedCards()
+      await loadSectionConversations()
     }
     const conversationId = new URLSearchParams(window.location.search).get('conversation')
     const conversation = conversations.value.find((item) => item.id === conversationId)
@@ -806,9 +807,7 @@ async function openHistory(item) {
     await loadRecommendations()
     await loadRelatedCards()
     await loadSectionActivities()
-    conversations.value = await request(`/cards/${card.value.id}/conversations`)
-    activeConversation.value = conversations.value[0] || null
-    await loadConversationMessages(activeConversation.value)
+    await loadSectionConversations()
     await loadNotes()
     syncStudyUrl({ replace: true })
     await persistLearningRuntime('card_opened')
@@ -839,13 +838,13 @@ function goHome() {
 }
 
 async function openSideConversation() {
-  if (!card.value || !input.value.trim()) return
+  if (!card.value || !section.value || !input.value.trim()) return
   const question = input.value.trim()
   const side = await request(`/cards/${card.value.id}/conversations`, {
     method: 'POST',
     body: JSON.stringify({
       conversationType: 'side',
-      sectionId: section.value?.id || null,
+      sectionId: section.value.id,
       title: question.slice(0, 32),
       rootQuestion: question,
     }),
@@ -856,6 +855,23 @@ async function openSideConversation() {
   messages.value = []
   syncStudyUrl()
   await sendMessage(question)
+}
+
+async function loadSectionConversations(preferredConversationId = null) {
+  if (!card.value || !section.value) {
+    conversations.value = []
+    activeConversation.value = null
+    messages.value = []
+    return
+  }
+  const next = await request(
+    `/cards/${card.value.id}/conversations?sectionId=${encodeURIComponent(section.value.id)}`,
+  )
+  conversations.value = next
+  const requestedId = preferredConversationId || activeConversation.value?.id
+  activeConversation.value = next.find((item) => item.id === requestedId) || next[0] || null
+  messages.value = []
+  await loadConversationMessages(activeConversation.value)
 }
 
 async function loadConversationMessages(conversation) {
@@ -900,7 +916,11 @@ async function loadConversationMessages(conversation) {
 }
 
 async function sendMessage(text = input.value) {
-  if (!activeConversation.value || !text.trim() || sideRun.value.active) return
+  if (!activeConversation.value || !section.value || !text.trim() || sideRun.value.active) return
+  if (activeConversation.value.sectionId !== section.value.id) {
+    error.value = '请在该讨论所属的章节中继续提问。'
+    return
+  }
   error.value = ''
   sideRun.value = { active: true, phase: 'waiting', label: '正在等待 AI 响应' }
   input.value = ''
@@ -913,7 +933,7 @@ async function sendMessage(text = input.value) {
     const response = await fetch(`${base}/conversations/${activeConversation.value.id}/messages/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: text, sectionId: section.value?.id || activeConversation.value.sectionId || null }),
+      body: JSON.stringify({ content: text, sectionId: activeConversation.value.sectionId }),
     })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
@@ -1039,9 +1059,7 @@ async function openCard(target, navigationContext = null, options = {}) {
   await loadRecommendations()
   await loadRelatedCards()
   await loadSectionActivities()
-  conversations.value = await request(`/cards/${target.id}/conversations`)
-  activeConversation.value = conversations.value[0] || null
-  await loadConversationMessages(activeConversation.value)
+  await loadSectionConversations()
   syncStudyUrl({ replace: window.location.pathname.startsWith('/study/') })
   if (options.persist !== false) await persistLearningRuntime(options.eventType || 'card_opened')
 }
@@ -1099,6 +1117,7 @@ async function returnToMain() {
     activeSection.value = sourceIndex >= 0 ? sourceIndex : 0
     await loadTeacherGuidance()
     await loadRelatedCards()
+    await loadSectionConversations()
     syncStudyUrl({ replace: true })
     await persistLearningRuntime('branch_returned')
   } catch (err) {
@@ -1107,6 +1126,10 @@ async function returnToMain() {
 }
 
 async function selectConversation(item) {
+  if (item.sectionId !== section.value?.id) {
+    error.value = '该讨论属于其他章节。'
+    return
+  }
   activeConversation.value = item
   showConversationList.value = false
   messages.value = []
@@ -1134,12 +1157,13 @@ async function loadTeacherGuidance() {
 }
 
 async function loadRecommendations() {
-  if (!card.value) {
+  if (!card.value || !section.value) {
     recommendations.value = []
     return
   }
   try {
-    recommendations.value = await request(`/cards/${card.value.id}/proposals`)
+    const all = await request(`/cards/${card.value.id}/proposals`)
+    recommendations.value = all.filter((item) => item.sectionId === section.value.id)
   } catch (err) {
     error.value = err.message
   }
@@ -1151,10 +1175,11 @@ async function selectSection(index) {
   activeActivity.value = null
   activityResult.value = null
   activityAnswers.value = {}
-  syncStudyUrl({ replace: true })
   await loadRelatedCards()
   await loadTeacherGuidance()
   await loadSectionActivities()
+  await loadSectionConversations()
+  syncStudyUrl({ replace: true })
   await persistLearningRuntime('section_changed')
 }
 
@@ -1413,11 +1438,11 @@ function nextSection() {
         </div>
         <div v-if="showConversationList" class="conversation-menu-backdrop" @click="showConversationList = false">
           <div class="conversation-list" @click.stop>
-            <div class="conversation-list-title">历史会话</div>
+            <div class="conversation-list-title">本节历史会话</div>
             <button v-for="item in conversations" :key="item.id" @click="selectConversation(item)" :class="{ selected: activeConversation?.id === item.id }">
               <small>{{ item.conversationType === 'main' ? '导师' : '讨论' }}</small>{{ item.title }}
             </button>
-            <div v-if="!conversations.length" class="conversation-list-empty">暂无历史会话</div>
+            <div v-if="!conversations.length" class="conversation-list-empty">本节暂无讨论</div>
           </div>
         </div>
         <div class="messages">

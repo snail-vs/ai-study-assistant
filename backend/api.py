@@ -4,7 +4,7 @@ import logging
 from collections.abc import AsyncIterator
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -1029,6 +1029,9 @@ def create_conversation(card_id: str, payload: CreateConversationRequest, db: Se
     card = db.get(KnowledgeCard, card_id)
     if not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Knowledge card not found")
+    section = db.get(CardSection, payload.section_id)
+    if not section or section.card_id != card_id:
+        raise HTTPException(status_code=400, detail="Section does not belong to this knowledge card")
     participant_ids = payload.participant_ids or default_participants(payload.conversation_type)
     unknown = [agent_id for agent_id in participant_ids if not get_agent(agent_id)]
     if unknown:
@@ -1043,12 +1046,25 @@ def create_conversation(card_id: str, payload: CreateConversationRequest, db: Se
 
 
 @router.get("/cards/{card_id}/conversations", response_model=list[ConversationResponse])
-def list_conversations(card_id: str, db: Session = Depends(get_db)):
+def list_conversations(
+    card_id: str,
+    section_id: str = Query(alias="sectionId"),
+    db: Session = Depends(get_db),
+):
     owned_card(db, card_id)
     card = db.get(KnowledgeCard, card_id)
     if not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Knowledge card not found")
-    return list(db.scalars(select(Conversation).where(Conversation.card_id == card_id)))
+    section = db.get(CardSection, section_id)
+    if not section or section.card_id != card_id:
+        raise HTTPException(status_code=400, detail="Section does not belong to this knowledge card")
+    return list(
+        db.scalars(
+            select(Conversation)
+            .where(Conversation.card_id == card_id, Conversation.section_id == section_id)
+            .order_by(Conversation.created_at, Conversation.id)
+        )
+    )
 
 
 @router.get("/cards/{card_id}/proposals", response_model=list[RelatedCardProposalResponse])
@@ -1359,6 +1375,10 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
     card = db.get(KnowledgeCard, conversation.card_id) if conversation else None
     if not conversation or not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Conversation not found")
+    if not conversation.section_id:
+        raise HTTPException(status_code=409, detail="Legacy course-level conversations cannot receive section messages")
+    if payload.section_id != conversation.section_id:
+        raise HTTPException(status_code=409, detail="Conversation belongs to a different section")
     active_run = db.scalar(
         select(AIRun)
         .where(AIRun.conversation_id == conversation_id, AIRun.status.in_(("queued", "running")))
@@ -1390,10 +1410,6 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         yield f"event: run.started\ndata: {json.dumps({'conversationId': conversation_id, 'runId': run.id, 'phase': 'waiting', 'label': '正在等待 AI 响应'}, ensure_ascii=False)}\n\n"
         yield f"event: message.started\ndata: {json.dumps({'conversationId': conversation_id, 'messageId': message_id, 'senderId': primary_agent_id, 'senderName': primary_agent.name if primary_agent else primary_agent_id, 'senderRole': primary_agent.role if primary_agent else 'assistant'}, ensure_ascii=False)}\n\n"
         answer_section = db.get(CardSection, conversation.section_id) if conversation.section_id else None
-        if not answer_section and payload.section_id:
-            candidate = db.get(CardSection, payload.section_id)
-            if candidate and candidate.card_id == conversation.card_id:
-                answer_section = candidate
         messages = [{"role": "system", "content": QA_TUTOR_SYSTEM}]
         answer_context = ""
         if answer_section:
@@ -1480,20 +1496,7 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
         try:
             # 每次答疑后都由课程导师做一次归位，帮助学生回到当前章节。
             # 这一步不依赖知识断层诊断；诊断只负责后续的推荐知识卡。
-            # 兼容历史上没有章节绑定的旁支会话：优先使用会话绑定章节，
-            # 否则使用客户端发送的当前章节，并把绑定补回数据库。
             section = db.get(CardSection, conversation.section_id) if conversation.section_id else None
-            if not section and payload.section_id:
-                candidate = db.get(CardSection, payload.section_id)
-                if candidate and candidate.card_id == conversation.card_id:
-                    section = candidate
-                    conversation.section_id = candidate.id
-                    db.commit()
-                    logger.info(
-                        "backfilled conversation section: conversation_id=%s section_id=%s",
-                        conversation.id,
-                        candidate.id,
-                    )
             source_card = db.get(KnowledgeCard, conversation.card_id) if section else None
             if not section or not source_card or section.card_id != conversation.card_id:
                 logger.warning(
@@ -1638,6 +1641,9 @@ def start_proposal_discussion(proposal_id: str, db: Session = Depends(get_db)):
     owned_card(db, proposal.card_id)
     if proposal.generated_card_id:
         raise HTTPException(status_code=400, detail="Proposal has already been accepted")
+    section = db.get(CardSection, proposal.section_id) if proposal.section_id else None
+    if not section or section.card_id != proposal.card_id:
+        raise HTTPException(status_code=409, detail="Proposal is not associated with a valid course section")
     conversation = Conversation(
         card_id=proposal.card_id,
         section_id=proposal.section_id,

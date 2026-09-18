@@ -406,9 +406,14 @@ paths:
       - $ref: '#/components/parameters/CardId'
     get:
       operationId: listConversations
+      parameters:
+        - name: sectionId
+          in: query
+          required: true
+          schema: { type: string }
       responses:
         '200':
-          description: Conversations for a card
+          description: Conversations for one course section
           content:
             application/json:
               schema:
@@ -1011,9 +1016,9 @@ components:
         createdAt: { type: string, format: date-time }
     CreateConversationRequest:
       type: object
-      required: [conversationType, title, rootQuestion]
+      required: [sectionId, conversationType, title, rootQuestion]
       properties:
-        sectionId: { type: string, nullable: true }
+        sectionId: { type: string }
         conversationType: { type: string, enum: [main, side] }
         title: { type: string }
         rootQuestion: { type: string }
@@ -1025,11 +1030,11 @@ components:
         directorPolicy: { type: string, enum: [guided, deterministic, llm], default: guided }
     Conversation:
       type: object
-      required: [id, cardId, conversationType, title, status, createdAt]
+      required: [id, cardId, sectionId, conversationType, title, status, createdAt]
       properties:
         id: { type: string }
         cardId: { type: string }
-        sectionId: { type: string, nullable: true }
+        sectionId: { type: string }
         conversationType: { type: string, enum: [main, side] }
         title: { type: string }
         mode: { type: string, enum: [single, group] }
@@ -1056,10 +1061,11 @@ components:
         createdAt: { type: string, format: date-time }
     CreateMessageRequest:
       type: object
-      required: [content]
+      required: [content, sectionId]
       properties:
         content: { type: string, minLength: 1 }
         clientMessageId: { type: string, nullable: true }
+        sectionId: { type: string }
     Message:
       type: object
       required: [id, conversationId, role, content, messageType, createdAt]
