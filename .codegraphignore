@@ -1,0 +1,24 @@
+# Shared frontend/backend exclusions
+**/node_modules/
+**/dist/
+**/build/
+**/.next/
+**/.cache/
+**/.vite/
+**/coverage/
+**/.coverage
+
+# Python exclusions
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+
+# Keep source contracts and generated API/migration inputs indexed.
+!backend/migrations/
+!backend/migrations/**
+!frontend/src/api/generated/
+!frontend/src/api/generated/**
+!contracts/
+!contracts/**
