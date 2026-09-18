@@ -1,0 +1,356 @@
+"""Knowledge-card, guidance, proposal, and note routes."""
+
+import json
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .agents.bridge_agent import BridgeAgent
+from .agents.main_agent import MainAgent
+from .agents.teacher_agent import TeacherAgent
+from .db import get_db
+from .models import (
+    BridgeNote,
+    CardSection,
+    Conversation,
+    KnowledgeCard,
+    LearningSpace,
+    Note,
+    RelatedCardProposal,
+    TeacherGuidance,
+    now,
+)
+from .schemas import (
+    CreateKnowledgeCardRequest,
+    CreateNoteRequest,
+    KnowledgeCardResponse,
+    NoteResponse,
+    RelatedCardProposalResponse,
+    TeacherGuidanceResponse,
+    UpdateNoteRequest,
+    ConversationResponse,
+)
+from .security.auth import current_user_id, require_current_user
+from .services.ownership import owned_card, owned_space
+from .services.provider_settings import restore_active_provider
+
+router = APIRouter(dependencies=[Depends(require_current_user)])
+
+RELATION_LABELS = {
+    "prerequisite": "前置知识",
+    "deep_dive": "深入理解",
+    "application": "应用延展",
+}
+
+
+def relation_label(relation_type: str | None) -> str:
+    return RELATION_LABELS.get(relation_type or "prerequisite", "学习分支")
+
+
+@router.get("/learning-spaces/{space_id}/cards", response_model=list[KnowledgeCardResponse])
+def list_cards(space_id: str, db: Session = Depends(get_db)):
+    owned_space(db, space_id)
+    if not db.get(LearningSpace, space_id):
+        raise HTTPException(status_code=404, detail="Learning space not found")
+    return list(
+        db.scalars(
+            select(KnowledgeCard)
+            .where(KnowledgeCard.space_id == space_id, KnowledgeCard.status != "deleted")
+            .order_by(KnowledgeCard.card_type, KnowledgeCard.title)
+        )
+    )
+
+
+@router.post(
+    "/learning-spaces/{space_id}/cards",
+    response_model=KnowledgeCardResponse,
+    status_code=201,
+)
+def create_card(space_id: str, payload: CreateKnowledgeCardRequest, db: Session = Depends(get_db)):
+    owned_space(db, space_id)
+    if not db.get(LearningSpace, space_id):
+        raise HTTPException(status_code=404, detail="Learning space not found")
+    card = KnowledgeCard(space_id=space_id, **payload.model_dump())
+    db.add(card)
+    db.commit()
+    db.refresh(card)
+    return card
+
+
+@router.get("/cards/{card_id}", response_model=KnowledgeCardResponse)
+def get_card(card_id: str, db: Session = Depends(get_db)):
+    card = owned_card(db, card_id)
+    if not card or card.status == "deleted":
+        raise HTTPException(status_code=404, detail="Knowledge card not found")
+    return card
+
+
+@router.delete("/cards/{card_id}")
+def delete_card(card_id: str, db: Session = Depends(get_db)):
+    card = owned_card(db, card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Knowledge card not found")
+    if card.status != "deleted":
+        card.status = "deleted"
+        card.deleted_at = now()
+        db.commit()
+    return {"status": "deleted", "cardId": card_id}
+
+
+@router.get(
+    "/cards/{card_id}/sections/{section_id}/guidance",
+    response_model=list[TeacherGuidanceResponse],
+)
+def list_teacher_guidance(card_id: str, section_id: str, db: Session = Depends(get_db)):
+    owned_card(db, card_id)
+    section = db.get(CardSection, section_id)
+    if not section or section.card_id != card_id:
+        raise HTTPException(status_code=404, detail="Card section not found")
+    return list(
+        db.scalars(
+            select(TeacherGuidance)
+            .where(TeacherGuidance.card_id == card_id, TeacherGuidance.section_id == section_id)
+            .order_by(TeacherGuidance.created_at, TeacherGuidance.id)
+        )
+    )
+
+
+@router.post(
+    "/cards/{card_id}/sections/{section_id}/guidance",
+    response_model=TeacherGuidanceResponse,
+    status_code=201,
+)
+async def create_section_guidance(card_id: str, section_id: str, db: Session = Depends(get_db)):
+    owned_card(db, card_id)
+    card = db.get(KnowledgeCard, card_id)
+    section = db.get(CardSection, section_id)
+    if not card or card.status == "deleted" or not section or section.card_id != card_id:
+        raise HTTPException(status_code=404, detail="Card section not found")
+    existing = db.scalar(
+        select(TeacherGuidance)
+        .where(
+            TeacherGuidance.card_id == card_id,
+            TeacherGuidance.section_id == section_id,
+            TeacherGuidance.trigger == "section_enter",
+        )
+        .order_by(TeacherGuidance.created_at)
+    )
+    if existing:
+        return existing
+    draft = await TeacherAgent(restore_active_provider(db)).create_section_intro(
+        card.title, section.title, section.content_markdown
+    )
+    guidance = TeacherGuidance(
+        card_id=card_id,
+        section_id=section_id,
+        trigger="section_enter",
+        content=draft.content,
+    )
+    db.add(guidance)
+    db.commit()
+    db.refresh(guidance)
+    return guidance
+
+
+@router.get(
+    "/cards/{card_id}/proposals",
+    response_model=list[RelatedCardProposalResponse],
+)
+def list_card_proposals(card_id: str, db: Session = Depends(get_db)):
+    owned_card(db, card_id)
+    card = db.get(KnowledgeCard, card_id)
+    if not card or card.status == "deleted":
+        raise HTTPException(status_code=404, detail="Knowledge card not found")
+    return list(
+        db.scalars(
+            select(RelatedCardProposal)
+            .where(
+                RelatedCardProposal.card_id == card_id,
+                RelatedCardProposal.status.in_(("pending", "discussing")),
+            )
+            .order_by(RelatedCardProposal.created_at.desc())
+        )
+    )
+
+
+@router.post(
+    "/proposals/{proposal_id}/accept",
+    response_model=KnowledgeCardResponse,
+    status_code=201,
+)
+async def accept_proposal(proposal_id: str, db: Session = Depends(get_db)):
+    proposal = db.get(RelatedCardProposal, proposal_id)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    owned_card(db, proposal.card_id)
+    if proposal.generated_card_id:
+        card = db.get(KnowledgeCard, proposal.generated_card_id)
+        if card:
+            return card
+    source_card = db.get(KnowledgeCard, proposal.card_id)
+    if not source_card or source_card.status == "deleted":
+        raise HTTPException(status_code=404, detail="Source card not found")
+    draft = await MainAgent(restore_active_provider(db)).create_card(
+        f"生成学习分支知识卡：{proposal.title}\n学习原因：{proposal.reason}"
+    )
+    card = KnowledgeCard(
+        space_id=source_card.space_id,
+        parent_card_id=source_card.id,
+        parent_section_id=proposal.section_id,
+        source_conversation_id=proposal.conversation_id,
+        title=draft.title or proposal.title,
+        card_type="related",
+        relation_type=proposal.relation_type,
+        status="active",
+    )
+    db.add(card)
+    db.flush()
+    for index, section in enumerate(draft.sections):
+        db.add(
+            CardSection(
+                card_id=card.id,
+                title=section.title or f"第 {index + 1} 节",
+                order_index=index,
+                content_markdown=section.content_markdown,
+                content_type=section.content_type,
+                teaching_objective=section.teaching_objective,
+                quality_report_json=json.dumps(section.quality_report, ensure_ascii=False),
+            )
+        )
+    bridge = await BridgeAgent(restore_active_provider(db)).create(source_card.title, card.title)
+    db.add(BridgeNote(card_id=source_card.id, related_card_id=card.id, content=bridge.content))
+    proposal.status = "accepted"
+    proposal.generated_card_id = card.id
+    db.commit()
+    db.refresh(card)
+    return card
+
+
+@router.post(
+    "/proposals/{proposal_id}/discussion",
+    response_model=ConversationResponse,
+    status_code=201,
+)
+def start_proposal_discussion(proposal_id: str, db: Session = Depends(get_db)):
+    proposal = db.get(RelatedCardProposal, proposal_id)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    owned_card(db, proposal.card_id)
+    if proposal.generated_card_id:
+        raise HTTPException(status_code=400, detail="Proposal has already been accepted")
+    section = db.get(CardSection, proposal.section_id) if proposal.section_id else None
+    if not section or section.card_id != proposal.card_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Proposal is not associated with a valid course section",
+        )
+    conversation = Conversation(
+        card_id=proposal.card_id,
+        section_id=proposal.section_id,
+        conversation_type="side",
+        title=f"讨论：{proposal.title}",
+        root_question=(
+            f"推荐学习主题：{proposal.title}\n"
+            f"推荐原因：{proposal.reason}\n"
+            f"请围绕这个{relation_label(proposal.relation_type)}建议"
+            "帮助我判断是否值得创建一条学习分支。"
+        ),
+    )
+    db.add(conversation)
+    proposal.status = "discussing"
+    db.commit()
+    db.refresh(conversation)
+    return conversation
+
+
+@router.post("/proposals/{proposal_id}/reject")
+def reject_proposal(proposal_id: str, db: Session = Depends(get_db)):
+    proposal = db.get(RelatedCardProposal, proposal_id)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    owned_card(db, proposal.card_id)
+    proposal.status = "rejected"
+    db.commit()
+    return {"status": "rejected", "proposalId": proposal_id}
+
+
+@router.post(
+    "/cards/{card_id}/notes",
+    response_model=NoteResponse,
+    status_code=201,
+)
+def create_note(card_id: str, payload: CreateNoteRequest, db: Session = Depends(get_db)):
+    owned_card(db, card_id)
+    card = db.get(KnowledgeCard, card_id)
+    if not card or card.status == "deleted":
+        raise HTTPException(status_code=404, detail="Knowledge card not found")
+    values = payload.model_dump()
+    values["title"] = (
+        values.get("title") or values["content"].splitlines()[0][:200] or "未命名笔记"
+    )
+    note = Note(card_id=card_id, **values)
+    db.add(note)
+    db.commit()
+    db.refresh(note)
+    return note
+
+
+@router.get("/cards/{card_id}/notes", response_model=list[NoteResponse])
+def list_notes(card_id: str, db: Session = Depends(get_db)):
+    owned_card(db, card_id)
+    card = db.get(KnowledgeCard, card_id)
+    if not card or card.status == "deleted":
+        raise HTTPException(status_code=404, detail="Knowledge card not found")
+    return list(
+        db.scalars(select(Note).where(Note.card_id == card_id).order_by(Note.updated_at.desc()))
+    )
+
+
+@router.get("/notes", response_model=list[NoteResponse])
+def list_all_notes(db: Session = Depends(get_db)):
+    return list(
+        db.scalars(
+            select(Note)
+            .join(KnowledgeCard, Note.card_id == KnowledgeCard.id)
+            .join(LearningSpace, KnowledgeCard.space_id == LearningSpace.id)
+            .where(LearningSpace.user_id == current_user_id())
+            .order_by(Note.updated_at.desc())
+        )
+    )
+
+
+@router.patch("/notes/{note_id}", response_model=NoteResponse)
+def update_note(note_id: str, payload: UpdateNoteRequest, db: Session = Depends(get_db)):
+    note = db.scalar(
+        select(Note)
+        .join(KnowledgeCard, Note.card_id == KnowledgeCard.id)
+        .join(LearningSpace, KnowledgeCard.space_id == LearningSpace.id)
+        .where(Note.id == note_id, LearningSpace.user_id == current_user_id())
+    )
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    values = payload.model_dump(exclude_unset=True)
+    if "content" in values and not values["content"].strip():
+        raise HTTPException(status_code=400, detail="Note content cannot be empty")
+    for key, value in values.items():
+        if value is not None:
+            setattr(note, key, value.strip() if isinstance(value, str) else value)
+    db.commit()
+    db.refresh(note)
+    return note
+
+
+@router.delete("/notes/{note_id}")
+def delete_note(note_id: str, db: Session = Depends(get_db)):
+    note = db.scalar(
+        select(Note)
+        .join(KnowledgeCard, Note.card_id == KnowledgeCard.id)
+        .join(LearningSpace, KnowledgeCard.space_id == LearningSpace.id)
+        .where(Note.id == note_id, LearningSpace.user_id == current_user_id())
+    )
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    db.delete(note)
+    db.commit()
+    return {"status": "deleted", "noteId": note_id}

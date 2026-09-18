@@ -12,6 +12,7 @@ from .auth_api import router as auth_router
 from .activity_api import router as activity_router
 from .conversation_api import router as conversation_router
 from .learning_space_api import router as learning_space_router
+from .knowledge_card_api import router as knowledge_card_router
 from .provider_api import router as provider_router
 from .ai.base import AIProviderError
 from .services.course_generation import resume_pending_course_generations
@@ -99,4 +100,5 @@ app.include_router(provider_router, prefix="/api/v1")
 app.include_router(learning_space_router, prefix="/api/v1")
 app.include_router(conversation_router, prefix="/api/v1")
 app.include_router(activity_router, prefix="/api/v1")
+app.include_router(knowledge_card_router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")
