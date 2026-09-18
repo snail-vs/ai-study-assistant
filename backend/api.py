@@ -31,6 +31,7 @@ from .agents.side_agent import SideAgent
 from .agents.teacher_agent import TeacherAgent
 from .agents.prompts import QA_TUTOR_SYSTEM
 from .agents.registry import default_participants, get_agent, AGENTS
+from .assessment import AttemptSubmissionService, LegacyQuizAdapter
 from .db import SessionLocal, get_db
 from .models import (
     BridgeNote,
@@ -1246,69 +1247,30 @@ async def submit_activity_attempt(
     payload: SubmitActivityAttemptRequest,
     db: Session = Depends(get_db),
 ):
-    _get_activity(activity_id, db)
     activity = _get_activity(activity_id, db)
     if activity.status != "ready":
         raise HTTPException(status_code=409, detail="Learning activity is not ready")
     section = db.get(CardSection, activity.section_id)
     card = db.get(KnowledgeCard, activity.card_id)
-    content = json.loads(activity.content_json or "{}")
-    answer_key = json.loads(activity.answer_key_json or "{}")
-    questions = content.get("questions", [])
-    result_items = []
-    for question in questions:
-        question_id = question.get("id")
-        key = answer_key.get(question_id, {})
-        answer = payload.answers.get(question_id)
-        question_type = question.get("type")
-        if question_type == "short_answer":
-            evaluation = await AssessmentAgent(restore_active_provider(db)).evaluate_short_answer(
-                activity.objective or "",
-                section.content_markdown if section else "",
-                question.get("prompt", ""),
-                str(answer or ""),
-                key.get("rubric", []),
-            )
-            result_items.append({
-                "questionId": question_id,
-                "correct": evaluation.score >= 60,
-                "score": evaluation.score,
-                "feedback": evaluation.feedback,
-                "referenceAnswer": key.get("reference_answer"),
-                "misconception": evaluation.misconception,
-            })
-        else:
-            expected = key.get("answer")
-            correct = answer == expected
-            result_items.append({
-                "questionId": question_id,
-                "correct": correct,
-                "score": 100 if correct else 0,
-                "feedback": key.get("explanation", "") if correct else f"参考理解：{key.get('explanation', '')}",
-                "referenceAnswer": None,
-                "misconception": None if correct else "需要重新检查本题对应的核心概念。",
-            })
-    score = round(sum(item["score"] for item in result_items) / len(result_items)) if result_items else 0
-    mastery = "mastered" if score >= 85 else "developing" if score >= 60 else "needs_review"
-    misconceptions = [item["misconception"] for item in result_items if item.get("misconception")]
-    diagnostic = (
-        "本节核心目标掌握较好，可以继续下一节。" if mastery == "mastered" else
-        "已经掌握主要内容，但建议回看错误题目后再继续。" if mastery == "developing" else
-        "本节核心概念还不稳定，建议先回看课程内容和导师引导。"
-    )
-    attempt = ActivityAttempt(
+    assessment = LegacyQuizAdapter.from_json(
         activity_id=activity.id,
-        status="evaluated",
-        answers_json=json.dumps(payload.answers, ensure_ascii=False),
-        result_json=json.dumps({"items": result_items, "misconceptions": misconceptions}, ensure_ascii=False),
-        score=score,
-        mastery_level=mastery,
-        diagnostic_summary=diagnostic,
-        completed_at=now(),
+        objective=activity.objective,
+        section_content=section.content_markdown if section else "",
+        content=json.loads(activity.content_json or "{}"),
+        answer_key=json.loads(activity.answer_key_json or "{}"),
     )
-    db.add(attempt)
-    db.commit()
-    db.refresh(attempt)
+    def short_answer_evaluator_factory():
+        # Preserve the old per-short-answer provider restoration behavior while
+        # keeping objective-only submissions completely deterministic.
+        return AssessmentAgent(restore_active_provider(db)).evaluate_short_answer
+
+    service = AttemptSubmissionService(short_answer_evaluator_factory=short_answer_evaluator_factory)
+    submission = await service.submit(db, activity, assessment, payload.answers)
+    attempt = submission.attempt
+    evaluation = submission.evaluation
+    score = evaluation.score
+    diagnostic = evaluation.diagnostic_summary
+    misconceptions = list(evaluation.misconceptions)
 
     if card and section:
         try:
