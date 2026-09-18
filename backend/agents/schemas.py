@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class RelatedCardProposal(BaseModel):
     title: str
     reason: str
+    relation_type: Literal["prerequisite", "deep_dive", "application"] = "prerequisite"
 
 
 class Diagnosis(BaseModel):

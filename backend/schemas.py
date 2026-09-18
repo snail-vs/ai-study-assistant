@@ -250,6 +250,7 @@ class KnowledgeCardResponse(ApiModel):
     source_conversation_id: str | None = Field(default=None, alias="sourceConversationId")
     title: str
     card_type: str = Field(alias="cardType")
+    relation_type: str | None = Field(default=None, alias="relationType")
     status: str
     deleted_at: datetime | None = Field(default=None, alias="deletedAt")
     sections: list[CardSectionResponse]
@@ -326,6 +327,7 @@ class RelatedCardProposalResponse(ApiModel):
     section_id: str | None = Field(default=None, alias="sectionId")
     title: str
     reason: str
+    relation_type: str = Field(default="prerequisite", alias="relationType")
     status: str
     generated_card_id: str | None = Field(default=None, alias="generatedCardId")
     created_at: datetime = Field(alias="createdAt")

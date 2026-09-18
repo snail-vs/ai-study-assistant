@@ -878,6 +878,7 @@ components:
         parentSectionId: { type: string, nullable: true }
         sourceConversationId: { type: string, nullable: true }
         title: { type: string }
+        relationType: { type: string, enum: [prerequisite, deep_dive, application], nullable: true }
         cardType: { type: string, enum: [root, related] }
         status: { type: string, enum: [draft, active, completed, deleted] }
         deletedAt: { type: string, format: date-time, nullable: true }
@@ -1059,6 +1060,7 @@ components:
         sectionId: { type: string, nullable: true }
         title: { type: string }
         reason: { type: string }
+        relationType: { type: string, enum: [prerequisite, deep_dive, application] }
         status: { type: string, enum: [pending, discussing, accepted, rejected] }
         generatedCardId: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }

@@ -55,6 +55,29 @@ const savingSettings = ref(false)
 const creatingBranch = ref(false)
 const startingDiscussion = ref(false)
 const error = ref('')
+
+const relationLabels = {
+  prerequisite: '前置知识',
+  deep_dive: '深入理解',
+  application: '应用延展',
+}
+
+function relationLabel(relationType) {
+  return relationLabels[relationType] || '学习分支'
+}
+
+function proposalKicker(proposalItem) {
+  const relationType = proposalItem?.relationType || 'prerequisite'
+  if (relationType === 'prerequisite') return '发现一个前置知识缺口'
+  if (relationType === 'deep_dive') return '推荐深入理解'
+  if (relationType === 'application') return '推荐应用延展'
+  return '推荐学习分支'
+}
+
+const recommendationGroupLabel = computed(() => {
+  const labels = [...new Set(recommendations.value.map((item) => relationLabel(item.relationType || 'prerequisite')))]
+  return labels.length === 1 ? `${labels[0]}建议` : '学习分支建议'
+})
 const theme = ref(localStorage.getItem('studycenter.theme') || 'light')
 const showSettings = ref(false)
 const selectedProvider = ref('deepseek')
@@ -1384,7 +1407,7 @@ function nextSection() {
 
     <div v-if="selectedRecommendation" class="recommendation-backdrop" @click.self="selectedRecommendation = null">
       <section class="recommendation-modal">
-        <div class="recommendation-modal-head"><div><span class="recommendation-kicker">学习建议</span><h3>{{ selectedRecommendation.title }}</h3></div><button @click="selectedRecommendation = null">×</button></div>
+        <div class="recommendation-modal-head"><div><span class="recommendation-kicker">{{ proposalKicker(selectedRecommendation) }}</span><h3>{{ selectedRecommendation.title }}</h3></div><button @click="selectedRecommendation = null">×</button></div>
         <p>{{ selectedRecommendation.reason }}</p>
         <div class="recommendation-source">来自：当前知识卡 · {{ section?.title }}</div>
             <div class="recommendation-actions"><button class="danger" :disabled="creatingBranch || startingDiscussion" @click="deleteRecommendation(selectedRecommendation)">删除建议</button><button class="secondary" :disabled="creatingBranch || startingDiscussion" @click="continueRecommendation(selectedRecommendation)">{{ startingDiscussion ? '正在创建讨论…' : '继续讨论' }}</button><button class="primary" :disabled="creatingBranch || startingDiscussion" @click="acceptProposal(selectedRecommendation)">{{ creatingBranch ? '正在创建分支…' : '创建学习分支' }}</button></div>
@@ -1407,12 +1430,12 @@ function nextSection() {
         </button>
         <div class="tree-label related">本节学习分支</div>
         <button v-for="related in relatedCards" :key="related.id" class="related-card" :class="{ active: card.id === related.id }" @click="openRelatedCard(related)">
-          <span>↳</span>{{ related.title }}
+          <span>↳ {{ relationLabel(related.relationType) }} · </span>{{ related.title }}
         </button>
         <div v-if="!relatedCards.length" class="empty-related">从问题讨论中生成<br />新的学习分支</div>
-        <div v-if="recommendations.length" class="tree-label related">前置知识建议</div>
+        <div v-if="recommendations.length" class="tree-label related">{{ recommendationGroupLabel }}</div>
         <button v-for="item in recommendations" :key="item.id || item.proposalId" class="recommendation-link" @click="selectedRecommendation = item">
-          <span>＋</span>{{ item.title }}
+          <span>＋ {{ relationLabel(item.relationType || 'prerequisite') }} · </span>{{ item.title }}
         </button>
       </aside>
 
@@ -1492,7 +1515,7 @@ function nextSection() {
           </div>
           <div v-if="!messages.length" class="chat-empty">从当前章节提出一个问题，开始独立讨论。</div>
           <div v-if="proposal" class="proposal-card">
-            <div class="proposal-kicker">发现一个前置知识缺口</div>
+            <div class="proposal-kicker">{{ proposalKicker(proposal) }}</div>
             <strong>{{ proposal.title }}</strong>
             <p>{{ proposal.reason }}</p>
             <div class="proposal-actions"><button @click="selectedRecommendation = proposal">查看建议</button><button :disabled="creatingBranch" @click="acceptProposal">{{ creatingBranch ? '正在创建…' : '创建学习分支' }}</button></div>

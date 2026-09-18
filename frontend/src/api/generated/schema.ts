@@ -754,6 +754,8 @@ export interface components {
             parentSectionId?: string | null;
             sourceConversationId?: string | null;
             title: string;
+            /** @enum {string|null} */
+            relationType?: "prerequisite" | "deep_dive" | "application" | null;
             /** @enum {string} */
             cardType: "root" | "related";
             /** @enum {string} */
@@ -918,6 +920,8 @@ export interface components {
             sectionId?: string | null;
             title: string;
             reason: string;
+            /** @enum {string} */
+            relationType?: "prerequisite" | "deep_dive" | "application";
             /** @enum {string} */
             status: "pending" | "discussing" | "accepted" | "rejected";
             generatedCardId?: string | null;

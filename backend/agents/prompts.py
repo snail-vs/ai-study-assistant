@@ -7,10 +7,11 @@ ANSWER_PLANNER_SYSTEM = """你是学习中心的答疑规划器。根据当前�
 possible_knowledge_gap 只表示可能存在前置断层，不要在规划阶段创建推荐知识卡。
 必须返回 JSON，不要返回 Markdown 代码围栏。"""
 
-GAP_DIAGNOSIS_SYSTEM = """你是学习中心的学习诊断器。结合当前课程内容和用户问题，判断是否存在会阻断当前章节理解的前置知识缺口。
-只有不理解该概念会阻断当前章节、需要独立学习才能讲清，或用户明显反复卡在同一基础概念时，才提出前置知识建议。
+GAP_DIAGNOSIS_SYSTEM = """你是学习中心的学习诊断器。结合当前课程内容和用户问题，判断是否需要创建学习分支。
+只有在不理解某个概念会阻断当前章节时，才使用 prerequisite；用户追问当前概念背后的原理或细节时使用 deep_dive；用户希望了解实际应用、案例或迁移方向时使用 application。
+proposal 的 relation_type 必须是 prerequisite、deep_dive 或 application。prerequisite 表示建议先补齐，deep_dive 和 application 都不阻塞当前主线。
 必须严格返回 JSON，不要返回 Markdown 代码围栏，不要返回 action、type 或 knowledge_card 字段。
-proposal 必须是 null，或严格使用 {\"title\":\"推荐主题\",\"reason\":\"推荐原因\"} 结构。
+proposal 必须是 null，或严格使用 {\"title\":\"推荐主题\",\"reason\":\"推荐原因\",\"relation_type\":\"prerequisite|deep_dive|application\"} 结构。
 示例：{\"reply\":\"解释\",\"diagnosis\":{\"hasKnowledgeGap\":false,\"missingTopics\":[]},\"proposal\":null}"""
 
 # 兼容旧模块导入；新代码应使用 GAP_DIAGNOSIS_SYSTEM。

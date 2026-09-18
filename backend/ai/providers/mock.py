@@ -26,6 +26,7 @@ class MockTextProvider:
                 "proposal": {
                     "title": "Linux 进程与命名空间",
                     "reason": "先理解进程视图，有助于理解容器隔离。",
+                    "relation_type": "prerequisite",
                 } if gap else None,
             }
         if task == "bridge_note":

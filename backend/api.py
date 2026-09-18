@@ -110,6 +110,16 @@ provider_state = {
     "models": {name: [] for name in ("deepseek", "google", "opencode", "openrouter", "anthropic", "chatgpt")},
 }
 
+RELATION_LABELS = {
+    "prerequisite": "前置知识",
+    "deep_dive": "深入理解",
+    "application": "应用延展",
+}
+
+
+def relation_label(relation_type: str | None) -> str:
+    return RELATION_LABELS.get(relation_type or "prerequisite", "学习分支")
+
 # In-flight device-code login sessions, keyed by the session id returned to the
 # client. Completed/failed sessions are removed when the client polls them.
 chatgpt_login_sessions: dict[str, dict] = {}
@@ -1329,6 +1339,7 @@ async def submit_activity_attempt(
                     section_id=section.id,
                     title=diagnosis.proposal.title,
                     reason=diagnosis.proposal.reason,
+                    relation_type=diagnosis.proposal.relation_type,
                 ))
                 db.commit()
         except Exception:
@@ -1569,10 +1580,12 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                         section_id=conversation.section_id,
                         title=proposal["title"],
                         reason=proposal["reason"],
+                        relation_type=proposal["relation_type"],
                     )
                     db.add(stored)
                     db.commit()
                     proposal["proposalId"] = stored.id
+                    proposal["relationType"] = proposal.pop("relation_type")
                     yield f"event: related_card.proposed\ndata: {json.dumps(proposal, ensure_ascii=False)}\n\n"
         except Exception as exc:
             run.status = "failed"
@@ -1613,6 +1626,7 @@ async def accept_proposal(proposal_id: str, db: Session = Depends(get_db)):
         source_conversation_id=proposal.conversation_id,
         title=draft.title or proposal.title,
         card_type="related",
+        relation_type=proposal.relation_type,
         status="active",
     )
     db.add(card)
@@ -1655,7 +1669,7 @@ def start_proposal_discussion(proposal_id: str, db: Session = Depends(get_db)):
         root_question=(
             f"推荐学习主题：{proposal.title}\n"
             f"推荐原因：{proposal.reason}\n"
-            "请围绕这个前置知识建议帮助我判断是否值得创建一条学习分支。"
+            f"请围绕这个{relation_label(proposal.relation_type)}建议帮助我判断是否值得创建一条学习分支。"
         ),
     )
     db.add(conversation)
