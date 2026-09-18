@@ -501,6 +501,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/activities/{activityId}/attempts/{attemptId}/follow-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                activityId: components["parameters"]["ActivityId"];
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["submitActivityFollowUp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/conversations/{conversationId}/messages/stream": {
         parameters: {
             query?: never;
@@ -841,12 +860,26 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        SubmitActivityFollowUpRequest: {
+            answer: string;
+        };
         ActivityResultItem: {
             questionId: string;
             correct: boolean;
             score: number;
             feedback: string;
             referenceAnswer?: string | null;
+            errorType?: string | null;
+            /** Format: float */
+            confidence?: number | null;
+            missingRubricId?: string | null;
+        };
+        ActivityFollowUp: {
+            id: string;
+            parentTaskId: string;
+            prompt: string;
+            status: string;
+            result?: Record<string, never> | null;
         };
         ActivityAttempt: {
             id: string;
@@ -860,6 +893,8 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             completedAt?: string | null;
+            followUp?: components["schemas"]["ActivityFollowUp"] | null;
+            postFollowUpMastery?: string | null;
         };
         TeacherGuidance: {
             id: string;
@@ -1921,6 +1956,40 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ActivityAttempt"] | null;
                 };
+            };
+        };
+    };
+    submitActivityFollowUp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                activityId: components["parameters"]["ActivityId"];
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitActivityFollowUpRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated activity attempt */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityAttempt"];
+                };
+            };
+            /** @description Follow-up is not pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -126,6 +126,12 @@ class ShortAnswerEvaluation(BaseModel):
     score: int = Field(ge=0, le=100)
     feedback: str
     misconception: str | None = None
+    # Optional fields keep compatibility with older providers.  Missing fields
+    # deliberately mean "do not make a follow-up decision".
+    error_type: str | None = Field(default=None, alias="errorType")
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    missing_rubric: list[str] = Field(default_factory=list, alias="missingRubric")
+    follow_up_question: str | None = Field(default=None, alias="followUpQuestion")
 
 
 class KnowledgeCardDraft(BaseModel):

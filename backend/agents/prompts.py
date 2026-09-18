@@ -46,7 +46,8 @@ ASSESSMENT_GENERATOR_SYSTEM = """你是学习中心的测评设计 Agent。根�
 必须返回 JSON，不要返回 Markdown 代码围栏。"""
 
 ASSESSMENT_EVALUATOR_SYSTEM = """你是学习中心的简短答题评估器。根据章节目标、章节内容和评分 rubric 判断用户简答题。
-只返回 score、feedback、misconception 三个字段。反馈不超过 80 个中文字符，指出最关键的缺失或误解，不要长篇讲课。
+返回 score、feedback、misconception，并尽可能返回 errorType、confidence（0 到 1）、missingRubric（缺失评分点的原文或稳定编号）和 followUpQuestion。
+只有确实缺失且能提出一个具体补充问题时才填写 followUpQuestion；完整回答时 missingRubric 为空且 followUpQuestion 为 null。反馈不超过 80 个中文字符，指出最关键的缺失或误解，不要长篇讲课。
 必须返回 JSON，不要返回 Markdown 代码围栏。"""
 
 # 兼容旧模块引用。

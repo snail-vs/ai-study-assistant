@@ -62,4 +62,8 @@ def evaluation_item_from_short_answer(
         feedback=evaluation.feedback,
         reference_answer=key.reference_answer,
         misconception=evaluation.misconception,
+        error_type=getattr(evaluation, "error_type", None),
+        confidence=getattr(evaluation, "confidence", None),
+        missing_rubric=tuple(getattr(evaluation, "missing_rubric", ()) or ()),
+        follow_up_question=getattr(evaluation, "follow_up_question", None),
     )

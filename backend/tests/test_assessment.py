@@ -13,6 +13,16 @@ class Evaluation:
         self.misconception = misconception
 
 
+class StructuredEvaluation(Evaluation):
+    def __init__(self, score=60, feedback="反馈", misconception=None, *, confidence=0.9,
+                 missing_rubric=None, follow_up_question="请补充缺失要点"):
+        super().__init__(score, feedback, misconception)
+        self.confidence = confidence
+        self.missing_rubric = missing_rubric or []
+        self.follow_up_question = follow_up_question
+        self.error_type = "missing_rubric" if self.missing_rubric else None
+
+
 def legacy(content, keys):
     return LegacyQuizAdapter.from_json("activity-1", "目标", "章节内容", content, keys)
 
@@ -119,6 +129,45 @@ class AssessmentServiceTests(unittest.TestCase):
         # private answer-key shape and rubric must not leak into the result.
         self.assertNotIn('"answer"', encoded)
         self.assertNotIn("隐藏评分点", encoded)
+
+    def test_old_short_answer_output_does_not_create_follow_up(self):
+        activity = legacy(
+            {"questions": [{"id": "q1", "type": "short_answer", "prompt": "解释"}]},
+            {"q1": {"rubric": ["要点"]}},
+        )
+        result = asyncio.run(AttemptSubmissionService(
+            short_answer_evaluator=AsyncMock(return_value=Evaluation(70))
+        ).evaluate(activity, {"q1": "回答"}))
+        self.assertIsNone(result.follow_up)
+
+    def test_first_missing_rubric_creates_only_one_follow_up(self):
+        activity = legacy(
+            {"questions": [
+                {"id": "q1", "type": "short_answer", "prompt": "解释 1"},
+                {"id": "q2", "type": "short_answer", "prompt": "解释 2"},
+            ]},
+            {"q1": {"rubric": ["要点一", "要点二"]}, "q2": {"rubric": ["其他"]}},
+        )
+        evaluator = AsyncMock(side_effect=[
+            StructuredEvaluation(missing_rubric=["rubric-1"]),
+            StructuredEvaluation(missing_rubric=["rubric-0"]),
+        ])
+        result = asyncio.run(AttemptSubmissionService(short_answer_evaluator=evaluator).evaluate(
+            activity, {"q1": "回答", "q2": "回答"}
+        ))
+        self.assertEqual(result.follow_up["parentTaskId"], "q1")
+        self.assertEqual(result.follow_up["privateRubricIndex"], 1)
+
+    def test_low_confidence_needs_review_without_follow_up(self):
+        activity = legacy(
+            {"questions": [{"id": "q1", "type": "short_answer", "prompt": "解释"}]},
+            {"q1": {"rubric": ["要点"]}},
+        )
+        result = asyncio.run(AttemptSubmissionService(
+            short_answer_evaluator=AsyncMock(return_value=StructuredEvaluation(confidence=0.4))
+        ).evaluate(activity, {"q1": "回答"}))
+        self.assertEqual(result.mastery_level, "needs_review")
+        self.assertIsNone(result.follow_up)
 
 
 if __name__ == "__main__":

@@ -88,6 +88,7 @@ from .schemas import (
     ActivityAttemptResponse,
     LearningActivityResponse,
     SubmitActivityAttemptRequest,
+    SubmitActivityFollowUpRequest,
     TeacherGuidanceResponse,
 )
 from .security.encryption import EncryptionError, decrypt_secret, encrypt_secret
@@ -1100,6 +1101,27 @@ def _activity_attempt_response(attempt: ActivityAttempt | None) -> dict | None:
     if not attempt:
         return None
     result = json.loads(attempt.result_json or "{}")
+    follow_up = result.get("followUp")
+    public_follow_up = None
+    if isinstance(follow_up, dict) and follow_up.get("id") and follow_up.get("parentTaskId"):
+        public_follow_up = {
+            "id": follow_up["id"],
+            "parentTaskId": follow_up["parentTaskId"],
+            "prompt": follow_up.get("prompt", ""),
+            "status": follow_up.get("status", "pending"),
+        }
+        if isinstance(follow_up.get("result"), dict):
+            public_follow_up["result"] = follow_up["result"]
+    results = []
+    for item in result.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        # Explicit whitelist: never project private rubric indexes, answer keys,
+        # or provider payloads from result_json.
+        results.append({key: item[key] for key in (
+            "questionId", "correct", "score", "feedback", "referenceAnswer",
+            "errorType", "confidence", "missingRubricId",
+        ) if key in item})
     return {
         "id": attempt.id,
         "activityId": attempt.activity_id,
@@ -1107,9 +1129,11 @@ def _activity_attempt_response(attempt: ActivityAttempt | None) -> dict | None:
         "score": attempt.score,
         "masteryLevel": attempt.mastery_level,
         "diagnosticSummary": attempt.diagnostic_summary,
-        "results": result.get("items", []),
+        "results": results,
         "createdAt": attempt.created_at,
         "completedAt": attempt.completed_at,
+        "followUp": public_follow_up,
+        "postFollowUpMastery": result.get("postFollowUpMastery"),
     }
 
 
@@ -1141,6 +1165,89 @@ def _get_activity(activity_id: str, db: Session) -> LearningActivity:
     if not activity or not section or not card or card.status == "deleted":
         raise HTTPException(status_code=404, detail="Learning activity not found")
     return activity
+
+
+async def _run_activity_post_assessment_hooks(
+    db: Session,
+    activity: LearningActivity,
+    attempt: ActivityAttempt,
+    card: KnowledgeCard | None,
+    section: CardSection | None,
+    *,
+    allow_gap_diagnosis: bool = True,
+) -> None:
+    """Run mentor/gap hooks once, after the final assessment evidence exists."""
+    result = json.loads(attempt.result_json or "{}")
+    if result.get("postAssessmentHooksCompleted") or not card or not section:
+        return
+    effective_mastery, effective_score, effective_diagnostic = derive_effective_post_assessment(
+        result, attempt.score, attempt.mastery_level, attempt.diagnostic_summary,
+    )
+    if card and section:
+        try:
+            guidance = await TeacherAgent(restore_active_provider(db)).create_activity_followup(
+                card.title, section.title, activity.objective or "", effective_score,
+                effective_diagnostic,
+            )
+            db.add(TeacherGuidance(
+                card_id=card.id, section_id=section.id, source_conversation_id=None,
+                trigger="activity_result", content=guidance.content,
+            ))
+            db.commit()
+        except Exception:
+            logger.exception("activity mentor follow-up failed: activity_id=%s", activity.id)
+    if should_run_activity_gap_diagnosis(result, allow_gap_diagnosis, effective_mastery):
+        try:
+            diagnosis = await SideAgent(restore_active_provider(db)).diagnose(
+                "；".join(result.get("misconceptions", [])) or effective_diagnostic,
+                context=f"知识卡：{card.title}\n章节：{section.title}\n课程内容：{section.content_markdown}",
+            )
+            if diagnosis.proposal:
+                db.add(RelatedCardProposal(
+                    conversation_id=None, activity_id=activity.id, card_id=card.id,
+                    section_id=section.id, title=diagnosis.proposal.title,
+                    reason=diagnosis.proposal.reason,
+                    relation_type=diagnosis.proposal.relation_type,
+                ))
+                db.commit()
+        except Exception:
+            logger.exception("activity gap diagnosis failed: activity_id=%s", activity.id)
+    result["postAssessmentHooksCompleted"] = True
+    attempt.result_json = json.dumps(result, ensure_ascii=False)
+    db.commit()
+    db.refresh(attempt)
+
+
+def derive_effective_post_assessment(
+    result: dict,
+    score: int | None,
+    mastery: str | None,
+    diagnostic: str | None,
+) -> tuple[str, int, str]:
+    """Derive hook-only feedback while preserving legacy attempt columns."""
+    effective_mastery = result.get("postFollowUpMastery") or mastery or "needs_review"
+    original_score = score or 0
+    if effective_mastery == "mastered":
+        effective_score = max(original_score, 85)
+    elif effective_mastery == "developing":
+        effective_score = max(original_score, 60)
+    else:
+        effective_score = original_score
+    if result.get("postFollowUpMastery"):
+        effective_diagnostic = f"完成针对性追问后，当前掌握程度为：{effective_mastery}。"
+    else:
+        effective_diagnostic = diagnostic or ""
+    return effective_mastery, effective_score, effective_diagnostic
+
+
+def should_run_activity_gap_diagnosis(
+    result: dict,
+    allow_gap_diagnosis: bool = True,
+    effective_mastery: str | None = None,
+) -> bool:
+    """Only unresolved, permitted evidence can create a knowledge branch."""
+    mastery = effective_mastery or result.get("postFollowUpMastery")
+    return allow_gap_diagnosis and not bool(result.get("lowConfidence")) and mastery == "needs_review"
 
 
 @router.get(
@@ -1268,44 +1375,89 @@ async def submit_activity_attempt(
     submission = await service.submit(db, activity, assessment, payload.answers)
     attempt = submission.attempt
     evaluation = submission.evaluation
-    score = evaluation.score
-    diagnostic = evaluation.diagnostic_summary
-    misconceptions = list(evaluation.misconceptions)
+    # A pending follow-up defers mentor and knowledge-gap hooks until the
+    # learner completes that same attempt.
+    initial_result = json.loads(attempt.result_json or "{}")
+    if attempt.status == "follow_up_pending":
+        return _activity_attempt_response(attempt)
+    await _run_activity_post_assessment_hooks(
+        db, activity, attempt, card, section,
+        allow_gap_diagnosis=not initial_result.get("lowConfidence", False),
+    )
+    return _activity_attempt_response(attempt)
 
-    if card and section:
-        try:
-            guidance = await TeacherAgent(restore_active_provider(db)).create_activity_followup(
-                card.title, section.title, activity.objective or "", score, diagnostic,
-            )
-            db.add(TeacherGuidance(
-                card_id=card.id,
-                section_id=section.id,
-                source_conversation_id=None,
-                trigger="activity_result",
-                content=guidance.content,
-            ))
-            db.commit()
-        except Exception:
-            logger.exception("activity mentor follow-up failed: activity_id=%s", activity.id)
-    if score < 60 and card and section:
-        try:
-            diagnosis = await SideAgent(restore_active_provider(db)).diagnose(
-                "；".join(misconceptions) or diagnostic,
-                context=f"知识卡：{card.title}\n章节：{section.title}\n课程内容：{section.content_markdown}",
-            )
-            if diagnosis.proposal:
-                db.add(RelatedCardProposal(
-                    conversation_id=None,
-                    activity_id=activity.id,
-                    card_id=card.id,
-                    section_id=section.id,
-                    title=diagnosis.proposal.title,
-                    reason=diagnosis.proposal.reason,
-                    relation_type=diagnosis.proposal.relation_type,
-                ))
-                db.commit()
-        except Exception:
-            logger.exception("activity gap diagnosis failed: activity_id=%s", activity.id)
+
+@router.post(
+    "/activities/{activity_id}/attempts/{attempt_id}/follow-up",
+    response_model=ActivityAttemptResponse,
+)
+async def submit_activity_follow_up(
+    activity_id: str,
+    attempt_id: str,
+    payload: SubmitActivityFollowUpRequest,
+    db: Session = Depends(get_db),
+):
+    activity = _get_activity(activity_id, db)
+    attempt = db.get(ActivityAttempt, attempt_id)
+    if not attempt or attempt.activity_id != activity.id:
+        raise HTTPException(status_code=404, detail="Activity attempt not found")
+    result = json.loads(attempt.result_json or "{}")
+    follow_up = result.get("followUp")
+    if not isinstance(follow_up, dict):
+        raise HTTPException(status_code=409, detail="This attempt has no follow-up")
+    if follow_up.get("status") != "pending":
+        raise HTTPException(status_code=409, detail="Follow-up has already been submitted")
+    section = db.get(CardSection, activity.section_id)
+    content = json.loads(activity.content_json or "{}")
+    answer_key = json.loads(activity.answer_key_json or "{}")
+    assessment = LegacyQuizAdapter.from_json(
+        activity_id=activity.id,
+        objective=activity.objective,
+        section_content=section.content_markdown if section else "",
+        content=content,
+        answer_key=answer_key,
+    )
+
+    def short_answer_evaluator_factory():
+        return AssessmentAgent(restore_active_provider(db)).evaluate_short_answer
+
+    service = AttemptSubmissionService(short_answer_evaluator_factory=short_answer_evaluator_factory)
+    try:
+        evaluation = await service.evaluate_follow_up(
+            assessment, follow_up, payload.answer, short_answer_evaluator_factory()
+        )
+    except Exception:
+        logger.exception("activity follow-up evaluation failed: activity_id=%s attempt_id=%s", activity.id, attempt.id)
+        # Do not mutate or commit: a retry sees the same pending follow-up.
+        raise HTTPException(status_code=502, detail="Follow-up evaluation failed")
+
+    # Only mutate after evaluation has fully succeeded.  Keep private linkage
+    # in result_json, but expose only the safe result projection.
+    score = int(getattr(evaluation, "score", 0))
+    follow_up["status"] = "completed"
+    follow_up["answer"] = payload.answer
+    follow_up["result"] = {
+        "score": score,
+        "correct": score >= 60,
+        "feedback": getattr(evaluation, "feedback", ""),
+    }
+    original_mastery = attempt.mastery_level or "needs_review"
+    if score >= 60:
+        follow_up_mastery = "mastered" if original_mastery == "mastered" else "developing"
+    else:
+        follow_up_mastery = original_mastery
+    result["postFollowUpMastery"] = follow_up_mastery
+    result["followUp"] = follow_up
+    attempt.result_json = json.dumps(result, ensure_ascii=False)
+    attempt.status = "evaluated"
+    attempt.completed_at = now()
+    db.commit()
+    db.refresh(attempt)
+
+    card = db.get(KnowledgeCard, activity.card_id)
+    # Reuse the existing post-assessment behavior only after the follow-up is
+    # complete.  The helper's marker prevents duplicate hooks.
+    await _run_activity_post_assessment_hooks(db, activity, attempt, card, section)
     return _activity_attempt_response(attempt)
 
 

@@ -28,6 +28,8 @@ const activityAnswers = ref({})
 const activityResult = ref(null)
 const activityLoading = ref(false)
 const activitySubmitting = ref(false)
+const followUpAnswer = ref('')
+const followUpSubmitting = ref(false)
 const showKnowledgeSidebar = ref(localStorage.getItem('studycenter.knowledgeSidebar') !== 'false')
 const teacherGuidance = ref([])
 const showTeacherGuidance = ref(true)
@@ -151,6 +153,10 @@ let conversationLoadVersion = 0
 let guidanceLoadVersion = 0
 // 普通换行按 Markdown 语义处理，避免模型的排版换行被全部渲染成额外的 <br>。
 const md = new MarkdownIt({ html: false, breaks: false, linkify: true })
+
+function masteryLabel(level) {
+  return level === 'mastered' ? '已掌握' : level === 'developing' ? '掌握中' : level === 'needs_review' ? '需要复习' : ''
+}
 
 onMounted(async () => {
   window.addEventListener('popstate', restoreStudyRoute)
@@ -440,6 +446,8 @@ async function openQuiz(activityId = null) {
     }
     activeActivity.value = activity
     activityResult.value = activity.latestAttempt || null
+    followUpAnswer.value = ''
+    followUpSubmitting.value = false
     if (activityResult.value) {
       activityAnswers.value = {}
     } else {
@@ -458,6 +466,8 @@ function closeQuiz() {
   activeActivity.value = null
   activityResult.value = null
   activityAnswers.value = {}
+  followUpAnswer.value = ''
+  followUpSubmitting.value = false
   syncStudyUrl({ replace: true })
 }
 
@@ -480,8 +490,10 @@ async function submitQuiz() {
     })
     activeActivity.value = { ...activeActivity.value, latestAttempt: activityResult.value }
     activities.value = activities.value.map((item) => item.id === activeActivity.value.id ? activeActivity.value : item)
-    await loadTeacherGuidance()
-    await loadRecommendations()
+    if (activityResult.value?.followUp?.status !== 'pending') {
+      await loadTeacherGuidance()
+      await loadRecommendations()
+    }
   } catch (err) {
     error.value = err.message
   } finally {
@@ -491,7 +503,39 @@ async function submitQuiz() {
 
 function retryQuiz() {
   activityResult.value = null
+  followUpAnswer.value = ''
+  followUpSubmitting.value = false
   activityAnswers.value = Object.fromEntries((activeActivity.value?.questions || []).map((question) => [question.id, question.type === 'short_answer' ? '' : null]))
+}
+
+async function submitFollowUp() {
+  if (!activeActivity.value || !activityResult.value?.followUp || followUpSubmitting.value) return
+  const answer = followUpAnswer.value.trim()
+  if (!answer) {
+    error.value = '请先回答针对性追问'
+    return
+  }
+  if (answer.length > 4000) {
+    error.value = '回答不能超过 4000 字'
+    return
+  }
+  followUpSubmitting.value = true
+  error.value = ''
+  try {
+    activityResult.value = await request(`/activities/${activeActivity.value.id}/attempts/${activityResult.value.id}/follow-up`, {
+      method: 'POST',
+      body: JSON.stringify({ answer }),
+    })
+    activeActivity.value = { ...activeActivity.value, latestAttempt: activityResult.value }
+    activities.value = activities.value.map((item) => item.id === activeActivity.value.id ? activeActivity.value : item)
+    followUpAnswer.value = ''
+    await loadTeacherGuidance()
+    await loadRecommendations()
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    followUpSubmitting.value = false
+  }
 }
 
 async function openSettings() {
@@ -844,6 +888,8 @@ async function openHistory(item) {
     learningView.value = 'content'
     activeActivity.value = null
     activityResult.value = null
+    followUpAnswer.value = ''
+    followUpSubmitting.value = false
     await loadTeacherGuidance()
     await loadRecommendations()
     await loadRelatedCards()
@@ -1093,6 +1139,8 @@ async function openCard(target, navigationContext = null, options = {}) {
   activeActivity.value = null
   activityResult.value = null
   activityAnswers.value = {}
+  followUpAnswer.value = ''
+  followUpSubmitting.value = false
   showConversationList.value = false
   selectedRecommendation.value = null
   proposal.value = null
@@ -1236,6 +1284,8 @@ async function selectSection(index) {
   activeActivity.value = null
   activityResult.value = null
   activityAnswers.value = {}
+  followUpAnswer.value = ''
+  followUpSubmitting.value = false
   await loadRelatedCards()
   await loadTeacherGuidance()
   await loadSectionActivities()
@@ -1461,6 +1511,19 @@ function nextSection() {
                 <div class="quiz-score"><strong>{{ activityResult.score }}</strong><span>分</span><em>{{ activityResult.masteryLevel === 'mastered' ? '已掌握' : activityResult.masteryLevel === 'developing' ? '掌握中' : '需要复习' }}</em></div>
                 <p class="quiz-diagnostic">{{ activityResult.diagnosticSummary }}</p>
                 <article v-for="(result, index) in activityResult.results" :key="result.questionId" class="quiz-result-item" :class="{ correct: result.correct }"><div><b>{{ result.correct ? '✓' : '!' }}</b><strong>第 {{ index + 1 }} 题</strong></div><p>{{ result.feedback }}</p><small v-if="result.referenceAnswer">参考答案：{{ result.referenceAnswer }}</small></article>
+                <section v-if="activityResult.followUp" class="quiz-follow-up">
+                  <div class="quiz-follow-up-head"><span class="quiz-kicker">针对性追问</span><span v-if="activityResult.followUp.status === 'completed'" class="quiz-follow-up-status">已完成</span></div>
+                  <p class="quiz-follow-up-prompt">{{ activityResult.followUp.prompt }}</p>
+                  <template v-if="activityResult.followUp.status === 'pending'">
+                    <textarea v-model="followUpAnswer" class="quiz-follow-up-input" maxlength="4000" placeholder="补充说明你的理解…"></textarea>
+                    <div class="quiz-follow-up-meta"><span>{{ followUpAnswer.length }} / 4000</span><button class="primary" :disabled="followUpSubmitting" @click="submitFollowUp">{{ followUpSubmitting ? '正在分析…' : '提交追问回答' }}</button></div>
+                  </template>
+                  <div v-else-if="activityResult.followUp.result" class="quiz-follow-up-feedback" :class="{ correct: activityResult.followUp.result.correct }">
+                    <strong>{{ activityResult.followUp.result.correct ? '回答通过' : '还需要补充' }}</strong>
+                    <p>{{ activityResult.followUp.result.feedback }}</p>
+                    <small v-if="activityResult.postFollowUpMastery">当前掌握状态：{{ masteryLabel(activityResult.postFollowUpMastery) }}</small>
+                  </div>
+                </section>
                 <div class="quiz-result-actions"><button class="secondary" @click="retryQuiz">重新尝试</button><button class="primary" @click="closeQuiz">返回课程内容</button></div>
               </section>
             </template>

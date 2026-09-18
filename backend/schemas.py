@@ -198,12 +198,27 @@ class SubmitActivityAttemptRequest(ApiModel):
     answers: dict[str, str | bool | None] = Field(default_factory=dict)
 
 
+class SubmitActivityFollowUpRequest(ApiModel):
+    answer: str = Field(min_length=1, max_length=4000)
+
+
 class ActivityResultItem(ApiModel):
     question_id: str = Field(alias="questionId")
     correct: bool
     score: int
     feedback: str
     reference_answer: str | None = Field(default=None, alias="referenceAnswer")
+    error_type: str | None = Field(default=None, alias="errorType")
+    confidence: float | None = None
+    missing_rubric_id: str | None = Field(default=None, alias="missingRubricId")
+
+
+class ActivityFollowUpResponse(ApiModel):
+    id: str
+    parent_task_id: str = Field(alias="parentTaskId")
+    prompt: str
+    status: str
+    result: dict | None = None
 
 
 class ActivityAttemptResponse(ApiModel):
@@ -216,6 +231,8 @@ class ActivityAttemptResponse(ApiModel):
     results: list[ActivityResultItem] = Field(default_factory=list)
     created_at: datetime = Field(alias="createdAt")
     completed_at: datetime | None = Field(default=None, alias="completedAt")
+    follow_up: ActivityFollowUpResponse | None = Field(default=None, alias="followUp")
+    post_follow_up_mastery: str | None = Field(default=None, alias="postFollowUpMastery")
 
 
 class CardSectionResponse(ApiModel):

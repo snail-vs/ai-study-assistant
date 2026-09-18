@@ -553,6 +553,29 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ActivityAttempt'
                   - type: 'null'
+  /activities/{activityId}/attempts/{attemptId}/follow-up:
+    parameters:
+      - $ref: '#/components/parameters/ActivityId'
+      - name: attemptId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: submitActivityFollowUp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitActivityFollowUpRequest'
+      responses:
+        '200':
+          description: Updated activity attempt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityAttempt'
+        '409': { description: Follow-up is not pending }
   /conversations/{conversationId}/messages/stream:
     parameters:
       - $ref: '#/components/parameters/ConversationId'
@@ -980,6 +1003,11 @@ components:
         answers:
           type: object
           additionalProperties: {}
+    SubmitActivityFollowUpRequest:
+      type: object
+      required: [answer]
+      properties:
+        answer: { type: string, minLength: 1, maxLength: 4000 }
     ActivityResultItem:
       type: object
       required: [questionId, correct, score, feedback]
@@ -989,6 +1017,18 @@ components:
         score: { type: integer }
         feedback: { type: string }
         referenceAnswer: { type: string, nullable: true }
+        errorType: { type: string, nullable: true }
+        confidence: { type: number, format: float, nullable: true }
+        missingRubricId: { type: string, nullable: true }
+    ActivityFollowUp:
+      type: object
+      required: [id, parentTaskId, prompt, status]
+      properties:
+        id: { type: string }
+        parentTaskId: { type: string }
+        prompt: { type: string }
+        status: { type: string }
+        result: { type: object, nullable: true }
     ActivityAttempt:
       type: object
       required: [id, activityId, status, results, createdAt]
@@ -1004,6 +1044,11 @@ components:
           items: { $ref: '#/components/schemas/ActivityResultItem' }
         createdAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time, nullable: true }
+        followUp:
+          oneOf:
+            - $ref: '#/components/schemas/ActivityFollowUp'
+            - type: 'null'
+        postFollowUpMastery: { type: string, nullable: true }
     TeacherGuidance:
       type: object
       required: [id, cardId, sectionId, trigger, content, createdAt]

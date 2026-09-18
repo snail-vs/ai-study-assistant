@@ -287,6 +287,26 @@ button { cursor: pointer; }
   .model-role-route { grid-template-columns: 1fr; gap: 7px; }
 }
 
+.quiz-follow-up { margin-top: 22px; padding: 16px; border: 1px solid #806b3c; border-radius: 9px; background: #211f1a; }
+.quiz-follow-up-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.quiz-follow-up-status { color: #9ed5c3; font-size: 11px; }
+.quiz-follow-up-prompt { margin: 10px 0 12px; color: #e6d8b4; line-height: 1.7; font-size: 13px; white-space: pre-wrap; }
+.quiz-follow-up-input { display: block; width: 100%; min-height: 96px; box-sizing: border-box; resize: vertical; border: 1px solid #675a3d; border-radius: 7px; background: #121820; color: #e8edf5; padding: 11px; line-height: 1.6; outline: none; }
+.quiz-follow-up-input:focus { border-color: #d0b76d; }
+.quiz-follow-up-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; color: #9b8f70; font-size: 11px; }
+.quiz-follow-up-meta button { border: 0; border-radius: 6px; padding: 8px 11px; font-size: 11px; }
+.quiz-follow-up-feedback { margin-top: 10px; padding: 11px 12px; border: 1px solid #583f47; border-radius: 7px; background: #211c25; }
+.quiz-follow-up-feedback.correct { border-color: #365e55; background: #152727; }
+.quiz-follow-up-feedback strong { color: #e29696; font-size: 12px; }.quiz-follow-up-feedback.correct strong { color: #74d2b4; }
+.quiz-follow-up-feedback p { margin: 7px 0 0; color: #b9c4d0; font-size: 12px; line-height: 1.6; white-space: pre-wrap; }.quiz-follow-up-feedback small { display: block; margin-top: 7px; color: #8192a8; }
+.theme-light .quiz-follow-up { border-color: #c8b477; background: #fffaf0; }.theme-light .quiz-follow-up-prompt { color: #536273; }.theme-light .quiz-follow-up-input { background: #fff; border-color: #d8cda7; color: #263342; }.theme-light .quiz-follow-up-feedback { background: #fff7f7; border-color: #e3c3c3; }.theme-light .quiz-follow-up-feedback.correct { background: #f0f8f7; border-color: #c9e0db; }.theme-light .quiz-follow-up-feedback p { color: #536273; }
+
+@media (max-width: 640px) {
+  .quiz-follow-up { padding: 13px; }
+  .quiz-follow-up-meta { align-items: flex-end; }
+  .quiz-follow-up-meta button { padding: 9px 10px; }
+}
+
 /* Mobile classroom: keep the lesson readable and open navigation/discussion on demand. */
 .mobile-discussion-toggle, .mobile-chat-close { display: none; }
 .chat-head-actions { display: flex; align-items: center; gap: 10px; }
