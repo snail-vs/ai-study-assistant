@@ -76,6 +76,12 @@ function proposalKicker(proposalItem) {
   return '推荐学习分支'
 }
 
+function proposalId(proposalItem) {
+  if (!proposalItem || typeof proposalItem !== 'object') return ''
+  const value = proposalItem.proposalId || proposalItem.id
+  return typeof value === 'string' ? value.trim() : ''
+}
+
 const recommendationGroupLabel = computed(() => {
   const labels = [...new Set(recommendations.value.map((item) => relationLabel(item.relationType || 'prerequisite')))]
   return labels.length === 1 ? `${labels[0]}建议` : '学习分支建议'
@@ -1081,23 +1087,38 @@ async function sendMessage(text = input.value) {
 }
 
 async function acceptProposal(item = proposal.value) {
-  if (!item) return
+  // A bare @click="acceptProposal" passes the MouseEvent and bypasses the
+  // default parameter. Keep the handler defensive so UI events can never be
+  // interpolated into `/proposals/undefined/...`.
+  const candidate = proposalId(item) ? item : proposal.value
+  const id = proposalId(candidate)
+  if (!candidate || !id) {
+    await loadRecommendations()
+    error.value = '推荐信息尚未同步，请稍后再试'
+    return
+  }
   creatingBranch.value = true
   try {
     const sourceEntry = { cardId: card.value.id, sectionId: section.value?.id || null }
-    const generatedCard = await request(`/proposals/${item.proposalId || item.id}/accept`, { method: 'POST' })
+    const generatedCard = await request(`/proposals/${id}/accept`, { method: 'POST' })
     await openCard(generatedCard, sourceEntry, { eventType: 'branch_entered' })
-    recommendations.value = recommendations.value.filter((recommendation) => recommendation.id !== item.id && recommendation.proposalId !== item.proposalId)
+    recommendations.value = recommendations.value.filter((recommendation) => proposalId(recommendation) !== id)
     proposal.value = null
     selectedRecommendation.value = null
   } catch (err) { error.value = err.message } finally { creatingBranch.value = false }
 }
 
 async function continueRecommendation(item) {
+  const id = proposalId(item)
+  if (!id) {
+    await loadRecommendations()
+    error.value = '推荐信息尚未同步，请稍后再试'
+    return
+  }
   startingDiscussion.value = true
   error.value = ''
   try {
-    const conversation = await request(`/proposals/${item.proposalId || item.id}/discussion`, { method: 'POST' })
+    const conversation = await request(`/proposals/${id}/discussion`, { method: 'POST' })
     conversations.value = [...conversations.value, conversation]
     activeConversation.value = conversation
     messages.value = []
@@ -1109,10 +1130,16 @@ async function continueRecommendation(item) {
 }
 
 async function deleteRecommendation(item) {
+  const id = proposalId(item)
+  if (!id) {
+    await loadRecommendations()
+    error.value = '推荐信息尚未同步，请稍后再试'
+    return
+  }
   try {
-    await request(`/proposals/${item.proposalId || item.id}/reject`, { method: 'POST' })
-    recommendations.value = recommendations.value.filter((recommendation) => recommendation.id !== item.id && recommendation.proposalId !== item.proposalId)
-    if (proposal.value?.proposalId === item.proposalId || proposal.value?.id === item.id) proposal.value = null
+    await request(`/proposals/${id}/reject`, { method: 'POST' })
+    recommendations.value = recommendations.value.filter((recommendation) => proposalId(recommendation) !== id)
+    if (proposalId(proposal.value) === id) proposal.value = null
     selectedRecommendation.value = null
   } catch (err) { error.value = err.message }
 }
@@ -1581,7 +1608,7 @@ function nextSection() {
             <div class="proposal-kicker">{{ proposalKicker(proposal) }}</div>
             <strong>{{ proposal.title }}</strong>
             <p>{{ proposal.reason }}</p>
-            <div class="proposal-actions"><button @click="selectedRecommendation = proposal">查看建议</button><button :disabled="creatingBranch" @click="acceptProposal">{{ creatingBranch ? '正在创建…' : '创建学习分支' }}</button></div>
+            <div class="proposal-actions"><button @click="selectedRecommendation = proposal">查看建议</button><button :disabled="creatingBranch" @click="acceptProposal()">{{ creatingBranch ? '正在创建…' : '创建学习分支' }}</button></div>
           </div>
         </div>
         <div v-if="sideRun.active" class="chat-run-status"><i class="status-spinner"></i>{{ sideRun.label }}</div>
