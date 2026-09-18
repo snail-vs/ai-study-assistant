@@ -36,6 +36,7 @@ const activeConversation = ref(null)
 const showConversationList = ref(false)
 const showMobileDiscussion = ref(false)
 const messages = ref([])
+const highlightedMessageIds = ref([])
 const input = ref('')
 const sideRun = ref({ active: false, phase: '', label: '' })
 const composerInput = ref(null)
@@ -163,6 +164,13 @@ function renderMessage(content) {
     index % 2 === 1 ? part : part.replace(/\n{3,}/g, '\n\n')
   )).join('').trim()
   return md.render(compacted)
+}
+
+function guidanceQuestion(item) {
+  const question = String(item.sourceQuestion || '').trim()
+  if (question) return question.length > 42 ? `${question.slice(0, 42)}…` : question
+  const conversation = conversations.value.find((entry) => entry.id === item.sourceConversationId)
+  return conversation?.title || '查看对应讨论'
 }
 const isRelatedCard = computed(() => navigationStack.value.length > 0)
 const keyConfigured = computed(() => Boolean(providerStatus.value.providers?.[selectedProvider.value]))
@@ -893,6 +901,7 @@ async function loadConversationMessages(conversation) {
   const stored = await request(`/conversations/${conversation.id}/messages`)
   if (version !== conversationLoadVersion || activeConversation.value?.id !== conversation.id) return
   messages.value = stored.filter((message) => message.visibility !== 'internal').map((message) => ({
+    id: message.id,
     role: message.role,
     content: message.content,
     senderId: message.senderId,
@@ -1145,6 +1154,25 @@ async function selectConversation(item) {
   messages.value = []
   syncStudyUrl({ replace: true })
   await loadConversationMessages(item)
+}
+
+async function openGuidanceDiscussion(guidance) {
+  const conversation = conversations.value.find((item) => item.id === guidance.sourceConversationId)
+  if (!conversation) {
+    error.value = '对应讨论已不可用。'
+    return
+  }
+  await selectConversation(conversation)
+  showMobileDiscussion.value = true
+
+  const messageIds = [guidance.sourceQuestionMessageId, guidance.sourceAnswerMessageId].filter(Boolean)
+  if (!messageIds.length) return
+  highlightedMessageIds.value = messageIds
+  await nextTick()
+  document.getElementById(`discussion-message-${messageIds[0]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  window.setTimeout(() => {
+    highlightedMessageIds.value = []
+  }, 2200)
 }
 
 async function loadTeacherGuidance() {
@@ -1431,7 +1459,8 @@ function nextSection() {
           </div>
           <div v-if="showTeacherGuidance" class="teacher-guidance-body">
             <article v-for="item in teacherGuidance" :key="item.id" class="teacher-guidance-item">
-              <span class="teacher-guidance-trigger">{{ item.trigger === 'section_enter' ? '进入本节' : item.trigger === 'activity_result' ? '理解检查后' : '讨论后归位' }}</span>
+              <button v-if="item.trigger === 'side_question' && item.sourceConversationId" class="teacher-guidance-trigger teacher-guidance-link" @click="openGuidanceDiscussion(item)">讨论后归位 · {{ guidanceQuestion(item) }}</button>
+              <span v-else class="teacher-guidance-trigger">{{ item.trigger === 'section_enter' ? '进入本节' : item.trigger === 'activity_result' ? '理解检查后' : '讨论后归位' }}</span>
               <p>{{ item.content }}</p>
             </article>
             <div v-if="!teacherGuidance.length" class="teacher-guidance-empty">正在准备本节的学习引导…</div>
@@ -1456,7 +1485,7 @@ function nextSection() {
           </div>
         </div>
         <div class="messages">
-          <div v-for="(message, index) in messages" :key="index" class="message" :class="[message.role, { pending: message.pending }]">
+          <div v-for="(message, index) in messages" :id="message.id ? `discussion-message-${message.id}` : undefined" :key="message.id || index" class="message" :class="[message.role, { pending: message.pending, highlighted: highlightedMessageIds.includes(message.id) }]">
             <span>{{ message.senderName || (message.role === 'user' ? '你' : 'AI') }}</span><i v-if="message.pending" class="typing-dots"><b></b><b></b><b></b></i>
             <div v-if="message.role === 'assistant'" class="message-markdown" v-html="renderMessage(message.content)"></div>
             <div v-else class="message-plain">{{ message.content }}</div>

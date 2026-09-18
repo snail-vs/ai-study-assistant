@@ -234,6 +234,9 @@ class TeacherGuidanceResponse(ApiModel):
     card_id: str = Field(alias="cardId")
     section_id: str = Field(alias="sectionId")
     source_conversation_id: str | None = Field(default=None, alias="sourceConversationId")
+    source_question_message_id: str | None = Field(default=None, alias="sourceQuestionMessageId")
+    source_answer_message_id: str | None = Field(default=None, alias="sourceAnswerMessageId")
+    source_question: str | None = Field(default=None, alias="sourceQuestion")
     trigger: str
     content: str
     created_at: datetime = Field(alias="createdAt")

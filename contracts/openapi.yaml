@@ -1011,6 +1011,9 @@ components:
         cardId: { type: string }
         sectionId: { type: string }
         sourceConversationId: { type: string, nullable: true }
+        sourceQuestionMessageId: { type: string, nullable: true }
+        sourceAnswerMessageId: { type: string, nullable: true }
+        sourceQuestion: { type: string, nullable: true }
         trigger: { type: string, enum: [section_enter, side_question, activity_result] }
         content: { type: string }
         createdAt: { type: string, format: date-time }

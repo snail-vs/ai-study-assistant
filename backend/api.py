@@ -1522,6 +1522,9 @@ async def stream_message(conversation_id: str, payload: CreateMessageRequest, db
                         card_id=conversation.card_id,
                         section_id=section.id,
                         source_conversation_id=conversation.id,
+                        source_question_message_id=user_message.id,
+                        source_answer_message_id=assistant.id,
+                        source_question=payload.content,
                         trigger="side_question",
                         content=guidance_draft.content,
                     )

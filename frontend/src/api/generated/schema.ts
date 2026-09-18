@@ -864,6 +864,9 @@ export interface components {
             cardId: string;
             sectionId: string;
             sourceConversationId?: string | null;
+            sourceQuestionMessageId?: string | null;
+            sourceAnswerMessageId?: string | null;
+            sourceQuestion?: string | null;
             /** @enum {string} */
             trigger: "section_enter" | "side_question" | "activity_result";
             content: string;
