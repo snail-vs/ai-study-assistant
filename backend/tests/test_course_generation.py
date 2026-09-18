@@ -4,9 +4,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend import api
 from backend.agents.schemas import CardSectionDraft, KnowledgeCardDraft
 from backend.models import CardSection, KnowledgeCard, LearningSpace
+from backend.services import course_generation
 
 
 def _draft():
@@ -66,8 +66,8 @@ class _Session:
 
 class CourseGenerationTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        api.course_generation_tasks.clear()
-        self.addCleanup(api.course_generation_tasks.clear)
+        course_generation.course_generation_tasks.clear()
+        self.addCleanup(course_generation.course_generation_tasks.clear)
         self.space = LearningSpace(
             id="space-1",
             user_id="user-1",
@@ -81,11 +81,11 @@ class CourseGenerationTests(unittest.IsolatedAsyncioTestCase):
         first = _Session(self.space)
         second = _Session(self.space)
         with (
-            patch.object(api, "SessionLocal", side_effect=[first, second]),
-            patch.object(api, "restore_active_provider", return_value=object()) as restore,
-            patch.object(api, "MainAgent", return_value=SimpleNamespace(create_card=AsyncMock(return_value=_draft()))) as agent,
+            patch.object(course_generation, "SessionLocal", side_effect=[first, second]),
+            patch.object(course_generation, "restore_active_provider", return_value=object()) as restore,
+            patch.object(course_generation, "MainAgent", return_value=SimpleNamespace(create_card=AsyncMock(return_value=_draft()))) as agent,
         ):
-            await api.generate_course("space-1", "user-1", "学习 Python")
+            await course_generation.generate_course("space-1", "user-1", "学习 Python")
 
         self.assertEqual(self.space.generation_status, "completed")
         self.assertEqual(self.space.generation_phase, "completed")
@@ -105,10 +105,10 @@ class CourseGenerationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_space_exits_and_cleans_registry(self):
         session = _Session(None)
-        api.course_generation_tasks["space-missing"] = SimpleNamespace()
-        with patch.object(api, "SessionLocal", return_value=session):
-            await api.generate_course("space-missing", "user-1", "goal")
-        self.assertNotIn("space-missing", api.course_generation_tasks)
+        course_generation.course_generation_tasks["space-missing"] = SimpleNamespace()
+        with patch.object(course_generation, "SessionLocal", return_value=session):
+            await course_generation.generate_course("space-missing", "user-1", "goal")
+        self.assertNotIn("space-missing", course_generation.course_generation_tasks)
         self.assertEqual(session.closed, 1)
         self.assertEqual(session.commits, 0)
 
@@ -117,23 +117,23 @@ class CourseGenerationTests(unittest.IsolatedAsyncioTestCase):
         second = _Session(None)
         draft = _draft()
         with (
-            patch.object(api, "SessionLocal", side_effect=[first, second]),
-            patch.object(api, "restore_active_provider", return_value=object()),
-            patch.object(api, "MainAgent", return_value=SimpleNamespace(create_card=AsyncMock(return_value=draft))),
+            patch.object(course_generation, "SessionLocal", side_effect=[first, second]),
+            patch.object(course_generation, "restore_active_provider", return_value=object()),
+            patch.object(course_generation, "MainAgent", return_value=SimpleNamespace(create_card=AsyncMock(return_value=draft))),
         ):
-            await api.generate_course("space-1", "user-1", "goal")
+            await course_generation.generate_course("space-1", "user-1", "goal")
         self.assertEqual(self.space.generation_status, "running")
         self.assertEqual(second.added, [])
         self.assertEqual(second.closed, 1)
-        self.assertNotIn("space-1", api.course_generation_tasks)
+        self.assertNotIn("space-1", course_generation.course_generation_tasks)
 
     async def test_provider_failure_rolls_back_and_persists_failed_state(self):
         session = _Session(self.space)
         with (
-            patch.object(api, "SessionLocal", return_value=session),
-            patch.object(api, "restore_active_provider", side_effect=RuntimeError("provider unavailable")),
+            patch.object(course_generation, "SessionLocal", return_value=session),
+            patch.object(course_generation, "restore_active_provider", side_effect=RuntimeError("provider unavailable")),
         ):
-            await api.generate_course("space-1", "user-1", "goal")
+            await course_generation.generate_course("space-1", "user-1", "goal")
         self.assertEqual(self.space.generation_status, "failed")
         self.assertEqual(self.space.generation_phase, "failed")
         self.assertEqual(self.space.generation_error, "provider unavailable")
@@ -145,11 +145,11 @@ class CourseGenerationTests(unittest.IsolatedAsyncioTestCase):
         first = _Session(self.space)
         failure_session = _Session(self.space)
         with (
-            patch.object(api, "SessionLocal", side_effect=[first, failure_session]),
-            patch.object(api, "restore_active_provider", return_value=object()),
-            patch.object(api, "MainAgent", return_value=SimpleNamespace(create_card=AsyncMock(side_effect=RuntimeError("agent failed")))),
+            patch.object(course_generation, "SessionLocal", side_effect=[first, failure_session]),
+            patch.object(course_generation, "restore_active_provider", return_value=object()),
+            patch.object(course_generation, "MainAgent", return_value=SimpleNamespace(create_card=AsyncMock(side_effect=RuntimeError("agent failed")))),
         ):
-            await api.generate_course("space-1", "user-1", "goal")
+            await course_generation.generate_course("space-1", "user-1", "goal")
         self.assertEqual(self.space.generation_status, "failed")
         self.assertEqual(self.space.generation_error, "agent failed")
         self.assertEqual(first.closed, 1)
@@ -163,16 +163,16 @@ class CourseGenerationTests(unittest.IsolatedAsyncioTestCase):
     async def test_cancelled_error_propagates_and_task_registry_is_cleaned(self):
         session = _Session(self.space)
         with (
-            patch.object(api, "SessionLocal", return_value=session),
-            patch.object(api, "restore_active_provider", return_value=object()),
-            patch.object(api, "MainAgent", return_value=SimpleNamespace(create_card=AsyncMock(side_effect=asyncio.CancelledError))),
+            patch.object(course_generation, "SessionLocal", return_value=session),
+            patch.object(course_generation, "restore_active_provider", return_value=object()),
+            patch.object(course_generation, "MainAgent", return_value=SimpleNamespace(create_card=AsyncMock(side_effect=asyncio.CancelledError))),
         ):
             with self.assertRaises(asyncio.CancelledError):
-                await api.generate_course("space-1", "user-1", "goal")
+                await course_generation.generate_course("space-1", "user-1", "goal")
         self.assertEqual(self.space.generation_status, "running")
         self.assertEqual(session.closed, 1)
         self.assertEqual(session.rollbacks, 0)
-        self.assertNotIn("space-1", api.course_generation_tasks)
+        self.assertNotIn("space-1", course_generation.course_generation_tasks)
 
     async def test_schedule_deduplicates_running_task_and_replaces_done_task(self):
         started = asyncio.Event()
@@ -182,18 +182,18 @@ class CourseGenerationTests(unittest.IsolatedAsyncioTestCase):
             started.set()
             await release.wait()
 
-        with patch.object(api, "generate_course", side_effect=fake_generate) as generate:
-            api.schedule_course_generation("space-1", "user-1", "goal-1")
+        with patch.object(course_generation, "generate_course", side_effect=fake_generate) as generate:
+            course_generation.schedule_course_generation("space-1", "user-1", "goal-1")
             await started.wait()
-            first_task = api.course_generation_tasks["space-1"]
-            api.schedule_course_generation("space-1", "user-1", "goal-2")
-            self.assertIs(api.course_generation_tasks["space-1"], first_task)
+            first_task = course_generation.course_generation_tasks["space-1"]
+            course_generation.schedule_course_generation("space-1", "user-1", "goal-2")
+            self.assertIs(course_generation.course_generation_tasks["space-1"], first_task)
             self.assertEqual(generate.await_count, 1)
             release.set()
             await first_task
-            self.assertIs(api.course_generation_tasks["space-1"], first_task)
-            api.schedule_course_generation("space-1", "user-1", "goal-3")
-            replacement = api.course_generation_tasks["space-1"]
+            self.assertIs(course_generation.course_generation_tasks["space-1"], first_task)
+            course_generation.schedule_course_generation("space-1", "user-1", "goal-3")
+            replacement = course_generation.course_generation_tasks["space-1"]
             self.assertIsNot(replacement, first_task)
             await replacement
             self.assertEqual(generate.await_count, 2)
@@ -204,10 +204,10 @@ class CourseGenerationTests(unittest.IsolatedAsyncioTestCase):
         session = MagicMock()
         session.scalars.return_value = [queued, running]
         with (
-            patch.object(api, "SessionLocal", return_value=session),
-            patch.object(api, "schedule_course_generation") as schedule,
+            patch.object(course_generation, "SessionLocal", return_value=session),
+            patch.object(course_generation, "schedule_course_generation") as schedule,
         ):
-            await api.resume_pending_course_generations()
+            await course_generation.resume_pending_course_generations()
         schedule.assert_has_calls([
             unittest.mock.call("queued", "user-1", "q"),
             unittest.mock.call("running", "user-2", "r"),

@@ -7,10 +7,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from .api import public_router, resume_pending_course_generations, router
+from .api import public_router, router
 from .auth_api import router as auth_router
+from .learning_space_api import router as learning_space_router
 from .provider_api import router as provider_router
 from .ai.base import AIProviderError
+from .services.course_generation import resume_pending_course_generations
 from . import models  # noqa: F401
 
 app = FastAPI(title="StudyCenter API", version="0.1.0")
@@ -92,4 +94,5 @@ async def ai_provider_exception_handler(request: Request, exc: AIProviderError):
 app.include_router(public_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(provider_router, prefix="/api/v1")
+app.include_router(learning_space_router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")

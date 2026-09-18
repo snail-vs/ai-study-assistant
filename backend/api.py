@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -17,7 +16,7 @@ from .agents.teacher_agent import TeacherAgent
 from .agents.prompts import QA_TUTOR_SYSTEM
 from .agents.registry import default_participants, get_agent, AGENTS
 from .assessment import AttemptSubmissionService, LegacyQuizAdapter
-from .db import SessionLocal, get_db
+from .db import get_db
 from .models import (
     BridgeNote,
     CardSection,
@@ -39,13 +38,8 @@ from .schemas import (
     ConversationResponse,
     CreateKnowledgeCardRequest,
     CreateConversationRequest,
-    CreateLearningSpaceRequest,
-    GenerationStatusResponse,
-    RetryLearningSpaceGenerationRequest,
     CreateMessageRequest,
     CreateNoteRequest,
-    LearningSpaceList,
-    LearningSpaceResponse,
     LearningRuntimeResponse,
     UpdateLearningRuntimeRequest,
     KnowledgeCardResponse,
@@ -67,7 +61,6 @@ from .services.provider_settings import restore_active_provider
 router = APIRouter(dependencies=[Depends(require_current_user)])
 public_router = APIRouter()
 
-course_generation_tasks: dict[str, asyncio.Task] = {}
 logger = logging.getLogger("studycenter.api")
 """Learning-domain routes."""
 
@@ -123,162 +116,6 @@ def health() -> dict[str, str]:
 @router.get("/agents", response_model=list[AgentDefinitionResponse])
 def list_agents():
     return AGENTS
-
-
-async def generate_course(space_id: str, user_id: str, learning_goal: str) -> None:
-    db = SessionLocal()
-    try:
-        space = db.get(LearningSpace, space_id)
-        if not space:
-            return
-        space.generation_status = "running"
-        space.generation_phase = "generating"
-        space.generation_updated_at = now()
-        db.commit()
-        gateway = restore_active_provider(db, user_id)
-        db.close()
-        db = None
-
-        draft = await MainAgent(gateway).create_card(learning_goal)
-
-        db = SessionLocal()
-        space = db.get(LearningSpace, space_id)
-        if not space:
-            return
-        space.generation_phase = "saving"
-        space.generation_updated_at = now()
-        db.commit()
-        card = KnowledgeCard(space_id=space.id, title=draft.title, card_type="root", status="active")
-        db.add(card)
-        db.flush()
-        for index, section in enumerate(draft.sections):
-            db.add(
-                CardSection(
-                    card_id=card.id,
-                    title=section.title or f"第 {index + 1} 节",
-                    order_index=index,
-                    content_markdown=section.content_markdown,
-                    content_type=section.content_type,
-                    teaching_objective=section.teaching_objective,
-                    quality_report_json=json.dumps(section.quality_report, ensure_ascii=False),
-                )
-            )
-        space.root_card_id = card.id
-        space.generation_status = "completed"
-        space.generation_phase = "completed"
-        space.generation_error = None
-        space.generation_updated_at = now()
-        db.commit()
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:  # noqa: BLE001 - persist failure for the UI
-        logger.exception("course generation failed: space_id=%s", space_id)
-        if db is not None:
-            db.rollback()
-            space = db.get(LearningSpace, space_id)
-        else:
-            db = SessionLocal()
-            space = db.get(LearningSpace, space_id)
-        if space:
-            space.generation_status = "failed"
-            space.generation_phase = "failed"
-            space.generation_error = str(exc)
-            space.generation_updated_at = now()
-            db.commit()
-    finally:
-        if db is not None:
-            db.close()
-        course_generation_tasks.pop(space_id, None)
-
-
-def schedule_course_generation(space_id: str, user_id: str, learning_goal: str) -> None:
-    existing = course_generation_tasks.get(space_id)
-    if existing and not existing.done():
-        return
-    course_generation_tasks[space_id] = asyncio.create_task(
-        generate_course(space_id, user_id, learning_goal)
-    )
-
-
-async def resume_pending_course_generations() -> None:
-    db = SessionLocal()
-    try:
-        spaces = list(
-            db.scalars(
-                select(LearningSpace).where(
-                    LearningSpace.generation_status.in_(("queued", "running")),
-                )
-            )
-        )
-        for space in spaces:
-            schedule_course_generation(space.id, space.user_id, space.learning_goal)
-    finally:
-        db.close()
-
-
-
-
-@router.post("/learning-spaces", response_model=LearningSpaceResponse, status_code=status.HTTP_202_ACCEPTED)
-async def create_learning_space(payload: CreateLearningSpaceRequest, db: Session = Depends(get_db)):
-    user_id = current_user_id()
-    space = LearningSpace(
-        user_id=user_id,
-        title=payload.title,
-        learning_goal=payload.learning_goal,
-        generation_status="queued",
-        generation_phase="queued",
-    )
-    db.add(space)
-    db.commit()
-    db.refresh(space)
-    schedule_course_generation(space.id, user_id, payload.learning_goal)
-    return space
-
-
-@router.get("/learning-spaces", response_model=LearningSpaceList)
-def list_learning_spaces(db: Session = Depends(get_db)):
-    return {"items": list(db.scalars(select(LearningSpace).where(LearningSpace.user_id == current_user_id()).order_by(LearningSpace.created_at.desc())))}
-
-
-@router.get("/learning-spaces/{space_id}", response_model=LearningSpaceResponse)
-def get_learning_space(space_id: str, db: Session = Depends(get_db)):
-    return owned_space(db, space_id)
-
-
-@router.get("/learning-spaces/{space_id}/generation", response_model=GenerationStatusResponse)
-def get_course_generation_status(space_id: str, db: Session = Depends(get_db)):
-    space = owned_space(db, space_id)
-    return {
-        "spaceId": space.id,
-        "status": space.generation_status,
-        "phase": space.generation_phase,
-        "error": space.generation_error,
-        "rootCardId": space.root_card_id,
-        "updatedAt": space.generation_updated_at or space.created_at,
-    }
-
-
-@router.put("/learning-spaces/{space_id}/generation", response_model=LearningSpaceResponse)
-async def retry_course_generation(
-    space_id: str,
-    payload: RetryLearningSpaceGenerationRequest,
-    db: Session = Depends(get_db),
-):
-    space = owned_space(db, space_id)
-    if space.generation_status != "failed":
-        raise HTTPException(status_code=409, detail="Only failed course generations can be retried")
-    if space.root_card_id:
-        raise HTTPException(status_code=409, detail="A completed course cannot be regenerated")
-    space.title = payload.title
-    space.learning_goal = payload.learning_goal
-    space.generation_status = "queued"
-    space.generation_phase = "queued"
-    space.generation_error = None
-    space.generation_updated_at = now()
-    db.commit()
-    db.refresh(space)
-    schedule_course_generation(space.id, space.user_id, space.learning_goal)
-    return space
 
 
 @router.get("/learning-spaces/{space_id}/runtime", response_model=LearningRuntimeResponse | None)
