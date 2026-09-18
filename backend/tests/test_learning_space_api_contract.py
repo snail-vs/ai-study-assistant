@@ -17,6 +17,8 @@ class LearningSpaceApiContractTests(unittest.TestCase):
             ("GET", "/api/v1/learning-spaces/{space_id}"),
             ("GET", "/api/v1/learning-spaces/{space_id}/generation"),
             ("PUT", "/api/v1/learning-spaces/{space_id}/generation"),
+            ("GET", "/api/v1/learning-spaces/{space_id}/runtime"),
+            ("PUT", "/api/v1/learning-spaces/{space_id}/runtime"),
         }
         actual = {
             (method.upper(), path)
@@ -27,6 +29,7 @@ class LearningSpaceApiContractTests(unittest.TestCase):
                 path == "/api/v1/learning-spaces"
                 or path == "/api/v1/learning-spaces/{space_id}"
                 or path == "/api/v1/learning-spaces/{space_id}/generation"
+                or path == "/api/v1/learning-spaces/{space_id}/runtime"
             )
         }
         self.assertEqual(actual, expected)
@@ -57,6 +60,7 @@ class LearningSpaceApiContractTests(unittest.TestCase):
                 "/learning-spaces",
                 "/learning-spaces/{space_id}",
                 "/learning-spaces/{space_id}/generation",
+                "/learning-spaces/{space_id}/runtime",
             }
         }
         self.assertEqual(legacy_paths, set())

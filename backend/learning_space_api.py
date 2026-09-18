@@ -1,23 +1,126 @@
 """Learning-space routes."""
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .models import LearningSpace, now
+from .models import (
+    CardSection,
+    KnowledgeCard,
+    LearningRuntime,
+    LearningRuntimeRecord,
+    LearningSpace,
+    now,
+)
 from .schemas import (
     CreateLearningSpaceRequest,
     GenerationStatusResponse,
+    LearningRuntimeResponse,
     LearningSpaceList,
     LearningSpaceResponse,
     RetryLearningSpaceGenerationRequest,
+    UpdateLearningRuntimeRequest,
 )
 from .security.auth import current_user_id, require_current_user
 from .services.course_generation import schedule_course_generation
 from .services.ownership import owned_space
 
 router = APIRouter(dependencies=[Depends(require_current_user)])
+
+
+@router.get(
+    "/learning-spaces/{space_id}/runtime",
+    response_model=LearningRuntimeResponse | None,
+)
+def get_learning_runtime(space_id: str, db: Session = Depends(get_db)):
+    owned_space(db, space_id)
+    if not db.get(LearningSpace, space_id):
+        raise HTTPException(status_code=404, detail="Learning space not found")
+    return db.scalar(select(LearningRuntime).where(LearningRuntime.space_id == space_id))
+
+
+@router.put(
+    "/learning-spaces/{space_id}/runtime",
+    response_model=LearningRuntimeResponse,
+)
+def update_learning_runtime(
+    space_id: str,
+    payload: UpdateLearningRuntimeRequest,
+    db: Session = Depends(get_db),
+):
+    owned_space(db, space_id)
+    if not db.get(LearningSpace, space_id):
+        raise HTTPException(status_code=404, detail="Learning space not found")
+    current_card = db.get(KnowledgeCard, payload.current_card_id)
+    if (
+        not current_card
+        or current_card.space_id != space_id
+        or current_card.status == "deleted"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Current card does not belong to this learning space",
+        )
+    if payload.current_section_id:
+        current_section = db.get(CardSection, payload.current_section_id)
+        if not current_section or current_section.card_id != current_card.id:
+            raise HTTPException(
+                status_code=400,
+                detail="Current section does not belong to current card",
+            )
+
+    stack = [entry.model_dump(by_alias=True) for entry in payload.navigation_stack]
+    for entry in payload.navigation_stack:
+        stack_card = db.get(KnowledgeCard, entry.card_id)
+        if (
+            not stack_card
+            or stack_card.space_id != space_id
+            or stack_card.status == "deleted"
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Navigation stack contains an invalid card",
+            )
+        if entry.section_id:
+            stack_section = db.get(CardSection, entry.section_id)
+            if not stack_section or stack_section.card_id != stack_card.id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Navigation stack contains an invalid section",
+                )
+
+    runtime = db.scalar(select(LearningRuntime).where(LearningRuntime.space_id == space_id))
+    if runtime is None:
+        runtime = LearningRuntime(space_id=space_id)
+        db.add(runtime)
+        db.flush()
+    source = payload.navigation_stack[-1] if payload.navigation_stack else None
+    runtime.current_card_id = current_card.id
+    runtime.current_section_id = payload.current_section_id
+    runtime.source_card_id = source.card_id if source else None
+    runtime.source_section_id = source.section_id if source else None
+    runtime.navigation_stack_json = json.dumps(stack, ensure_ascii=False)
+    runtime.updated_at = now()
+
+    latest_seq = db.scalar(
+        select(func.max(LearningRuntimeRecord.seq)).where(
+            LearningRuntimeRecord.runtime_id == runtime.id
+        )
+    ) or 0
+    db.add(LearningRuntimeRecord(
+        runtime_id=runtime.id,
+        seq=latest_seq + 1,
+        event_type=payload.event_type,
+        card_id=current_card.id,
+        section_id=payload.current_section_id,
+        payload_json=json.dumps({"navigationStack": stack}, ensure_ascii=False),
+    ))
+    db.commit()
+    db.refresh(runtime)
+    return runtime
 
 
 @router.post(
