@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .api import owned_space
 from .db import get_db
 from .models import LearningSpace, now
 from .schemas import (
@@ -16,6 +15,7 @@ from .schemas import (
 )
 from .security.auth import current_user_id, require_current_user
 from .services.course_generation import schedule_course_generation
+from .services.ownership import owned_space
 
 router = APIRouter(dependencies=[Depends(require_current_user)])
 

@@ -42,6 +42,7 @@ from .schemas import (
 )
 from .security.auth import require_current_user, current_user_id
 from .services.provider_settings import restore_active_provider
+from .services.ownership import owned_card, owned_conversation, owned_space
 
 router = APIRouter(dependencies=[Depends(require_current_user)])
 public_router = APIRouter()
@@ -58,41 +59,6 @@ RELATION_LABELS = {
 
 def relation_label(relation_type: str | None) -> str:
     return RELATION_LABELS.get(relation_type or "prerequisite", "学习分支")
-
-def owned_space(db: Session, space_id: str) -> LearningSpace:
-    space = db.scalar(
-        select(LearningSpace).where(
-            LearningSpace.id == space_id,
-            LearningSpace.user_id == current_user_id(),
-        )
-    )
-    if not space:
-        raise HTTPException(status_code=404, detail="Learning space not found")
-    return space
-
-
-def owned_card(db: Session, card_id: str) -> KnowledgeCard:
-    card = db.scalar(
-        select(KnowledgeCard)
-        .join(LearningSpace, KnowledgeCard.space_id == LearningSpace.id)
-        .where(KnowledgeCard.id == card_id, LearningSpace.user_id == current_user_id())
-    )
-    if not card:
-        raise HTTPException(status_code=404, detail="Knowledge card not found")
-    return card
-
-
-def owned_conversation(db: Session, conversation_id: str) -> Conversation:
-    conversation = db.scalar(
-        select(Conversation)
-        .join(KnowledgeCard, Conversation.card_id == KnowledgeCard.id)
-        .join(LearningSpace, KnowledgeCard.space_id == LearningSpace.id)
-        .where(Conversation.id == conversation_id, LearningSpace.user_id == current_user_id())
-    )
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    return conversation
-
 
 @public_router.get("/health")
 def health() -> dict[str, str]:

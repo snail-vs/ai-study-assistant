@@ -3,12 +3,12 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .api import owned_conversation
 from .db import get_db
 from .models import AIRun, Conversation, KnowledgeCard, Message, now
 from .schemas import AIRunResponse, CreateMessageRequest, MessageResponse
 from .security.auth import require_current_user
 from .services.conversation_stream import ConversationStreamService
+from .services.ownership import owned_conversation
 
 router = APIRouter(dependencies=[Depends(require_current_user)])
 

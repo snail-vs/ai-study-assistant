@@ -7,9 +7,9 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from backend import api
 from backend.db import Base
 from backend.models import Conversation, KnowledgeCard, LearningSpace, User
+from backend.services import ownership
 
 
 class SQLiteOwnershipIntegrationTests(unittest.TestCase):
@@ -88,21 +88,21 @@ class SQLiteOwnershipIntegrationTests(unittest.TestCase):
         self.assertEqual(caught.exception.detail, detail)
 
     def test_current_user_can_access_owned_space_card_and_conversation(self):
-        with patch("backend.api.current_user_id", return_value=self.owner.id):
-            self.assertEqual(api.owned_space(self.db, self.owner_space.id).id, self.owner_space.id)
-            self.assertEqual(api.owned_card(self.db, self.owner_card.id).id, self.owner_card.id)
+        with patch("backend.services.ownership.current_user_id", return_value=self.owner.id):
+            self.assertEqual(ownership.owned_space(self.db, self.owner_space.id).id, self.owner_space.id)
+            self.assertEqual(ownership.owned_card(self.db, self.owner_card.id).id, self.owner_card.id)
             self.assertEqual(
-                api.owned_conversation(self.db, self.owner_conversation.id).id,
+                ownership.owned_conversation(self.db, self.owner_conversation.id).id,
                 self.owner_conversation.id,
             )
 
     def test_other_users_resources_and_missing_ids_are_uniformly_not_found(self):
-        with patch("backend.api.current_user_id", return_value=self.owner.id):
+        with patch("backend.services.ownership.current_user_id", return_value=self.owner.id):
             for helper, detail, foreign_id, missing_id in (
-                (api.owned_space, "Learning space not found", self.other_space.id, "space-missing"),
-                (api.owned_card, "Knowledge card not found", self.other_card.id, "card-missing"),
+                (ownership.owned_space, "Learning space not found", self.other_space.id, "space-missing"),
+                (ownership.owned_card, "Knowledge card not found", self.other_card.id, "card-missing"),
                 (
-                    api.owned_conversation,
+                    ownership.owned_conversation,
                     "Conversation not found",
                     self.other_conversation.id,
                     "conversation-missing",
@@ -114,24 +114,24 @@ class SQLiteOwnershipIntegrationTests(unittest.TestCase):
     def test_card_and_conversation_ownership_is_enforced_by_real_association_joins(self):
         # Matching the child id is insufficient: both helpers must traverse the
         # card -> space relationship to establish the current user's ownership.
-        with patch("backend.api.current_user_id", return_value=self.other_user.id):
-            self.assertEqual(api.owned_card(self.db, self.other_card.id).id, self.other_card.id)
+        with patch("backend.services.ownership.current_user_id", return_value=self.other_user.id):
+            self.assertEqual(ownership.owned_card(self.db, self.other_card.id).id, self.other_card.id)
             self.assertEqual(
-                api.owned_conversation(self.db, self.other_conversation.id).id,
+                ownership.owned_conversation(self.db, self.other_conversation.id).id,
                 self.other_conversation.id,
             )
 
-        with patch("backend.api.current_user_id", return_value=self.owner.id):
-            self.assert_not_found(api.owned_card, self.other_card.id, "Knowledge card not found")
-            self.assert_not_found(api.owned_conversation, self.other_conversation.id, "Conversation not found")
+        with patch("backend.services.ownership.current_user_id", return_value=self.owner.id):
+            self.assert_not_found(ownership.owned_card, self.other_card.id, "Knowledge card not found")
+            self.assert_not_found(ownership.owned_conversation, self.other_conversation.id, "Conversation not found")
 
     def test_owned_card_includes_soft_deleted_card_current_characterization(self):
         self.owner_card.status = "deleted"
         self.owner_card.deleted_at = datetime(2026, 9, 18)
         self.db.commit()
 
-        with patch("backend.api.current_user_id", return_value=self.owner.id):
-            card = api.owned_card(self.db, self.owner_card.id)
+        with patch("backend.services.ownership.current_user_id", return_value=self.owner.id):
+            card = ownership.owned_card(self.db, self.owner_card.id)
 
         self.assertEqual(card.id, self.owner_card.id)
         self.assertEqual(card.status, "deleted")

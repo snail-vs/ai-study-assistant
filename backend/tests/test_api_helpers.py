@@ -6,15 +6,15 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
-from backend import api
 from backend.services import activity_workflow
+from backend.services import ownership
 
 
 class OwnershipHelperTests(unittest.TestCase):
     def assert_not_found(self, helper, resource_id, detail):
         db = MagicMock()
         db.scalar.return_value = None
-        with patch("backend.api.current_user_id", return_value="user-1"):
+        with patch("backend.services.ownership.current_user_id", return_value="user-1"):
             with self.assertRaises(HTTPException) as caught:
                 helper(db, resource_id)
         self.assertEqual(caught.exception.status_code, 404)
@@ -25,37 +25,37 @@ class OwnershipHelperTests(unittest.TestCase):
         space = SimpleNamespace(id="space-1", user_id="user-1")
         db = MagicMock()
         db.scalar.return_value = space
-        with patch("backend.api.current_user_id", return_value="user-1") as current_user:
-            self.assertIs(api.owned_space(db, "space-1"), space)
+        with patch("backend.services.ownership.current_user_id", return_value="user-1") as current_user:
+            self.assertIs(ownership.owned_space(db, "space-1"), space)
         current_user.assert_called_once_with()
         db.scalar.assert_called_once()
 
     def test_owned_space_rejects_missing_or_other_users_space(self):
-        self.assert_not_found(api.owned_space, "space-foreign", "Learning space not found")
+        self.assert_not_found(ownership.owned_space, "space-foreign", "Learning space not found")
 
     def test_owned_card_returns_only_current_users_card(self):
         card = SimpleNamespace(id="card-1", space_id="space-1")
         db = MagicMock()
         db.scalar.return_value = card
-        with patch("backend.api.current_user_id", return_value="user-1") as current_user:
-            self.assertIs(api.owned_card(db, "card-1"), card)
+        with patch("backend.services.ownership.current_user_id", return_value="user-1") as current_user:
+            self.assertIs(ownership.owned_card(db, "card-1"), card)
         current_user.assert_called_once_with()
         db.scalar.assert_called_once()
 
     def test_owned_card_rejects_missing_or_other_users_card(self):
-        self.assert_not_found(api.owned_card, "card-foreign", "Knowledge card not found")
+        self.assert_not_found(ownership.owned_card, "card-foreign", "Knowledge card not found")
 
     def test_owned_conversation_returns_only_current_users_conversation(self):
         conversation = SimpleNamespace(id="conversation-1", card_id="card-1")
         db = MagicMock()
         db.scalar.return_value = conversation
-        with patch("backend.api.current_user_id", return_value="user-1") as current_user:
-            self.assertIs(api.owned_conversation(db, "conversation-1"), conversation)
+        with patch("backend.services.ownership.current_user_id", return_value="user-1") as current_user:
+            self.assertIs(ownership.owned_conversation(db, "conversation-1"), conversation)
         current_user.assert_called_once_with()
         db.scalar.assert_called_once()
 
     def test_owned_conversation_rejects_missing_or_other_users_conversation(self):
-        self.assert_not_found(api.owned_conversation, "conversation-foreign", "Conversation not found")
+        self.assert_not_found(ownership.owned_conversation, "conversation-foreign", "Conversation not found")
 
 
 class ActivityResponseHelperTests(unittest.TestCase):

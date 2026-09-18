@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .api import owned_card
 from .db import get_db
 from .models import ActivityAttempt, CardSection, KnowledgeCard, LearningActivity
 from .schemas import (
@@ -22,6 +21,7 @@ from .services.activity_workflow import (
     submit_attempt,
     submit_follow_up,
 )
+from .services.ownership import owned_card
 
 router = APIRouter(dependencies=[Depends(require_current_user)])
 
