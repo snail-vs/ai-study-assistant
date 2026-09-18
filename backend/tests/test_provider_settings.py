@@ -4,12 +4,12 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from backend import api
 from backend.models import (
     DefaultModelPreference,
     ProviderCredential,
     TaskModelRoute,
 )
+from backend.services import provider_settings as provider_service
 
 
 class _ScalarResult:
@@ -80,7 +80,7 @@ def _credential(user_id, provider, models, *, active_model=None, is_active=False
 class ProviderSettingsTests(unittest.TestCase):
     def setUp(self):
         self.user_id = "user-a"
-        self.user_patch = patch.object(api, "current_user_id", return_value=self.user_id)
+        self.user_patch = patch.object(provider_service, "current_user_id", return_value=self.user_id)
         self.user_patch.start()
         self.addCleanup(self.user_patch.stop)
 
@@ -96,12 +96,13 @@ class ProviderSettingsTests(unittest.TestCase):
             ],
         )
 
-        with patch.dict(api.provider_state, {"providers": {"deepseek": False, "openrouter": False}}, clear=False):
-            result = api.provider_settings(db)
+        result = provider_service.provider_settings(db)
 
         self.assertEqual(result["activeProvider"], "deepseek")
         self.assertEqual(result["activeModel"], "deepseek-chat")
-        self.assertEqual(result["models"], {"deepseek": ["deepseek-chat"], "openrouter": []})
+        self.assertEqual(result["models"]["deepseek"], ["deepseek-chat"])
+        self.assertEqual(result["models"]["openrouter"], [])
+        self.assertEqual(set(result["models"]), set(provider_service.SUPPORTED_PROVIDER_NAMES))
         self.assertEqual(result["taskRoutes"], {
             "side_answer": "deepseek:deepseek-chat",
             "gap_diagnosis": "deepseek:deepseek-chat",
@@ -113,7 +114,7 @@ class ProviderSettingsTests(unittest.TestCase):
     def test_provider_settings_preference_wins_over_active_credential(self):
         credential = _credential(self.user_id, "deepseek", ["m1", "m2"], active_model="m1", is_active=True)
         preference = DefaultModelPreference(user_id=self.user_id, provider_name="deepseek", model_id="m2")
-        result = api.provider_settings(_SessionDouble(credentials=[credential], preference=preference))
+        result = provider_service.provider_settings(_SessionDouble(credentials=[credential], preference=preference))
         self.assertEqual(result["activeProvider"], "deepseek")
         self.assertEqual(result["activeModel"], "m2")
 
@@ -127,12 +128,12 @@ class ProviderSettingsTests(unittest.TestCase):
         ]
         for routes, expected in cases:
             with self.subTest(routes=routes), self.assertRaises(HTTPException) as raised:
-                api.validate_task_routes(routes, db)
+                provider_service.validate_task_routes(routes, db)
             self.assertIn(expected, raised.exception.detail)
 
     def test_validate_task_routes_accepts_selected_model(self):
         db = _SessionDouble(credentials=[_credential(self.user_id, "deepseek", ["m1"])])
-        api.validate_task_routes({"teacher_guidance": "deepseek:m1"}, db)
+        provider_service.validate_task_routes({"teacher_guidance": "deepseek:m1"}, db)
 
     def test_save_task_routes_upserts_and_deletes_stale_routes_for_current_user(self):
         existing = TaskModelRoute(user_id=self.user_id, task="teacher_guidance", provider_name="deepseek", model_id="old")
@@ -143,7 +144,7 @@ class ProviderSettingsTests(unittest.TestCase):
             routes=[existing, stale, other_user],
         )
 
-        api.save_task_routes({"teacher_guidance": "deepseek:m2"}, db)
+        provider_service.save_task_routes({"teacher_guidance": "deepseek:m2"}, db)
 
         self.assertIs(db.added[0], existing)
         self.assertEqual((existing.provider_name, existing.model_id), ("deepseek", "m2"))

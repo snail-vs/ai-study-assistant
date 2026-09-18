@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from .api import public_router, resume_pending_course_generations, router
 from .auth_api import router as auth_router
+from .provider_api import router as provider_router
 from .ai.base import AIProviderError
 from . import models  # noqa: F401
 
@@ -90,4 +91,5 @@ async def ai_provider_exception_handler(request: Request, exc: AIProviderError):
 
 app.include_router(public_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(provider_router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")
