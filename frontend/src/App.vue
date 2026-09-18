@@ -145,7 +145,17 @@ onUnmounted(() => {
 })
 
 const section = computed(() => card.value?.sections?.[activeSection.value] || null)
-const renderedContent = computed(() => md.render(section.value?.contentMarkdown || '本节内容正在生成。'))
+
+function stripRepeatedSectionTitle(content, title) {
+  const source = String(content || '').replace(/\r\n?/g, '\n')
+  const firstHeading = source.match(/^\s{0,3}#{1,6}\s+(.+?)(?:\s+#+)?\s*(?:\n|$)/)
+  if (!firstHeading || firstHeading[1].trim() !== String(title || '').trim()) return source
+  return source.slice(firstHeading[0].length).replace(/^\n+/, '')
+}
+
+const renderedContent = computed(() => md.render(
+  stripRepeatedSectionTitle(section.value?.contentMarkdown || '本节内容正在生成。', section.value?.title),
+))
 function renderMessage(content) {
   const source = String(content || '').replace(/\r\n?/g, '\n')
   // 只压缩普通 Markdown 文本，围栏代码块中的空行必须保持原样。
