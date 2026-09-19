@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
+import { request as apiRequest } from './api/client'
 
 const base = '/api/v1'
 const authChecked = ref(false)
@@ -362,14 +363,7 @@ function handleComposerKeydown(event) {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`${base}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    credentials: 'same-origin',
-    ...options,
-  })
-  const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body?.error?.message || body?.detail || body?.error?.details?.reason || '请求失败')
-  return body
+  return apiRequest(path, options)
 }
 
 async function checkAuth() {
