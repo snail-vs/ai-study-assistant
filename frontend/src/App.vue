@@ -6,10 +6,12 @@ import { storeToRefs } from 'pinia'
 import { useAuthStore } from './stores/auth'
 import { useSettingsStore } from './stores/settings'
 import { useLearningStore } from './stores/learning'
+import { useConversationStore } from './stores/conversation'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
 const learningStore = useLearningStore()
+const conversationStore = useConversationStore()
 const {
   checked: authChecked, user: authUser, mode: authMode, username: authUsername,
   password: authPassword, inviteCode: authInviteCode, loading: authLoading,
@@ -23,8 +25,12 @@ const {
   history, historyCards, generationNotice, editingFailedSpace, space, card, rootCard,
   relatedCards, navigationStack, activeSection, section,
 } = storeToRefs(learningStore)
+const {
+  conversations, activeConversation, showConversationList, showMobileDiscussion,
+  messages, highlightedMessageIds, sideRun, proposal, recommendations, teacherGuidance,
+  streamError,
+} = storeToRefs(conversationStore)
 
-const base = '/api/v1'
 const goal = ref('')
 const learningView = ref('content')
 const activities = ref([])
@@ -36,16 +42,8 @@ const activitySubmitting = ref(false)
 const followUpAnswer = ref('')
 const followUpSubmitting = ref(false)
 const showKnowledgeSidebar = ref(localStorage.getItem('studycenter.knowledgeSidebar') !== 'false')
-const teacherGuidance = ref([])
 const showTeacherGuidance = ref(true)
-const conversations = ref([])
-const activeConversation = ref(null)
-const showConversationList = ref(false)
-const showMobileDiscussion = ref(false)
-const messages = ref([])
-const highlightedMessageIds = ref([])
 const input = ref('')
-const sideRun = ref({ active: false, phase: '', label: '' })
 const composerInput = ref(null)
 const notesList = ref([])
 const showNotes = ref(false)
@@ -140,12 +138,9 @@ const allModelOptions = computed(() => {
   }
   return options
 })
-const proposal = ref(null)
-const recommendations = ref([])
 const selectedRecommendation = ref(null)
 const chatWidth = ref(Math.min(560, Math.max(280, Number(localStorage.getItem('studycenter.chatWidth')) || 360)))
 let resizingChat = false
-let conversationLoadVersion = 0
 let guidanceLoadVersion = 0
 // 普通换行按 Markdown 语义处理，避免模型的排版换行被全部渲染成额外的 <br>。
 const md = new MarkdownIt({ html: false, breaks: false, linkify: true })
@@ -733,13 +728,10 @@ async function openHistory(item) {
 
 function goHome() {
   learningStore.clearWorkspace()
-  activeConversation.value = null
-  showConversationList.value = false
+  conversationStore.reset()
   teacherGuidance.value = []
   recommendations.value = []
   selectedRecommendation.value = null
-  conversations.value = []
-  messages.value = []
   proposal.value = null
   error.value = ''
   window.history.replaceState({}, '', '/')
@@ -758,147 +750,33 @@ async function openSideConversation() {
       rootQuestion: question,
     }),
   })
-  conversations.value.push(side)
+  conversations.value = [...conversations.value, side]
   activeConversation.value = side
   showConversationList.value = false
-  messages.value = []
+  conversationStore.clearMessages()
   syncStudyUrl()
   await sendMessage(question)
 }
 
 async function loadSectionConversations(preferredConversationId = null) {
-  if (!card.value || !section.value) {
-    conversations.value = []
-    activeConversation.value = null
-    messages.value = []
-    return
-  }
-  const next = await request(
-    `/cards/${card.value.id}/conversations?sectionId=${encodeURIComponent(section.value.id)}`,
-  )
-  conversations.value = next
-  const requestedId = preferredConversationId || activeConversation.value?.id
-  activeConversation.value = next.find((item) => item.id === requestedId) || next[0] || null
-  messages.value = []
-  await loadConversationMessages(activeConversation.value)
-}
-
-async function loadConversationMessages(conversation) {
-  const version = ++conversationLoadVersion
-  if (!conversation) {
-    messages.value = []
-    return
-  }
-  const stored = await request(`/conversations/${conversation.id}/messages`)
-  if (version !== conversationLoadVersion || activeConversation.value?.id !== conversation.id) return
-  messages.value = stored.filter((message) => message.visibility !== 'internal').map((message) => ({
-    id: message.id,
-    role: message.role,
-    content: message.content,
-    senderId: message.senderId,
-    senderName: message.senderName,
-    senderRole: message.senderRole,
-  }))
-  const activeRun = await request(`/conversations/${conversation.id}/runs/active`)
-  if (version !== conversationLoadVersion || activeConversation.value?.id !== conversation.id) return
-  if (activeRun?.status === 'expired' || activeRun?.status === 'failed') {
-    sideRun.value = { active: false, phase: '', label: '' }
-    error.value = activeRun.errorMessage || '上一次 AI 请求未完成，请重新发送。'
-  } else if (activeRun) {
-    sideRun.value = {
-      active: true,
-      phase: activeRun.phase || 'waiting',
-      label: activeRun.phase === 'guiding' ? '主线老师正在总结引导' : 'AI 正在处理中',
-    }
-    if (!messages.value.some((message) => message.pending)) {
-      messages.value.push({
-        role: 'assistant',
-        content: '',
-        pending: true,
-        senderId: 'side_tutor',
-        senderName: '答疑助教',
-        senderRole: 'assistant',
-      })
-    }
-  } else {
-    sideRun.value = { active: false, phase: '', label: '' }
+  try {
+    await conversationStore.loadSectionConversations(card.value, section.value, preferredConversationId)
+  } catch (err) {
+    error.value = err.message
   }
 }
 
 async function sendMessage(text = input.value) {
   if (!activeConversation.value || !section.value || !text.trim() || sideRun.value.active) return
-  if (activeConversation.value.sectionId !== section.value.id) {
-    error.value = '请在该讨论所属的章节中继续提问。'
-    return
-  }
   error.value = ''
-  sideRun.value = { active: true, phase: 'waiting', label: '正在等待 AI 响应' }
   input.value = ''
   await nextTick()
   resizeComposer()
-  messages.value.push({ role: 'user', content: text })
-  const assistant = { role: 'assistant', content: '', pending: true, senderId: 'side_tutor', senderName: '答疑助教', senderRole: 'assistant' }
-  messages.value.push(assistant)
   try {
-    const response = await fetch(`${base}/conversations/${activeConversation.value.id}/messages/stream`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: text, sectionId: activeConversation.value.sectionId }),
-    })
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      throw new Error(body?.error?.message || body?.detail || '无法建立 AI 流式连接')
-    }
-    if (!response.body) throw new Error('无法建立 AI 流式连接')
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    while (true) {
-      const { value, done } = await reader.read()
-      buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
-      const blocks = buffer.split('\n\n')
-      buffer = blocks.pop() || ''
-      for (const block of blocks) {
-        const dataLine = block.split('\n').find((line) => line.startsWith('data:'))
-        if (!dataLine) continue
-        try {
-          const data = JSON.parse(dataLine.slice(5))
-          if (block.includes('run.phase') || block.includes('run.started')) {
-            sideRun.value = { active: true, phase: data.phase || 'waiting', label: data.label || 'AI 正在处理' }
-          }
-          if (block.includes('message.started')) {
-            assistant.senderId = data.senderId || assistant.senderId
-            assistant.senderName = data.senderName || assistant.senderName
-            assistant.senderRole = data.senderRole || assistant.senderRole
-          }
-          if (block.includes('message.delta')) {
-            assistant.pending = false
-            sideRun.value = { active: true, phase: 'answering', label: '答疑助教正在回答' }
-            assistant.content += data.delta || ''
-          }
-          if (block.includes('related_card.proposed')) {
-            proposal.value = data
-            recommendations.value = [data, ...recommendations.value.filter((item) => item.proposalId !== data.proposalId)]
-          }
-          if (block.includes('guidance.updated')) teacherGuidance.value = [...teacherGuidance.value, data]
-          if (block.includes('guidance.failed')) error.value = `课程导师引导失败：${data.message || '未知错误'}`
-          if (block.includes('run.failed')) {
-            error.value = data.message || 'AI 服务调用失败'
-            if (!assistant.content) messages.value = messages.value.filter((message) => message !== assistant)
-          }
-          if (block.includes('run.completed') || block.includes('run.failed')) {
-            assistant.pending = false
-            sideRun.value = { active: false, phase: '', label: '' }
-          }
-        } catch (_) {}
-      }
-      if (done) break
-    }
+    await conversationStore.sendMessage(text, section.value)
+    if (streamError.value) error.value = streamError.value
   } catch (err) {
     error.value = err.message
-    if (!assistant.content) messages.value = messages.value.filter((message) => message !== assistant)
-  } finally {
-    sideRun.value = { active: false, phase: '', label: '' }
   }
 }
 
@@ -1063,11 +941,13 @@ async function selectConversation(item) {
     error.value = '该讨论属于其他章节。'
     return
   }
-  activeConversation.value = item
   showConversationList.value = false
-  messages.value = []
-  syncStudyUrl({ replace: true })
-  await loadConversationMessages(item)
+  try {
+    await conversationStore.selectConversation(item)
+    syncStudyUrl({ replace: true })
+  } catch (err) {
+    error.value = err.message
+  }
 }
 
 async function openGuidanceDiscussion(guidance) {
@@ -1081,12 +961,9 @@ async function openGuidanceDiscussion(guidance) {
 
   const messageIds = [guidance.sourceQuestionMessageId, guidance.sourceAnswerMessageId].filter(Boolean)
   if (!messageIds.length) return
-  highlightedMessageIds.value = messageIds
+  conversationStore.highlightMessages(messageIds)
   await nextTick()
   document.getElementById(`discussion-message-${messageIds[0]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  window.setTimeout(() => {
-    highlightedMessageIds.value = []
-  }, 2200)
 }
 
 async function loadTeacherGuidance() {
