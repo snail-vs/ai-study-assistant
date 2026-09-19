@@ -8,12 +8,14 @@ import { useSettingsStore } from './stores/settings'
 import { useLearningStore } from './stores/learning'
 import { useConversationStore } from './stores/conversation'
 import { useActivityStore } from './stores/activity'
+import { useNotesStore } from './stores/notes'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
 const learningStore = useLearningStore()
 const conversationStore = useConversationStore()
 const activityStore = useActivityStore()
+const notesStore = useNotesStore()
 const {
   checked: authChecked, user: authUser, mode: authMode, username: authUsername,
   password: authPassword, inviteCode: authInviteCode, loading: authLoading,
@@ -37,6 +39,12 @@ const {
   loading: activityLoading, submitting: activitySubmitting,
   followUpAnswer, followUpSubmitting,
 } = storeToRefs(activityStore)
+const {
+  notesList, showNotes, editingNote, editorMode: noteEditorMode,
+  editorTitle: noteEditorTitle, editorContent: noteEditorContent,
+  editorInitial: noteEditorInitial, targetCardId: noteTargetCardId,
+  targetSectionId: noteTargetSectionId, editorDirty: noteEditorDirty,
+} = storeToRefs(notesStore)
 
 const goal = ref('')
 const learningView = ref('content')
@@ -44,15 +52,6 @@ const showKnowledgeSidebar = ref(localStorage.getItem('studycenter.knowledgeSide
 const showTeacherGuidance = ref(true)
 const input = ref('')
 const composerInput = ref(null)
-const notesList = ref([])
-const showNotes = ref(false)
-const editingNote = ref(null)
-const noteEditorMode = ref('list')
-const noteEditorTitle = ref('')
-const noteEditorContent = ref('')
-const noteEditorInitial = ref({ title: '', content: '' })
-const noteTargetCardId = ref('')
-const noteTargetSectionId = ref('')
 const loading = ref(false)
 const creatingCard = ref(false)
 const creatingBranch = ref(false)
@@ -208,10 +207,6 @@ const quizStatusLabel = computed(() => {
   if (!result) return '理解检查'
   return `${result.score} 分`
 })
-const noteEditorDirty = computed(() => noteEditorMode.value !== 'list' && (
-  noteEditorTitle.value !== noteEditorInitial.value.title
-  || noteEditorContent.value !== noteEditorInitial.value.content
-))
 const homeCards = computed(() => history.value.flatMap((spaceItem) => (
   (historyCards.value[spaceItem.id] || []).map((cardItem) => ({
     card: cardItem,
@@ -229,7 +224,7 @@ const noteCardOptions = computed(() => {
 const noteTargetCard = computed(() => noteCardOptions.value.find((item) => item.id === noteTargetCardId.value) || null)
 const noteTargetSections = computed(() => noteTargetCard.value?.sections || [])
 const noteEditorSource = computed(() => {
-  if (noteEditorMode.value === 'edit' && editingNote.value) return noteSource(editingNote.value)
+  if (noteEditorMode.value === 'edit' && editingNote.value) return notesStore.noteSource(editingNote.value, noteCardOptions.value)
   const sectionItem = noteTargetSections.value.find((item) => item.id === noteTargetSectionId.value)
   return sectionItem ? `${noteTargetCard.value?.title} · ${sectionItem.title}` : noteTargetCard.value?.title || '学习笔记'
 })
@@ -428,55 +423,25 @@ async function openSettings() {
 }
 
 async function openNotes() {
-  await loadNotes()
-  resetNoteEditor()
-  showNotes.value = true
+  await notesStore.openNotes()
 }
 
 function startNote() {
   const targetCard = card.value || noteCardOptions.value[0]
   if (!targetCard) return
-  editingNote.value = null
-  noteEditorMode.value = 'create'
-  noteTargetCardId.value = targetCard.id
-  noteTargetSectionId.value = card.value?.id === targetCard.id ? section.value?.id || '' : ''
-  noteEditorTitle.value = ''
-  noteEditorContent.value = ''
-  noteEditorInitial.value = { title: '', content: '' }
-  showNotes.value = true
-}
-
-async function loadNotes() {
-  try {
-    notesList.value = await request('/notes')
-  } catch (_) {
-    // Notes remain optional if the API is temporarily unavailable.
-  }
+  notesStore.startNote(targetCard, card.value?.id === targetCard.id ? section.value : null)
 }
 
 function editNote(item) {
-  editingNote.value = item
-  noteEditorMode.value = 'edit'
-  noteEditorTitle.value = item.title
-  noteEditorContent.value = item.content
-  noteEditorInitial.value = { title: item.title, content: item.content }
+  notesStore.editNote(item)
 }
 
 function noteSource(item) {
-  const owner = homeCards.value.find(({ card: cardItem }) => cardItem.id === item.cardId)
-  if (!owner) return '学习笔记'
-  const sectionItem = owner.card.sections?.find((sectionItem) => sectionItem.id === item.sectionId)
-  return sectionItem ? `${owner.card.title} · ${sectionItem.title}` : owner.card.title
+  return notesStore.noteSource(item, noteCardOptions.value)
 }
 
 function resetNoteEditor() {
-  editingNote.value = null
-  noteEditorMode.value = 'list'
-  noteEditorTitle.value = ''
-  noteEditorContent.value = ''
-  noteEditorInitial.value = { title: '', content: '' }
-  noteTargetCardId.value = ''
-  noteTargetSectionId.value = ''
+  notesStore.resetEditor()
 }
 
 function closeNoteEditor() {
@@ -486,45 +451,25 @@ function closeNoteEditor() {
 
 function closeNotes() {
   if (noteEditorDirty.value && !window.confirm('当前笔记还没有保存，确定关闭吗？')) return
-  showNotes.value = false
-  resetNoteEditor()
+  notesStore.closeNotes()
 }
 
 async function createNote() {
-  if (!noteTargetCardId.value || !noteEditorContent.value.trim()) return
   try {
-    await request(`/cards/${noteTargetCardId.value}/notes`, {
-      method: 'POST',
-      body: JSON.stringify({
-        title: noteEditorTitle.value.trim() || null,
-        sectionId: noteTargetSectionId.value || null,
-        content: noteEditorContent.value.trim(),
-        sourceType: 'manual',
-      }),
-    })
-    await loadNotes()
-    resetNoteEditor()
+    await notesStore.createNote()
   } catch (err) { error.value = err.message }
 }
 
 async function updateNote() {
-  if (!editingNote.value || !noteEditorContent.value.trim()) return
   try {
-    const updated = await request(`/notes/${editingNote.value.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ title: noteEditorTitle.value.trim() || '未命名笔记', content: noteEditorContent.value.trim() }),
-    })
-    notesList.value = notesList.value.map((item) => item.id === updated.id ? updated : item)
-    resetNoteEditor()
+    await notesStore.updateNote()
   } catch (err) { error.value = err.message }
 }
 
 async function removeNote(item) {
   if (!window.confirm(`确定删除“${item.title}”吗？`)) return
   try {
-    await request(`/notes/${item.id}`, { method: 'DELETE' })
-    notesList.value = notesList.value.filter((noteItem) => noteItem.id !== item.id)
-    if (editingNote.value?.id === item.id) closeNoteEditor()
+    await notesStore.removeNote(item)
   } catch (err) { error.value = err.message }
 }
 
@@ -643,7 +588,7 @@ async function openHistory(item) {
     await loadRelatedCards()
     await loadSectionActivities()
     await loadSectionConversations()
-    await loadNotes()
+    await notesStore.loadNotes()
     syncStudyUrl({ replace: true })
     await persistLearningRuntime('card_opened')
   } catch (err) {
@@ -810,7 +755,7 @@ async function openHistoryCard(spaceItem, target) {
     learningStore.setSpace(spaceItem)
     learningStore.setCard(target, { root: target.cardType === 'root' })
     await openCard(target, null)
-    await loadNotes()
+    await notesStore.loadNotes()
   } catch (err) {
     error.value = err.message
   } finally {
