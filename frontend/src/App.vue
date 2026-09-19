@@ -7,11 +7,13 @@ import { useAuthStore } from './stores/auth'
 import { useSettingsStore } from './stores/settings'
 import { useLearningStore } from './stores/learning'
 import { useConversationStore } from './stores/conversation'
+import { useActivityStore } from './stores/activity'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
 const learningStore = useLearningStore()
 const conversationStore = useConversationStore()
+const activityStore = useActivityStore()
 const {
   checked: authChecked, user: authUser, mode: authMode, username: authUsername,
   password: authPassword, inviteCode: authInviteCode, loading: authLoading,
@@ -30,17 +32,14 @@ const {
   messages, highlightedMessageIds, sideRun, proposal, recommendations, teacherGuidance,
   streamError,
 } = storeToRefs(conversationStore)
+const {
+  activities, activeActivity, answers: activityAnswers, result: activityResult,
+  loading: activityLoading, submitting: activitySubmitting,
+  followUpAnswer, followUpSubmitting,
+} = storeToRefs(activityStore)
 
 const goal = ref('')
 const learningView = ref('content')
-const activities = ref([])
-const activeActivity = ref(null)
-const activityAnswers = ref({})
-const activityResult = ref(null)
-const activityLoading = ref(false)
-const activitySubmitting = ref(false)
-const followUpAnswer = ref('')
-const followUpSubmitting = ref(false)
 const showKnowledgeSidebar = ref(localStorage.getItem('studycenter.knowledgeSidebar') !== 'false')
 const showTeacherGuidance = ref(true)
 const input = ref('')
@@ -372,123 +371,54 @@ async function persistLearningRuntime(eventType = 'navigation') {
 }
 
 async function loadSectionActivities() {
-  if (!card.value || !section.value) {
-    activities.value = []
-    return
-  }
-  try {
-    activities.value = await request(`/cards/${card.value.id}/sections/${section.value.id}/activities`)
-    if (activeActivity.value && !activities.value.some((item) => item.id === activeActivity.value.id)) {
-      activeActivity.value = null
-      activityResult.value = null
-    }
-  } catch (_) {
-    activities.value = []
-  }
+  return activityStore.loadSectionActivities(card.value, section.value)
 }
 
 async function openQuiz(activityId = null) {
   if (!card.value || !section.value) return
-  activityLoading.value = true
   learningView.value = 'activity'
   error.value = ''
   try {
-    let activity = activityId ? activities.value.find((item) => item.id === activityId && item.status === 'ready') : activities.value.find((item) => item.activityType === 'quiz' && item.status === 'ready')
-    if (!activity) {
-      activity = await request(`/cards/${card.value.id}/sections/${section.value.id}/activities/quiz`, { method: 'POST' })
-      activities.value = [activity, ...activities.value.filter((item) => item.id !== activity.id)]
-    }
-    activeActivity.value = activity
-    activityResult.value = activity.latestAttempt || null
-    followUpAnswer.value = ''
-    followUpSubmitting.value = false
-    if (activityResult.value) {
-      activityAnswers.value = {}
-    } else {
-      activityAnswers.value = Object.fromEntries((activity.questions || []).map((question) => [question.id, question.type === 'short_answer' ? '' : null]))
-    }
+    await activityStore.openQuiz(card.value, section.value, activityId)
     syncStudyUrl({ replace: true })
   } catch (err) {
     error.value = err.message
-  } finally {
-    activityLoading.value = false
   }
 }
 
 function closeQuiz() {
   learningView.value = 'content'
-  activeActivity.value = null
-  activityResult.value = null
-  activityAnswers.value = {}
-  followUpAnswer.value = ''
-  followUpSubmitting.value = false
+  activityStore.resetActive()
   syncStudyUrl({ replace: true })
 }
 
 async function submitQuiz() {
   if (!activeActivity.value || activitySubmitting.value) return
-  const unanswered = (activeActivity.value.questions || []).filter((question) => {
-    const answer = activityAnswers.value[question.id]
-    return answer === null || answer === undefined || String(answer).trim() === ''
-  })
-  if (unanswered.length) {
-    error.value = `还有 ${unanswered.length} 道题没有完成`
-    return
-  }
-  activitySubmitting.value = true
   error.value = ''
   try {
-    activityResult.value = await request(`/activities/${activeActivity.value.id}/attempts`, {
-      method: 'POST',
-      body: JSON.stringify({ answers: activityAnswers.value }),
-    })
-    activeActivity.value = { ...activeActivity.value, latestAttempt: activityResult.value }
-    activities.value = activities.value.map((item) => item.id === activeActivity.value.id ? activeActivity.value : item)
-    if (activityResult.value?.followUp?.status !== 'pending') {
+    const result = await activityStore.submitQuiz()
+    if (result?.followUp?.status !== 'pending') {
       await loadTeacherGuidance()
       await loadRecommendations()
     }
   } catch (err) {
     error.value = err.message
-  } finally {
-    activitySubmitting.value = false
   }
 }
 
 function retryQuiz() {
-  activityResult.value = null
-  followUpAnswer.value = ''
-  followUpSubmitting.value = false
-  activityAnswers.value = Object.fromEntries((activeActivity.value?.questions || []).map((question) => [question.id, question.type === 'short_answer' ? '' : null]))
+  activityStore.retryQuiz()
 }
 
 async function submitFollowUp() {
   if (!activeActivity.value || !activityResult.value?.followUp || followUpSubmitting.value) return
-  const answer = followUpAnswer.value.trim()
-  if (!answer) {
-    error.value = '请先回答针对性追问'
-    return
-  }
-  if (answer.length > 4000) {
-    error.value = '回答不能超过 4000 字'
-    return
-  }
-  followUpSubmitting.value = true
   error.value = ''
   try {
-    activityResult.value = await request(`/activities/${activeActivity.value.id}/attempts/${activityResult.value.id}/follow-up`, {
-      method: 'POST',
-      body: JSON.stringify({ answer }),
-    })
-    activeActivity.value = { ...activeActivity.value, latestAttempt: activityResult.value }
-    activities.value = activities.value.map((item) => item.id === activeActivity.value.id ? activeActivity.value : item)
-    followUpAnswer.value = ''
+    await activityStore.submitFollowUp()
     await loadTeacherGuidance()
     await loadRecommendations()
   } catch (err) {
     error.value = err.message
-  } finally {
-    followUpSubmitting.value = false
   }
 }
 
@@ -707,10 +637,7 @@ async function openHistory(item) {
     learningStore.setCard(await request(`/cards/${item.rootCardId}`), { root: true })
     learningStore.resetNavigation()
     learningView.value = 'content'
-    activeActivity.value = null
-    activityResult.value = null
-    followUpAnswer.value = ''
-    followUpSubmitting.value = false
+    activityStore.resetActive()
     await loadTeacherGuidance()
     await loadRecommendations()
     await loadRelatedCards()
@@ -857,11 +784,7 @@ async function openCard(target, navigationContext = null, options = {}) {
   }
   learningStore.setCard(target)
   learningView.value = 'content'
-  activeActivity.value = null
-  activityResult.value = null
-  activityAnswers.value = {}
-  followUpAnswer.value = ''
-  followUpSubmitting.value = false
+  activityStore.resetActive()
   showConversationList.value = false
   selectedRecommendation.value = null
   proposal.value = null
@@ -1001,11 +924,7 @@ async function loadRecommendations() {
 async function selectSection(index) {
   activeSection.value = index
   learningView.value = 'content'
-  activeActivity.value = null
-  activityResult.value = null
-  activityAnswers.value = {}
-  followUpAnswer.value = ''
-  followUpSubmitting.value = false
+  activityStore.resetActive()
   await loadRelatedCards()
   await loadTeacherGuidance()
   await loadSectionActivities()
