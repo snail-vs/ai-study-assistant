@@ -11,6 +11,10 @@ import { useStudyAssistStore } from './stores/study-assist'
 import { useActivityStore } from './stores/activity'
 import { useNotesStore } from './stores/notes'
 import { useWorkspaceStore } from './stores/workspace'
+import SettingsDialog from './components/SettingsDialog.vue'
+import NotesDrawer from './components/NotesDrawer.vue'
+import KnowledgeSidebar from './components/KnowledgeSidebar.vue'
+import ActivityPanel from './components/ActivityPanel.vue'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
@@ -777,94 +781,9 @@ function nextSection() {
       <p v-if="error" class="error">{{ error }}</p>
     </section>
 
-    <div v-if="showSettings" class="modal-backdrop" @click.self="showSettings = false">
-      <section class="settings-modal">
-        <div class="settings-head"><div><div class="panel-title">模型设置</div><p>Key 会在后端加密保存，前端不会保存明文。</p></div><button @click="showSettings = false">×</button></div>
-        <label>Provider<select v-model="selectedProvider" @change="changeProvider"><option value="deepseek">DeepSeek</option><option value="google">Google Gemini</option><option value="opencode">OpenCode Zen</option><option value="openrouter">OpenRouter</option><option value="anthropic">Anthropic</option><option value="chatgpt">ChatGPT (Plus/Pro)</option></select></label>
-        <div v-if="isChatGpt" class="chatgpt-login">
-          <div class="catalog-title">ChatGPT Plus/Pro 订阅登录（无需 API Key）</div>
-          <div v-if="providerStatus.providers?.chatgpt" class="chatgpt-status">
-            <span class="chatgpt-dot ok"></span>
-            <span>已登录</span>
-            <button class="model-fetch-button" :disabled="fetchingModels" @click="fetchModels">{{ fetchingModels ? '获取中…' : '获取模型' }}</button>
-            <button class="secondary" @click="logoutChatgpt">退出登录</button>
-          </div>
-          <div v-else-if="chatgptLogin.status === 'pending'" class="chatgpt-pending">
-            <p>在浏览器打开 <a :href="chatgptLogin.verificationUri" target="_blank" rel="noopener">{{ chatgptLogin.verificationUri }}</a> 并输入设备码：</p>
-            <div class="device-code">{{ chatgptLogin.userCode }}</div>
-            <p class="provider-hint">等待授权中…</p>
-          </div>
-          <div v-else-if="chatgptLogin.status === 'browser'" class="chatgpt-pending">
-            <p>1. 打开 <a :href="chatgptLogin.authUrl" target="_blank" rel="noopener">授权链接</a> 完成登录。</p>
-            <p>2. 页面会跳转到 <code>localhost:1455</code>（可能显示无法访问），复制地址栏里的完整 URL 粘到下面：</p>
-            <input v-model="chatgptLogin.input" placeholder="http://localhost:1455/auth/callback?code=...&state=..." />
-            <button class="primary" :disabled="!chatgptLogin.input.trim()" @click="completeChatgptLogin">完成授权</button>
-            <p v-if="chatgptLogin.error" class="error">{{ chatgptLogin.error }}</p>
-          </div>
-          <div v-else>
-            <div class="provider-actions">
-              <button class="secondary" :disabled="chatgptLogin.status === 'starting'" @click="startChatgptLogin('browser')">浏览器授权</button>
-              <button class="primary" :disabled="chatgptLogin.status === 'starting'" @click="startChatgptLogin('device_code')">设备码登录</button>
-            </div>
-            <p v-if="chatgptLogin.error" class="error">{{ chatgptLogin.error }}</p>
-          </div>
-        </div>
-        <label v-if="!isChatGpt">API Key<div class="key-row"><input v-if="editingKey || !keyConfigured" v-model="apiKey" type="password" placeholder="输入 API Key" autocomplete="off" /><div v-else class="masked-key">*****</div><button v-if="keyConfigured && !editingKey" class="edit-key" @click="editingKey = true">编辑</button><button :disabled="fetchingModels || (!apiKey && !keyConfigured)" @click="fetchModels">{{ fetchingModels ? '获取中…' : '获取模型' }}</button></div></label>
-        <div v-if="availableModels.length" class="model-catalog"><div class="catalog-title">选择此 Provider 可使用的模型</div><label v-for="model in availableModels" :key="model" class="model-check"><input v-model="selectedModels" type="checkbox" :value="model" /><span>{{ model }}</span></label></div>
-        <div class="provider-actions"><button class="primary" :disabled="savingSettings || ((!apiKey && !keyConfigured) || !selectedModels.length)" @click="saveProvider">{{ savingSettings ? '保存中…' : '保存 Provider' }}</button></div>
-        <section v-if="allModelOptions.length" class="model-assignments">
-          <div class="default-model-setting">
-            <div class="catalog-title">全局默认模型</div>
-            <p>未单独指定的任务将使用此模型。</p>
-            <select v-model="selectedDefaultModel"><option value="">请选择默认模型</option><option v-for="option in allModelOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select>
-          </div>
-          <div class="model-role-routes">
-            <div class="catalog-title">模型分工</div>
-            <p class="model-routing-hint">按学习流程选择模型；不设置则跟随全局默认模型。</p>
-            <label v-for="role in modelRoleDefinitions" :key="role.id" class="model-role-route">
-              <span><strong>{{ role.label }}</strong><small>{{ role.hint }}</small></span>
-              <select :value="roleRouteValue(role)" @change="setRoleRoute(role, $event.target.value)">
-                <option value="">跟随默认模型</option>
-                <option v-if="roleRouteValue(role) === '__custom__'" value="__custom__" disabled>已在高级设置中分别配置</option>
-                <option v-for="option in allModelOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-              </select>
-            </label>
-            <button class="advanced-routes-toggle" @click="showAdvancedRoutes = !showAdvancedRoutes">{{ showAdvancedRoutes ? '收起高级任务路由' : '高级任务路由' }} <span>{{ showAdvancedRoutes ? '⌃' : '⌄' }}</span></button>
-            <div v-if="showAdvancedRoutes" class="task-routes">
-              <div class="catalog-title">单项覆盖</div>
-              <p class="model-routing-hint">只在确有需要时修改；单项设置会覆盖所属模型分工。</p>
-              <label v-for="task in taskDefinitions" :key="task.id" class="task-route"><span>{{ task.label }}</span><select v-model="taskRoutes[task.id]"><option value="">跟随默认模型</option><option v-for="option in allModelOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
-            </div>
-            <div class="model-assignment-actions"><button class="primary" :disabled="savingModelAssignments" @click="saveModelAssignments">{{ savingModelAssignments ? '保存中…' : '保存模型分工' }}</button></div>
-          </div>
-        </section>
-        <div class="provider-hint">已配置：{{ Object.entries(providerStatus.providers).filter(([, value]) => value).map(([key]) => key).join('、') || '暂无' }}</div>
-      </section>
-    </div>
+    <SettingsDialog v-if="showSettings" v-model:selected-provider="selectedProvider" v-model:api-key="apiKey" v-model:selected-models="selectedModels" v-model:selected-default-model="selectedDefaultModel" v-model:task-routes="taskRoutes" v-model:show-advanced-routes="showAdvancedRoutes" v-model:editing-key="editingKey" v-model:chatgpt-login="chatgptLogin" :provider-status="providerStatus" :available-models="availableModels" :saving-settings="savingSettings" :fetching-models="fetchingModels" :saving-model-assignments="savingModelAssignments" :all-model-options="allModelOptions" :key-configured="keyConfigured" :task-definitions="taskDefinitions" :model-role-definitions="modelRoleDefinitions" :role-route-value="roleRouteValue" @close="showSettings = false" @change-provider="changeProvider" @fetch-models="fetchModels" @save-provider="saveProvider" @save-model-assignments="saveModelAssignments" @start-chatgpt-login="startChatgptLogin" @complete-chatgpt-login="completeChatgptLogin" @logout-chatgpt="logoutChatgpt" />
 
-    <div v-if="showNotes" class="notes-backdrop" @click.self="closeNotes">
-      <aside class="notes-drawer">
-        <div class="notes-drawer-head"><div><div class="panel-title">{{ noteEditorMode === 'list' ? '我的笔记' : noteEditorMode === 'create' ? '记笔记' : '编辑笔记' }}</div><p>{{ noteEditorMode === 'list' ? '记录、整理和回看学习过程中的重要内容。' : noteEditorSource }}</p></div><button @click="closeNotes">×</button></div>
-        <div v-if="noteEditorMode !== 'list'" class="note-editor">
-          <div v-if="noteEditorMode === 'create'" class="note-target-fields">
-            <label>知识卡<select v-model="noteTargetCardId" @change="noteTargetSectionId = ''"><option v-for="cardItem in noteCardOptions" :key="cardItem.id" :value="cardItem.id">{{ cardItem.title }}</option></select></label>
-            <label>章节<select v-model="noteTargetSectionId"><option value="">整张知识卡</option><option v-for="sectionItem in noteTargetSections" :key="sectionItem.id" :value="sectionItem.id">{{ sectionItem.title }}</option></select></label>
-          </div>
-          <input v-model="noteEditorTitle" placeholder="笔记标题" />
-          <textarea v-model="noteEditorContent" placeholder="写下你的理解…"></textarea>
-          <div class="note-editor-actions"><button class="secondary" @click="closeNoteEditor">取消</button><button class="primary" :disabled="!noteEditorContent.trim()" @click="noteEditorMode === 'create' ? createNote() : updateNote()">{{ noteEditorMode === 'create' ? '保存笔记' : '保存修改' }}</button></div>
-        </div>
-        <div v-else class="notes-list">
-          <div class="notes-list-toolbar"><button :disabled="!noteCardOptions.length" @click="startNote">＋ 新建笔记</button></div>
-          <div v-if="!notesList.length" class="notes-empty">还没有笔记。<br />在学习页面记录第一条笔记吧。</div>
-          <article v-for="item in notesList" :key="item.id" class="note-item">
-            <div class="note-item-head"><strong>{{ item.title }}</strong><div><button @click="editNote(item)">编辑</button><button @click="removeNote(item)">删除</button></div></div>
-            <p>{{ item.content }}</p>
-            <small>{{ noteSource(item) }} · {{ new Date(item.updatedAt).toLocaleString('zh-CN') }}</small>
-          </article>
-        </div>
-      </aside>
-    </div>
+    <NotesDrawer v-if="showNotes" v-model:editor-title="noteEditorTitle" v-model:editor-content="noteEditorContent" v-model:target-card-id="noteTargetCardId" v-model:target-section-id="noteTargetSectionId" :editor-mode="noteEditorMode" :notes-list="notesList" :editing-note="editingNote" :editor-source="noteEditorSource" :card-options="noteCardOptions" :target-sections="noteTargetSections" :note-source="noteSource" @close="closeNotes" @close-editor="closeNoteEditor" @start="startNote" @edit="editNote" @remove="removeNote" @create="createNote" @update="updateNote" />
 
     <div v-if="selectedRecommendation" class="recommendation-backdrop" @click.self="studyAssistStore.setSelectedRecommendation(null)">
       <section class="recommendation-modal">
@@ -880,65 +799,13 @@ function nextSection() {
     </section>
 
     <section v-if="space && card" class="workspace" :class="{ 'sidebar-collapsed': !showKnowledgeSidebar, 'mobile-discussion-open': showMobileDiscussion }" :style="{ '--chat-width': `${chatWidth}px` }">
-      <aside class="sidebar panel">
-        <div class="sidebar-head"><div class="panel-title">学习导航</div><button class="sidebar-toggle" title="收起学习导航" @click="toggleKnowledgeSidebar">‹</button></div>
-        <div class="tree-label">章节目录</div>
-        <button v-for="(item, index) in card.sections" :key="item.id" class="tree-item" :class="{ active: index === activeSection }" @click="selectSection(index)">
-          <span>{{ String(index + 1).padStart(2, '0') }}</span>{{ item.title }}
-        </button>
-        <button class="activity-nav-item" :class="{ active: learningView === 'activity' }" @click="openQuiz()">
-          <span>✓</span>理解检查 <small>{{ quizStatusLabel }}</small>
-        </button>
-        <div class="tree-label related">本节学习分支</div>
-        <button v-for="related in relatedCards" :key="related.id" class="related-card" :class="{ active: card.id === related.id }" @click="openRelatedCard(related)">
-          <span>↳ {{ relationLabel(related.relationType) }} · </span>{{ related.title }}
-        </button>
-        <div v-if="!relatedCards.length" class="empty-related">从问题讨论中生成<br />新的学习分支</div>
-        <div v-if="recommendations.length" class="tree-label related">{{ recommendationGroupLabel }}</div>
-        <button v-for="item in recommendations" :key="item.id || item.proposalId" class="recommendation-link" @click="studyAssistStore.setSelectedRecommendation(item)">
-          <span>＋ {{ relationLabel(item.relationType || 'prerequisite') }} · </span>{{ item.title }}
-        </button>
-      </aside>
+      <KnowledgeSidebar :card="card" :active-section="activeSection" :learning-view="learningView" :related-cards="relatedCards" :recommendations="recommendations" :recommendation-group-label="recommendationGroupLabel" :quiz-status-label="quizStatusLabel" :relation-label="relationLabel" @toggle="toggleKnowledgeSidebar" @select-section="selectSection" @open-quiz="openQuiz" @open-related-card="openRelatedCard" @select-recommendation="studyAssistStore.setSelectedRecommendation" />
 
       <section class="board panel">
         <div class="board-meta"><div class="board-location"><button v-if="!showKnowledgeSidebar" class="sidebar-toggle collapsed-toggle" title="展开学习导航" @click="toggleKnowledgeSidebar">› <span>学习导航</span></button><span>第 {{ activeSection + 1 }} 节</span></div><div class="board-actions"><span>{{ learningView === 'activity' ? '理解检查' : sectionTypeLabel }}</span><button @click="startNote">＋ 记笔记</button><button class="mobile-discussion-toggle" @click="showMobileDiscussion = true">讨论</button></div></div>
         <div class="board-scroll">
           <button v-if="isRelatedCard" class="back-main" @click="returnToMain">← 返回来源知识卡</button>
-          <section v-if="learningView === 'activity'" class="quiz-screen">
-            <div v-if="activityLoading" class="activity-loading"><i class="status-spinner"></i>正在根据本节内容准备理解检查…</div>
-            <template v-else-if="activeActivity">
-              <div class="quiz-intro"><div><span class="quiz-kicker">学习活动</span><h2>{{ activeActivity.title }}</h2><p>{{ activeActivity.objective }}</p></div><button class="quiz-close" @click="closeQuiz">返回课程内容</button></div>
-              <div v-if="!activityResult" class="quiz-questions">
-                <article v-for="(question, index) in activeActivity.questions" :key="question.id" class="quiz-question">
-                  <h3>{{ index + 1 }}. {{ question.prompt }}</h3>
-                  <div v-if="question.type === 'short_answer'" class="quiz-options"><textarea v-model="activityAnswers[question.id]" placeholder="用一两句话写下你的理解…"></textarea></div>
-                  <div v-else class="quiz-options">
-                    <label v-for="option in (question.options?.length ? question.options : [{ id: true, text: '正确' }, { id: false, text: '错误' }])" :key="String(option.id)"><input v-model="activityAnswers[question.id]" :name="question.id" :type="question.type === 'true_false' ? 'radio' : 'radio'" :value="option.id" /><span>{{ option.text }}</span></label>
-                  </div>
-                </article>
-                <button class="primary quiz-submit" :disabled="activitySubmitting" @click="submitQuiz">{{ activitySubmitting ? '正在分析你的回答…' : '提交答案' }}</button>
-              </div>
-              <section v-else class="quiz-result">
-                <div class="quiz-score"><strong>{{ activityResult.score }}</strong><span>分</span><em>{{ activityResult.masteryLevel === 'mastered' ? '已掌握' : activityResult.masteryLevel === 'developing' ? '掌握中' : '需要复习' }}</em></div>
-                <p class="quiz-diagnostic">{{ activityResult.diagnosticSummary }}</p>
-                <article v-for="(result, index) in activityResult.results" :key="result.questionId" class="quiz-result-item" :class="{ correct: result.correct }"><div><b>{{ result.correct ? '✓' : '!' }}</b><strong>第 {{ index + 1 }} 题</strong></div><p>{{ result.feedback }}</p><small v-if="result.referenceAnswer">参考答案：{{ result.referenceAnswer }}</small></article>
-                <section v-if="activityResult.followUp" class="quiz-follow-up">
-                  <div class="quiz-follow-up-head"><span class="quiz-kicker">针对性追问</span><span v-if="activityResult.followUp.status === 'completed'" class="quiz-follow-up-status">已完成</span></div>
-                  <p class="quiz-follow-up-prompt">{{ activityResult.followUp.prompt }}</p>
-                  <template v-if="activityResult.followUp.status === 'pending'">
-                    <textarea v-model="followUpAnswer" class="quiz-follow-up-input" maxlength="4000" placeholder="补充说明你的理解…"></textarea>
-                    <div class="quiz-follow-up-meta"><span>{{ followUpAnswer.length }} / 4000</span><button class="primary" :disabled="followUpSubmitting" @click="submitFollowUp">{{ followUpSubmitting ? '正在分析…' : '提交追问回答' }}</button></div>
-                  </template>
-                  <div v-else-if="activityResult.followUp.result" class="quiz-follow-up-feedback" :class="{ correct: activityResult.followUp.result.correct }">
-                    <strong>{{ activityResult.followUp.result.correct ? '回答通过' : '还需要补充' }}</strong>
-                    <p>{{ activityResult.followUp.result.feedback }}</p>
-                    <small v-if="activityResult.postFollowUpMastery">当前掌握状态：{{ masteryLabel(activityResult.postFollowUpMastery) }}</small>
-                  </div>
-                </section>
-                <div class="quiz-result-actions"><button class="secondary" @click="retryQuiz">重新尝试</button><button class="primary" @click="closeQuiz">返回课程内容</button></div>
-              </section>
-            </template>
-          </section>
+          <ActivityPanel v-if="learningView === 'activity'" :active-activity="activeActivity" :activity-answers="activityAnswers" :activity-result="activityResult" :activity-loading="activityLoading" :activity-submitting="activitySubmitting" :follow-up-answer="followUpAnswer" :follow-up-submitting="followUpSubmitting" :mastery-label="masteryLabel" @submit="submitQuiz" @submit-follow-up="submitFollowUp" @retry="retryQuiz" @close="closeQuiz" @update:follow-up-answer="followUpAnswer = $event" @update:answer="activityAnswers[$event.id] = $event.value" />
           <article v-else class="markdown">
             <h2>{{ section?.title }}</h2>
             <div class="content" v-html="renderedContent"></div>
