@@ -16,6 +16,7 @@ class TaskDefinition:
 
 
 TASKS = (
+    TaskDefinition("course_intake", "课程需求澄清", "conversation"),
     TaskDefinition("course_plan", "课程规划", "generation"),
     TaskDefinition("section_content", "章节内容生成", "generation"),
     TaskDefinition("section_review", "章节质量审查", "quality"),

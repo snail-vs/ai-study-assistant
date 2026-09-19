@@ -138,3 +138,13 @@ class KnowledgeCardDraft(BaseModel):
     title: str
     summary: str
     sections: list[CardSectionDraft]
+
+
+class CourseIntakeResult(BaseModel):
+    brief: dict = Field(default_factory=dict)
+    assistant_message: str = Field(default="")
+    question: str | None = None
+    quick_options: list[str] = Field(default_factory=list)
+    ready: bool = False
+    recommended_scale: Literal["quick", "standard", "series"] = "standard"
+    outline: list[dict] = Field(default_factory=list)

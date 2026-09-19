@@ -12,6 +12,7 @@ from .schemas import (
     KnowledgeCardDraft,
     KnowledgeCardPlanDraft,
     SectionContentDraft,
+    SectionPlanDraft,
     SectionQualityReport,
     SectionQualityReview,
 )
@@ -25,16 +26,27 @@ class MainAgent:
     def __init__(self, gateway: AIGateway | None = None) -> None:
         self.gateway = gateway or AIGateway()
 
-    async def create_card(self, goal: str) -> KnowledgeCardDraft:
+    async def create_card(self, goal: str, brief: dict | None = None, scale: str = "standard") -> KnowledgeCardDraft:
+        constraints = {"quick": (2, 3, "300～500"), "standard": (5, 8, "500～900"), "series": (8, 12, "350～700")}.get(scale, (5, 8, "500～900"))
+        brief_text = json.dumps(brief or {}, ensure_ascii=False)
         plan_result = await self.gateway.structured(
             [
-                {"role": "system", "content": COURSE_PLANNER_SYSTEM},
-                {"role": "user", "content": goal},
+                {"role": "system", "content": COURSE_PLANNER_SYSTEM + f"\n本次规模为 {scale}：章节数必须为 {constraints[0]}～{constraints[1]} 节，每节正文约 {constraints[2]} 字。series 只生成系列总览型主卡。"},
+                {"role": "user", "content": f"学习目标：{goal}\n结构化需求：{brief_text}"},
             ],
             task="course_plan",
             schema=KnowledgeCardPlanDraft.model_json_schema(),
         )
         plan = KnowledgeCardPlanDraft.model_validate(plan_result)
+        if len(plan.sections) > constraints[1]:
+            plan.sections = plan.sections[:constraints[1]]
+        filler_titles = ["核心概念回顾", "典型案例演练", "常见误区与边界", "综合应用任务", "学习路径总结"]
+        while len(plan.sections) < constraints[0]:
+            index = len(plan.sections)
+            title = filler_titles[index % len(filler_titles)]
+            focus = (brief or {}).get("focus") or []
+            objective = f"围绕 {focus[index % len(focus)]} 巩固本课程的核心目标" if focus else "巩固本课程的核心目标并完成一次迁移练习"
+            plan.sections.append(SectionPlanDraft(title=title, teaching_objective=objective, content_type="practice"))
         sections: list[CardSectionDraft] = []
         for index, section in enumerate(plan.sections):
             content_result = await self.gateway.structured(
@@ -45,7 +57,7 @@ class MainAgent:
                         "content": (
                             f"学习目标：{goal}\n知识卡：{plan.title}\n知识卡摘要：{plan.summary}\n"
                             f"章节序号：{index + 1}/{len(plan.sections)}\n章节标题：{section.title}\n"
-                            f"教学目标：{section.teaching_objective}\n内容类型：{section.content_type}"
+                            f"教学目标：{section.teaching_objective}\n内容类型：{section.content_type}\n规模：{scale}，正文长度约 {constraints[2]} 字"
                         ),
                     },
                 ],

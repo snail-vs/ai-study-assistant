@@ -264,6 +264,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/course-design/turn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["courseDesignTurn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/learning-spaces/{spaceId}": {
         parameters: {
             query?: never;
@@ -737,6 +753,52 @@ export interface components {
         CreateLearningSpaceRequest: {
             title: string;
             learningGoal: string;
+            courseBrief?: components["schemas"]["CourseBrief"];
+            /**
+             * @default standard
+             * @enum {string}
+             */
+            courseScale: "quick" | "standard" | "series";
+        };
+        CourseBrief: {
+            topic?: string;
+            learningOutcome?: string;
+            priorKnowledge?: string;
+            useCase?: string;
+            focus?: string[];
+            excludedTopics?: string[];
+            preferredStyle?: string[];
+            timeBudgetMinutes?: number | null;
+        };
+        CourseIntakeMessage: {
+            /** @enum {string} */
+            role: "user" | "assistant";
+            content: string;
+        };
+        CourseOutlineItem: {
+            title: string;
+            objective?: string;
+        };
+        CourseDesignTurnRequest: {
+            messages?: components["schemas"]["CourseIntakeMessage"][];
+            brief?: components["schemas"]["CourseBrief"];
+            /** @enum {string} */
+            courseScale?: "quick" | "standard" | "series";
+            /** @default false */
+            skip: boolean;
+        };
+        CourseDesignTurnResponse: {
+            brief: components["schemas"]["CourseBrief"];
+            assistantMessage: string;
+            question?: string | null;
+            quickOptions?: string[];
+            ready: boolean;
+            /** @enum {string} */
+            recommendedScale: "quick" | "standard" | "series";
+            /** @enum {string} */
+            courseScale: "quick" | "standard" | "series";
+            outline: components["schemas"]["CourseOutlineItem"][];
+            turn: number;
         };
         LearningSpace: {
             id: string;
@@ -748,6 +810,9 @@ export interface components {
             /** @enum {string} */
             generationPhase: "queued" | "generating" | "saving" | "completed" | "failed";
             generationError?: string | null;
+            courseBrief: components["schemas"]["CourseBrief"];
+            /** @enum {string} */
+            courseScale: "quick" | "standard" | "series";
             /** Format: date-time */
             createdAt: string;
         };
@@ -1493,6 +1558,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LearningSpace"];
+                };
+            };
+        };
+    };
+    courseDesignTurn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CourseDesignTurnRequest"];
+            };
+        };
+        responses: {
+            /** @description Next course intake question or ready preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDesignTurnResponse"];
                 };
             };
         };

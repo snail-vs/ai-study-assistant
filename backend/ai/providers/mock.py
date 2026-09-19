@@ -1,4 +1,6 @@
 from collections.abc import AsyncIterator, Sequence
+import json
+import re
 from typing import Any
 
 
@@ -14,6 +16,33 @@ class MockTextProvider:
     async def structured(
         self, messages: Sequence[dict[str, str]], *, task: str, schema: dict[str, Any]
     ) -> dict[str, Any]:
+        if task == "course_intake":
+            # CourseIntakeAgent embeds the current brief in the user prompt.
+            # Keep the mock provider useful for local/demo flows by preserving
+            # that topic while returning the complete intake contract.
+            prompt = messages[-1]["content"] if messages else ""
+            current: dict[str, Any] = {}
+            match = re.search(r"已有 brief：(.+?)\n对话：", prompt, re.DOTALL)
+            if match:
+                try:
+                    parsed = json.loads(match.group(1))
+                    if isinstance(parsed, dict):
+                        current = parsed
+                except json.JSONDecodeError:
+                    pass
+            topic = current.get("topic") or "Mock 课程主题"
+            return {
+                "brief": {
+                    "topic": topic,
+                    "learningOutcome": current.get("learningOutcome") or "理解并应用核心概念",
+                },
+                "assistant_message": "你目前对这个主题的基础如何？",
+                "question": "你目前对这个主题的基础如何？",
+                "quick_options": ["零基础", "了解一些", "已有实践经验"],
+                "ready": False,
+                "recommended_scale": "standard",
+                "outline": [],
+            }
         if task == "gap_diagnosis":
             question = messages[-1]["content"] if messages else ""
             gap = any(word in question for word in ("进程", "内核", "隔离", "namespace"))

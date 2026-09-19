@@ -129,7 +129,7 @@ class CourseGenerationLeaseTests(unittest.TestCase):
             course_generation, "schedule_course_generation"
         ) as schedule:
             asyncio.run(course_generation.resume_pending_course_generations())
-        schedule.assert_called_once_with("space-1", "user-1", "学习 Python")
+        schedule.assert_called_once_with("space-1", "user-1", "学习 Python", {}, "standard")
 
     def test_schedule_does_not_create_task_when_another_worker_holds_lease(self):
         self.add_space()

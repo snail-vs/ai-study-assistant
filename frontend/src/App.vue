@@ -11,6 +11,7 @@ import { useStudyAssistStore } from './stores/study-assist'
 import { useActivityStore } from './stores/activity'
 import { useNotesStore } from './stores/notes'
 import { useWorkspaceStore } from './stores/workspace'
+import { useCourseDesignStore } from './stores/course-design'
 import SettingsDialog from './components/SettingsDialog.vue'
 import NotesDrawer from './components/NotesDrawer.vue'
 import KnowledgeSidebar from './components/KnowledgeSidebar.vue'
@@ -25,6 +26,7 @@ const studyAssistStore = useStudyAssistStore()
 const activityStore = useActivityStore()
 const notesStore = useNotesStore()
 const workspaceStore = useWorkspaceStore()
+const courseDesignStore = useCourseDesignStore()
 const {
   checked: authChecked, user: authUser, mode: authMode, username: authUsername,
   password: authPassword, inviteCode: authInviteCode, loading: authLoading,
@@ -57,8 +59,14 @@ const {
   targetSectionId: noteTargetSectionId, editorDirty: noteEditorDirty,
 } = storeToRefs(notesStore)
 const { error, learningView } = storeToRefs(workspaceStore)
+const {
+  phase: courseDesignPhase, goal: designGoal, messages: designMessages,
+  quickOptions: designQuickOptions, draftBrief: designBrief, selectedScale: designScale,
+  recommendedScale: designRecommendedScale, outline: designOutline,
+  loading: designLoading, error: designError, canAskMore: designCanAskMore,
+  scaleOptions: designScaleOptions,
+} = storeToRefs(courseDesignStore)
 
-const goal = ref('')
 const showKnowledgeSidebar = ref(localStorage.getItem('studycenter.knowledgeSidebar') !== 'false')
 const showTeacherGuidance = ref(true)
 const input = ref('')
@@ -98,6 +106,7 @@ const recommendationGroupLabel = computed(() => {
 const theme = ref(localStorage.getItem('studycenter.theme') || 'light')
 const showSettings = ref(false)
 const taskDefinitions = [
+  { id: 'course_intake', label: '课程需求访谈' },
   { id: 'course_plan', label: '课程规划' },
   { id: 'section_content', label: '章节内容生成' },
   { id: 'section_review', label: '章节质量审查' },
@@ -118,7 +127,7 @@ const modelRoleDefinitions = [
     id: 'course',
     label: '课程设计与内容生成',
     hint: '课程规划、章节生成、内容修订、理解检查生成',
-    tasks: ['course_plan', 'section_content', 'section_repair', 'quiz_generation'],
+    tasks: ['course_intake', 'course_plan', 'section_content', 'section_repair', 'quiz_generation'],
   },
   {
     id: 'quality',
@@ -493,18 +502,48 @@ async function saveModelAssignments() {
   } catch (err) { error.value = err.message }
 }
 
+async function startCourseDesign() {
+  if (!designGoal.value.trim() || designLoading.value) return
+  error.value = ''
+  try {
+    await courseDesignStore.begin(designGoal.value)
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
+async function answerCourseDesign(answer) {
+  if (designLoading.value) return
+  error.value = ''
+  try {
+    await courseDesignStore.answer(answer)
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
+async function generateCourseDirectly() {
+  if (designLoading.value) return
+  error.value = ''
+  try {
+    await courseDesignStore.generateDirectly()
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
 async function startLearning() {
-  if (!goal.value.trim()) return
+  if (!designGoal.value.trim() || designLoading.value || creatingCard.value) return
   creatingCard.value = true
   error.value = ''
   try {
-    const payload = { title: goal.value.trim(), learningGoal: goal.value.trim() }
+    const payload = courseDesignStore.payload()
     const createdSpace = editingFailedSpace.value
       ? await request(`/learning-spaces/${editingFailedSpace.value.id}/generation`, {
         method: 'PUT', body: JSON.stringify(payload),
       })
       : await request('/learning-spaces', { method: 'POST', body: JSON.stringify(payload) })
-    goal.value = ''
+    courseDesignStore.reset()
     generationNotice.value = editingFailedSpace.value
       ? `课程“${createdSpace.title}”已重新提交，正在后台生成…`
       : `课程“${createdSpace.title}”已提交，正在后台生成…`
@@ -519,13 +558,17 @@ async function startLearning() {
 
 function editFailedGeneration(item) {
   editingFailedSpace.value = item
-  goal.value = item.learningGoal
+  courseDesignStore.reset()
+  designGoal.value = item.learningGoal
+  courseDesignStore.editBrief(item.courseBrief || {})
+  if (item.courseScale) courseDesignStore.chooseScale(item.courseScale)
+  courseDesignStore.review()
   generationNotice.value = `正在编辑“${item.title}”，修改学习目标后重新生成。`
 }
 
 function cancelFailedGenerationEdit() {
   editingFailedSpace.value = null
-  goal.value = ''
+  courseDesignStore.reset()
 }
 
 async function loadHistory() {
@@ -761,11 +804,35 @@ function nextSection() {
       <p class="eyebrow">AI LEARNING SPACE</p>
       <h1>从一个问题，开始一条属于你的学习路径。</h1>
       <p class="lead">课程设计 Agent 会先生成一张知识卡。之后的课程内容、问题讨论和学习笔记，都围绕它展开。</p>
-      <form @submit.prevent="startLearning" class="start-form">
-        <textarea v-model="goal" placeholder="例如：我想系统理解 Kubernetes 容器隔离，并能看懂 Namespace 和 cgroups 的关系" autofocus></textarea>
-        <div class="start-options"><span class="route-hint">{{ editingFailedSpace ? `正在重新编辑：${editingFailedSpace.title}` : `课程生成使用：${knowledgeCardModel}` }}</span><button :disabled="creatingCard">{{ creatingCard ? '正在提交…' : editingFailedSpace ? '重新生成课程' : '创建知识卡' }}</button><button v-if="editingFailedSpace" type="button" class="secondary" @click="cancelFailedGenerationEdit">取消</button></div>
-        <div v-if="creatingCard" class="create-card-status"><i class="status-spinner"></i><span>正在规划课程结构并生成章节内容…</span></div>
+      <form v-if="courseDesignPhase === 'goal'" @submit.prevent="startCourseDesign" class="start-form">
+        <textarea v-model="designGoal" placeholder="例如：我想系统理解 Kubernetes 容器隔离，并能看懂 Namespace 和 cgroups 的关系" autofocus></textarea>
+        <div class="start-options"><span class="route-hint">{{ editingFailedSpace ? `正在重新编辑：${editingFailedSpace.title}` : `课程生成使用：${knowledgeCardModel}` }}</span><button :disabled="designLoading || !designGoal.trim()">{{ designLoading ? '正在分析…' : '开始设计课程' }}</button><button v-if="editingFailedSpace" type="button" class="secondary" @click="cancelFailedGenerationEdit">取消</button></div>
       </form>
+      <section v-else-if="courseDesignPhase === 'interview'" class="course-design-stage" aria-live="polite">
+        <div class="course-design-head"><span class="eyebrow">课程需求澄清 · {{ Math.max(courseDesignStore.turnCount, 1) }} / 3</span><button class="secondary" type="button" :disabled="designLoading" @click="generateCourseDirectly">按 AI 判断直接生成</button></div>
+        <div class="design-messages">
+          <article v-for="(message, index) in designMessages" :key="`${index}-${message.role}`" :class="['design-message', message.role]"><span>{{ message.role === 'user' ? '你' : 'AI' }}</span><p>{{ message.content }}</p></article>
+        </div>
+        <div v-if="designQuickOptions.length" class="design-options" aria-label="快捷选项"><button v-for="option in designQuickOptions" :key="option" type="button" class="secondary" :disabled="designLoading" @click="answerCourseDesign(option)">{{ option }}</button></div>
+        <form class="design-answer" @submit.prevent="answerCourseDesign($event.target.elements.answer.value); $event.target.reset()"><input name="answer" :disabled="designLoading" placeholder="也可以直接输入你的回答…" autocomplete="off" /><button :disabled="designLoading">{{ designLoading ? '思考中…' : '回答' }}</button></form>
+        <button v-if="designCanAskMore" class="design-direct" type="button" :disabled="designLoading" @click="generateCourseDirectly">跳过追问，直接生成</button>
+      </section>
+      <section v-else-if="courseDesignPhase === 'review'" class="course-design-stage course-design-review">
+        <div class="course-design-head"><div><span class="eyebrow">课程设计建议</span><h2>确认你的学习路径</h2></div><button class="secondary" type="button" @click="courseDesignStore.reset">重新开始</button></div>
+        <div class="brief-summary">
+          <h3>学习需求确认</h3>
+          <label v-if="designBrief.topic">主题<input v-model="designBrief.topic" /></label>
+          <label class="brief-goal">学习目标<textarea v-model="designBrief.learningOutcome" placeholder="AI 将据此设计课程内容"></textarea></label>
+          <label v-if="designBrief.priorKnowledge">当前基础<input v-model="designBrief.priorKnowledge" /></label>
+          <label v-if="designBrief.useCase">使用场景<input v-model="designBrief.useCase" /></label>
+          <div v-if="designBrief.focus?.length" class="brief-field"><span>重点范围</span><div class="brief-tags"><em v-for="item in designBrief.focus" :key="item">{{ item }}</em></div></div>
+          <div v-if="designBrief.timeBudgetMinutes" class="brief-field"><span>预计投入</span><strong>{{ designBrief.timeBudgetMinutes }} 分钟</strong></div>
+        </div>
+        <div class="scale-picker"><h3>课程规模</h3><div class="scale-cards"><button v-for="option in designScaleOptions" :key="option.id" type="button" :class="['scale-card', { selected: designScale === option.id }]" @click="courseDesignStore.chooseScale(option.id)"><strong>{{ option.label }}</strong><small>{{ option.hint }}</small><span>{{ option.detail }}</span><em v-if="designRecommendedScale === option.id">AI 推荐</em></button></div></div>
+        <div v-if="designOutline.length" class="outline-preview"><h3>课程大纲预览</h3><ol><li v-for="item in designOutline" :key="item.title"><strong>{{ item.title }}</strong><span v-if="item.objective">{{ item.objective }}</span></li></ol><p v-if="designScale === 'series'" class="route-hint">系列课程本轮先生成总览和第一阶段，后续模块可继续展开。</p></div>
+        <div class="start-options"><span class="route-hint">{{ designScale === 'series' ? '预计先生成系列总览与第一阶段' : '确认后将在后台生成课程内容' }}</span><button type="button" :disabled="creatingCard" @click="startLearning">{{ creatingCard ? '正在提交…' : editingFailedSpace ? '重新生成课程' : '确认并生成课程' }}</button><button v-if="editingFailedSpace" type="button" class="secondary" @click="cancelFailedGenerationEdit">取消</button></div>
+      </section>
+      <div v-if="creatingCard" class="create-card-status"><i class="status-spinner"></i><span>正在规划课程结构并生成章节内容…</span></div>
       <p v-if="generationNotice" class="generation-notice">{{ generationNotice }}</p>
       <div v-if="homeCards.length || creatingSpaces.length" class="history">
         <div class="history-title">我的知识卡</div>

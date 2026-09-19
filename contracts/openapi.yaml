@@ -269,6 +269,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LearningSpaceList'
+  /course-design/turn:
+    post:
+      operationId: courseDesignTurn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseDesignTurnRequest' }
+      responses:
+        '200':
+          description: Next course intake question or ready preview
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseDesignTurnResponse' }
   /learning-spaces/{spaceId}:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
@@ -861,9 +875,54 @@ components:
       properties:
         title: { type: string, minLength: 1 }
         learningGoal: { type: string, minLength: 1 }
+        courseBrief: { $ref: '#/components/schemas/CourseBrief' }
+        courseScale: { type: string, enum: [quick, standard, series], default: standard }
+    CourseBrief:
+      type: object
+      properties:
+        topic: { type: string }
+        learningOutcome: { type: string }
+        priorKnowledge: { type: string }
+        useCase: { type: string }
+        focus: { type: array, items: { type: string } }
+        excludedTopics: { type: array, items: { type: string } }
+        preferredStyle: { type: array, items: { type: string } }
+        timeBudgetMinutes: { type: integer, nullable: true }
+    CourseIntakeMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+    CourseOutlineItem:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        objective: { type: string }
+    CourseDesignTurnRequest:
+      type: object
+      properties:
+        messages: { type: array, items: { $ref: '#/components/schemas/CourseIntakeMessage' } }
+        brief: { $ref: '#/components/schemas/CourseBrief' }
+        courseScale: { type: string, enum: [quick, standard, series] }
+        skip: { type: boolean, default: false }
+    CourseDesignTurnResponse:
+      type: object
+      required: [brief, assistantMessage, ready, recommendedScale, courseScale, outline, turn]
+      properties:
+        brief: { $ref: '#/components/schemas/CourseBrief' }
+        assistantMessage: { type: string }
+        question: { type: string, nullable: true }
+        quickOptions: { type: array, items: { type: string } }
+        ready: { type: boolean }
+        recommendedScale: { type: string, enum: [quick, standard, series] }
+        courseScale: { type: string, enum: [quick, standard, series] }
+        outline: { type: array, items: { $ref: '#/components/schemas/CourseOutlineItem' } }
+        turn: { type: integer, minimum: 0, maximum: 3 }
     LearningSpace:
       type: object
-      required: [id, title, learningGoal, rootCardId, generationStatus, generationPhase, createdAt]
+      required: [id, title, learningGoal, rootCardId, generationStatus, generationPhase, courseBrief, courseScale, createdAt]
       properties:
         id: { type: string }
         title: { type: string }
@@ -872,6 +931,8 @@ components:
         generationStatus: { type: string, enum: [queued, running, completed, failed] }
         generationPhase: { type: string, enum: [queued, generating, saving, completed, failed] }
         generationError: { type: string, nullable: true }
+        courseBrief: { $ref: '#/components/schemas/CourseBrief' }
+        courseScale: { type: string, enum: [quick, standard, series] }
         createdAt: { type: string, format: date-time }
     GenerationStatus:
       type: object

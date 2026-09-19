@@ -101,7 +101,7 @@ class CourseGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([first.commits, second.commits], [1, 2])
         self.assertEqual([first.closed, second.closed], [1, 1])
         restore.assert_called_once_with(unittest.mock.ANY, "user-1")
-        agent.return_value.create_card.assert_awaited_once_with("学习 Python")
+        agent.return_value.create_card.assert_awaited_once_with("学习 Python", {}, "standard")
 
     async def test_missing_space_exits_and_cleans_registry(self):
         session = _Session(None)
@@ -182,7 +182,11 @@ class CourseGenerationTests(unittest.IsolatedAsyncioTestCase):
             started.set()
             await release.wait()
 
-        with patch.object(course_generation, "generate_course", side_effect=fake_generate) as generate:
+        with (
+            patch.object(course_generation, "SessionLocal", return_value=_Session(self.space)),
+            patch.object(course_generation, "claim_generation_lease", return_value="test-token"),
+            patch.object(course_generation, "generate_course", side_effect=fake_generate) as generate,
+        ):
             course_generation.schedule_course_generation("space-1", "user-1", "goal-1")
             await started.wait()
             first_task = course_generation.course_generation_tasks["space-1"]
@@ -199,8 +203,12 @@ class CourseGenerationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(generate.await_count, 2)
 
     async def test_resume_schedules_queued_and_running_spaces_and_closes_session(self):
-        queued = SimpleNamespace(id="queued", user_id="user-1", learning_goal="q")
-        running = SimpleNamespace(id="running", user_id="user-2", learning_goal="r")
+        queued = SimpleNamespace(
+            id="queued", user_id="user-1", learning_goal="q", course_brief={}, course_scale="standard"
+        )
+        running = SimpleNamespace(
+            id="running", user_id="user-2", learning_goal="r", course_brief={}, course_scale="standard"
+        )
         session = MagicMock()
         session.scalars.return_value = [queued, running]
         with (
@@ -209,8 +217,8 @@ class CourseGenerationTests(unittest.IsolatedAsyncioTestCase):
         ):
             await course_generation.resume_pending_course_generations()
         schedule.assert_has_calls([
-            unittest.mock.call("queued", "user-1", "q"),
-            unittest.mock.call("running", "user-2", "r"),
+            unittest.mock.call("queued", "user-1", "q", {}, "standard"),
+            unittest.mock.call("running", "user-2", "r", {}, "standard"),
         ])
         self.assertEqual(schedule.call_count, 2)
         session.close.assert_called_once_with()

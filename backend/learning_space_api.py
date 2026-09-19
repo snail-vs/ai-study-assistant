@@ -137,13 +137,18 @@ async def create_learning_space(
         user_id=user_id,
         title=payload.title,
         learning_goal=payload.learning_goal,
+        course_brief_json=json.dumps(
+            (payload.course_brief or {}).model_dump(by_alias=True) if payload.course_brief else {},
+            ensure_ascii=False,
+        ),
+        course_scale=payload.course_scale,
         generation_status="queued",
         generation_phase="queued",
     )
     db.add(space)
     db.commit()
     db.refresh(space)
-    schedule_course_generation(space.id, user_id, payload.learning_goal)
+    schedule_course_generation(space.id, user_id, payload.learning_goal, payload.course_brief, payload.course_scale)
     return space
 
 
@@ -191,11 +196,14 @@ async def retry_course_generation(
         raise HTTPException(status_code=409, detail="A completed course cannot be regenerated")
     space.title = payload.title
     space.learning_goal = payload.learning_goal
+    if payload.course_brief is not None:
+        space.course_brief = payload.course_brief.model_dump(by_alias=True)
+    space.course_scale = payload.course_scale
     space.generation_status = "queued"
     space.generation_phase = "queued"
     space.generation_error = None
     space.generation_updated_at = now()
     db.commit()
     db.refresh(space)
-    schedule_course_generation(space.id, space.user_id, space.learning_goal)
+    schedule_course_generation(space.id, space.user_id, space.learning_goal, payload.course_brief, payload.course_scale)
     return space

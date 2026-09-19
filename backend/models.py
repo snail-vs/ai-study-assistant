@@ -22,6 +22,8 @@ class LearningSpace(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     title: Mapped[str] = mapped_column(String(200))
     learning_goal: Mapped[str] = mapped_column(Text)
+    course_brief_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    course_scale: Mapped[str] = mapped_column(String(20), default="standard", server_default="standard")
     root_card_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     generation_status: Mapped[str] = mapped_column(String(20), default="completed", server_default="completed")
     generation_phase: Mapped[str] = mapped_column(String(30), default="completed", server_default="completed")
@@ -32,6 +34,18 @@ class LearningSpace(Base):
     generation_lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     cards: Mapped[list["KnowledgeCard"]] = relationship(back_populates="space")
+
+    @property
+    def course_brief(self) -> dict:
+        try:
+            value = json.loads(self.course_brief_json or "{}")
+            return value if isinstance(value, dict) else {}
+        except (TypeError, json.JSONDecodeError):
+            return {}
+
+    @course_brief.setter
+    def course_brief(self, value: dict) -> None:
+        self.course_brief_json = json.dumps(value if isinstance(value, dict) else {}, ensure_ascii=False)
 
 
 class KnowledgeCard(Base):
