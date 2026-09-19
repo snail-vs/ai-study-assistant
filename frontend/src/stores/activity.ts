@@ -23,14 +23,20 @@ export const useActivityStore = defineStore('activity', () => {
   const submitting = ref(false)
   const followUpAnswer = ref('')
   const followUpSubmitting = ref(false)
+  let sectionLoadVersion = 0
 
   async function loadSectionActivities(card: Card | null, section: Section | null) {
+    const version = ++sectionLoadVersion
+    const cardId = card?.id
+    const sectionId = section?.id
     if (!card || !section) {
       reset()
       return activities.value
     }
     try {
-      activities.value = await request<Activity[]>(`/cards/${card.id}/sections/${section.id}/activities`)
+      const nextActivities = await request<Activity[]>(`/cards/${card.id}/sections/${section.id}/activities`)
+      if (version !== sectionLoadVersion || cardId !== card?.id || sectionId !== section?.id) return activities.value
+      activities.value = nextActivities
       if (activeActivity.value && !activities.value.some((item) => item.id === activeActivity.value?.id)) {
         resetActive()
       }

@@ -10,6 +10,7 @@ import { useConversationStore } from './stores/conversation'
 import { useStudyAssistStore } from './stores/study-assist'
 import { useActivityStore } from './stores/activity'
 import { useNotesStore } from './stores/notes'
+import { useWorkspaceStore } from './stores/workspace'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
@@ -18,6 +19,7 @@ const conversationStore = useConversationStore()
 const studyAssistStore = useStudyAssistStore()
 const activityStore = useActivityStore()
 const notesStore = useNotesStore()
+const workspaceStore = useWorkspaceStore()
 const {
   checked: authChecked, user: authUser, mode: authMode, username: authUsername,
   password: authPassword, inviteCode: authInviteCode, loading: authLoading,
@@ -28,7 +30,7 @@ const {
   fetchingModels, editingKey, savingModelAssignments, chatgptLogin,
 } = storeToRefs(settingsStore)
 const {
-  history, historyCards, generationNotice, editingFailedSpace, space, card, rootCard,
+  history, historyCards, generationNotice, editingFailedSpace, space, card,
   relatedCards, navigationStack, activeSection, section,
 } = storeToRefs(learningStore)
 const {
@@ -46,21 +48,19 @@ const {
 const {
   notesList, showNotes, editingNote, editorMode: noteEditorMode,
   editorTitle: noteEditorTitle, editorContent: noteEditorContent,
-  editorInitial: noteEditorInitial, targetCardId: noteTargetCardId,
+  targetCardId: noteTargetCardId,
   targetSectionId: noteTargetSectionId, editorDirty: noteEditorDirty,
 } = storeToRefs(notesStore)
+const { error, learningView } = storeToRefs(workspaceStore)
 
 const goal = ref('')
-const learningView = ref('content')
 const showKnowledgeSidebar = ref(localStorage.getItem('studycenter.knowledgeSidebar') !== 'false')
 const showTeacherGuidance = ref(true)
 const input = ref('')
 const composerInput = ref(null)
-const loading = ref(false)
 const creatingCard = ref(false)
 const creatingBranch = ref(false)
 const startingDiscussion = ref(false)
-const error = ref('')
 
 const relationLabels = {
   prerequisite: '前置知识',
@@ -261,59 +261,11 @@ function toggleTheme() {
 }
 
 function syncStudyUrl({ replace = false } = {}) {
-  if (!space.value || !card.value) return
-  const params = new URLSearchParams({ section: String(activeSection.value) })
-  if (activeConversation.value?.id) params.set('conversation', activeConversation.value.id)
-  if (learningView.value === 'activity') {
-    params.set('view', 'quiz')
-    if (activeActivity.value?.id) params.set('activity', activeActivity.value.id)
-  }
-  const url = `/study/${space.value.id}/card/${card.value.id}?${params.toString()}`
-  window.history[replace ? 'replaceState' : 'pushState']({}, '', url)
+  workspaceStore.syncStudyUrl({ replace })
 }
 
 async function restoreStudyRoute() {
-  const match = window.location.pathname.match(/^\/study\/([^/]+)\/card\/([^/]+)$/)
-  if (!match) {
-    if (space.value) goHome()
-    return
-  }
-  const [, spaceId, cardId] = match
-  const spaceItem = history.value.find((item) => item.id === spaceId)
-  if (!spaceItem) return
-  loading.value = true
-  error.value = ''
-  try {
-    learningStore.setSpace(spaceItem)
-    const target = await request(`/cards/${cardId}`)
-    rootCard.value = target.cardType === 'root' ? target : null
-    const runtime = await request(`/learning-spaces/${spaceId}/runtime`)
-    navigationStack.value = runtime?.currentCardId === cardId ? (runtime.navigationStack || []) : []
-    await openCard(target, null, { preserveNavigation: true, persist: false })
-    const requestedSection = Number(new URLSearchParams(window.location.search).get('section'))
-    if (Number.isInteger(requestedSection) && requestedSection >= 0 && requestedSection < (card.value?.sections?.length || 0)) {
-      activeSection.value = requestedSection
-      await loadTeacherGuidance()
-      await loadRelatedCards()
-      await loadSectionConversations()
-    }
-    const conversationId = new URLSearchParams(window.location.search).get('conversation')
-    const conversation = conversations.value.find((item) => item.id === conversationId)
-    if (conversation && activeConversation.value?.id !== conversation.id) {
-      await selectConversation(conversation)
-    }
-    await loadSectionActivities()
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('view') === 'quiz') await openQuiz(params.get('activity'))
-    syncStudyUrl({ replace: true })
-    await persistLearningRuntime('restore')
-  } catch (err) {
-    error.value = err.message
-    window.history.replaceState({}, '', '/')
-    goHome()
-  } finally {
-    loading.value = false
-  }
+  await workspaceStore.restoreStudyRoute()
 }
 
 function adjustChatWidth(delta) {
@@ -363,14 +315,6 @@ async function logout() {
   await authStore.logout()
   space.value = null
   history.value = []
-}
-
-async function persistLearningRuntime(eventType = 'navigation') {
-  return learningStore.persistRuntime(eventType)
-}
-
-async function loadSectionActivities() {
-  return activityStore.loadSectionActivities(card.value, section.value)
 }
 
 async function openQuiz(activityId = null) {
@@ -579,36 +523,11 @@ async function loadHistory() {
 }
 
 async function openHistory(item) {
-  loading.value = true
-  error.value = ''
-  try {
-    learningStore.setSpace(item)
-    learningStore.setCard(await request(`/cards/${item.rootCardId}`), { root: true })
-    learningStore.resetNavigation()
-    learningView.value = 'content'
-    activityStore.resetActive()
-    await loadTeacherGuidance()
-    await loadRecommendations()
-    await loadRelatedCards()
-    await loadSectionActivities()
-    await loadSectionConversations()
-    await notesStore.loadNotes()
-    syncStudyUrl({ replace: true })
-    await persistLearningRuntime('card_opened')
-  } catch (err) {
-    error.value = err.message
-  } finally {
-    loading.value = false
-  }
+  await workspaceStore.openHistory(item)
 }
 
 function goHome() {
-  learningStore.clearWorkspace()
-  conversationStore.reset()
-  studyAssistStore.reset()
-  error.value = ''
-  window.history.replaceState({}, '', '/')
-  loadHistory()
+  workspaceStore.goHome()
 }
 
 async function openSideConversation() {
@@ -629,14 +548,6 @@ async function openSideConversation() {
   conversationStore.clearMessages()
   syncStudyUrl()
   await sendMessage(question)
-}
-
-async function loadSectionConversations(preferredConversationId = null) {
-  try {
-    await conversationStore.loadSectionConversations(card.value, section.value, preferredConversationId)
-  } catch (err) {
-    error.value = err.message
-  }
 }
 
 async function sendMessage(text = input.value) {
@@ -706,56 +617,16 @@ async function deleteRecommendation(item) {
   } catch (err) { error.value = err.message }
 }
 
-async function loadRelatedCards() {
-  if (!space.value || !card.value || !section.value) {
-    relatedCards.value = []
-    return
-  }
-  const cards = await request(`/learning-spaces/${space.value.id}/cards`)
-  relatedCards.value = cards.filter((item) => item.cardType === 'related'
-    && item.parentCardId === card.value.id
-    && item.parentSectionId === section.value.id)
-}
-
 async function openCard(target, navigationContext = null, options = {}) {
-  if (navigationContext) {
-    learningStore.pushNavigation(navigationContext)
-  } else if (!options.preserveNavigation) {
-    learningStore.resetNavigation()
-  }
-  learningStore.setCard(target)
-  learningView.value = 'content'
-  activityStore.resetActive()
-  showConversationList.value = false
-  studyAssistStore.clearProposal()
-  activeSection.value = 0
-  await loadTeacherGuidance()
-  await loadRecommendations()
-  await loadRelatedCards()
-  await loadSectionActivities()
-  await loadSectionConversations()
-  syncStudyUrl({ replace: window.location.pathname.startsWith('/study/') })
-  if (options.persist !== false) await persistLearningRuntime(options.eventType || 'card_opened')
+  await workspaceStore.openCard(target, navigationContext, options)
 }
 
 async function openRelatedCard(target) {
-  if (!card.value) return
-  await openCard(target, { cardId: card.value.id, sectionId: section.value?.id || null }, { eventType: 'branch_entered' })
+  await workspaceStore.openRelatedCard(target)
 }
 
 async function openHistoryCard(spaceItem, target) {
-  loading.value = true
-  error.value = ''
-  try {
-    learningStore.setSpace(spaceItem)
-    learningStore.setCard(target, { root: target.cardType === 'root' })
-    await openCard(target, null)
-    await notesStore.loadNotes()
-  } catch (err) {
-    error.value = err.message
-  } finally {
-    loading.value = false
-  }
+  await workspaceStore.openHistoryCard(spaceItem, target)
 }
 
 async function deleteHomeCard(item) {
@@ -781,22 +652,7 @@ function openHomeCard(item) {
 }
 
 async function returnToMain() {
-  const context = navigationStack.value[navigationStack.value.length - 1]
-  if (!context) return
-  learningStore.popNavigation()
-  try {
-    const sourceCard = await request(`/cards/${context.cardId}`)
-    await openCard(sourceCard, null, { preserveNavigation: true, persist: false })
-    const sourceIndex = sourceCard.sections?.findIndex((item) => item.id === context.sectionId) ?? -1
-    activeSection.value = sourceIndex >= 0 ? sourceIndex : 0
-    await loadTeacherGuidance()
-    await loadRelatedCards()
-    await loadSectionConversations()
-    syncStudyUrl({ replace: true })
-    await persistLearningRuntime('branch_returned')
-  } catch (err) {
-    error.value = err.message
-  }
+  await workspaceStore.returnToMain()
 }
 
 async function selectConversation(item) {
@@ -846,15 +702,7 @@ async function loadRecommendations() {
 }
 
 async function selectSection(index) {
-  activeSection.value = index
-  learningView.value = 'content'
-  activityStore.resetActive()
-  await loadRelatedCards()
-  await loadTeacherGuidance()
-  await loadSectionActivities()
-  await loadSectionConversations()
-  syncStudyUrl({ replace: true })
-  await persistLearningRuntime('section_changed')
+  await workspaceStore.selectSection(index)
 }
 
 function previousSection() {

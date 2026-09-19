@@ -21,6 +21,7 @@ export const useLearningStore = defineStore('learning', () => {
   const section = computed(() => card.value?.sections?.[activeSection.value] || null)
 
   let generationPollTimer: ReturnType<typeof setInterval> | null = null
+  let relatedLoadVersion = 0
 
   function stopGenerationPolling() {
     if (generationPollTimer) {
@@ -76,6 +77,26 @@ export const useLearningStore = defineStore('learning', () => {
     }
   }
 
+  async function loadRelatedCards() {
+    const version = ++relatedLoadVersion
+    const spaceId = space.value?.id
+    const cardId = card.value?.id
+    const sectionId = section.value?.id
+    if (!space.value || !card.value || !section.value) {
+      relatedCards.value = []
+      return relatedCards.value
+    }
+    const cards = await request<LearningCard[]>(`/learning-spaces/${space.value.id}/cards`)
+    if (version !== relatedLoadVersion
+      || space.value?.id !== spaceId
+      || card.value?.id !== cardId
+      || section.value?.id !== sectionId) return relatedCards.value
+    relatedCards.value = cards.filter((item) => item.cardType === 'related'
+      && item.parentCardId === card.value?.id
+      && item.parentSectionId === section.value?.id)
+    return relatedCards.value
+  }
+
   function setSpace(nextSpace: LearningSpace | null) {
     space.value = nextSpace
   }
@@ -112,7 +133,7 @@ export const useLearningStore = defineStore('learning', () => {
   return {
     history, historyCards, generationNotice, editingFailedSpace, space, card, rootCard,
     relatedCards, navigationStack, activeSection, section,
-    loadHistory, persistRuntime, stopGenerationPolling, setSpace, setCard, resetNavigation,
+    loadHistory, persistRuntime, loadRelatedCards, stopGenerationPolling, setSpace, setCard, resetNavigation,
     pushNavigation, popNavigation, clearWorkspace,
   }
 })
