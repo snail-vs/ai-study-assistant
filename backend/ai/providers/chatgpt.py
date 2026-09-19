@@ -145,6 +145,23 @@ class ChatGptCodexProvider:
         text_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         instructions, input_items = self._split_instructions(messages)
+        # The Responses API requires the word "json" to appear in the actual
+        # input when json_object mode is used.  System instructions are sent
+        # separately by this adapter, so they do not satisfy that requirement.
+        # Keep this compatibility hint scoped to the json_object fallback: it
+        # must not alter normal streaming or stricter json_schema requests.
+        if (
+            isinstance(text_format, dict)
+            and text_format.get("type") == "json_object"
+            and not any(
+                isinstance(item.get("content"), str)
+                and "json" in item["content"].lower()
+                for item in input_items
+            )
+        ):
+            input_items.append(
+                {"role": "user", "content": "Return the response as valid JSON."}
+            )
         payload: dict[str, Any] = {
             "model": self.model,
             "store": False,

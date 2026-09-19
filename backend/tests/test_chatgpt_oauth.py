@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
+from backend.ai.providers.chatgpt import ChatGptCodexProvider
 from backend.ai.oauth_chatgpt import ChatGptOAuthError, DeviceAuthorization
 from backend.services import chatgpt_oauth as oauth_service
 
@@ -204,6 +205,45 @@ class ChatGptOAuthStateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["activeProvider"], "mock")
         restore.assert_called_once()
         settings.assert_called_once()
+
+
+class ChatGptCodexPayloadTests(unittest.TestCase):
+    def setUp(self):
+        self.provider = ChatGptCodexProvider()
+        self.messages = [
+            {"role": "system", "content": "Return structured JSON."},
+            {"role": "user", "content": "Create a course outline."},
+        ]
+
+    def test_json_object_payload_puts_json_instruction_in_input(self):
+        payload = self.provider._payload(self.messages, text_format={"type": "json_object"})
+
+        self.assertTrue(
+            any(
+                isinstance(item.get("content"), str)
+                and "json" in item["content"].lower()
+                for item in payload["input"]
+            )
+        )
+        self.assertEqual(payload["input"][-1]["role"], "user")
+
+    def test_json_schema_payload_does_not_add_json_object_hint(self):
+        payload = self.provider._payload(
+            self.messages,
+            text_format={
+                "type": "json_schema",
+                "name": "course",
+                "schema": {"type": "object"},
+            },
+        )
+
+        self.assertEqual(payload["input"], [self.messages[1]])
+
+    def test_stream_text_payload_does_not_add_json_object_hint(self):
+        payload = self.provider._payload(self.messages)
+
+        self.assertEqual(payload["input"], [self.messages[1]])
+        self.assertEqual(payload["text"], {"verbosity": "low"})
 
 
 if __name__ == "__main__":
