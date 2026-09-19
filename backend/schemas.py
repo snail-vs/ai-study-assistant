@@ -117,6 +117,9 @@ class CreateLearningSpaceRequest(ApiModel):
     learning_goal: str = Field(alias="learningGoal", min_length=1)
     course_brief: "CourseBrief | None" = Field(default=None, alias="courseBrief")
     course_scale: Literal["quick", "standard", "series"] = Field(default="standard", alias="courseScale")
+    course_outline: list["CourseOutlineItem"] = Field(
+        default_factory=list, max_length=12, alias="courseOutline"
+    )
 
 
 class RetryLearningSpaceGenerationRequest(CreateLearningSpaceRequest):
@@ -137,8 +140,8 @@ class CourseBrief(ApiModel):
 
 
 class CourseOutlineItem(ApiModel):
-    title: str
-    objective: str = ""
+    title: str = Field(min_length=1, max_length=200)
+    objective: str = Field(min_length=1, max_length=2000)
 
 
 class CourseIntakeMessage(ApiModel):
@@ -165,6 +168,35 @@ class CourseDesignTurnResponse(ApiModel):
     turn: int = Field(ge=0, le=3)
 
 
+class CourseOutlineRequest(ApiModel):
+    brief: CourseBrief
+    course_scale: Literal["quick", "standard", "series"] = Field(alias="courseScale")
+
+
+class CourseOutlineResponse(ApiModel):
+    course_scale: Literal["quick", "standard", "series"] = Field(alias="courseScale")
+    outline: list[CourseOutlineItem] = Field(min_length=1, max_length=12)
+
+
+class CourseOutlineRevisionMessage(ApiModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=10000)
+
+
+class CourseOutlineRevisionRequest(ApiModel):
+    brief: CourseBrief
+    course_scale: Literal["quick", "standard", "series"] = Field(alias="courseScale")
+    current_outline: list[CourseOutlineItem] = Field(alias="currentOutline", min_length=1, max_length=12)
+    feedback: str = Field(min_length=1, max_length=4000)
+    messages: list[CourseOutlineRevisionMessage] = Field(default_factory=list, max_length=20)
+
+
+class CourseOutlineRevisionResponse(ApiModel):
+    course_scale: Literal["quick", "standard", "series"] = Field(alias="courseScale")
+    outline: list[CourseOutlineItem] = Field(min_length=1, max_length=12)
+    assistant_message: str = Field(alias="assistantMessage", min_length=1)
+
+
 class LearningSpaceResponse(ApiModel):
     id: str
     title: str
@@ -175,6 +207,7 @@ class LearningSpaceResponse(ApiModel):
     generation_error: str | None = Field(default=None, alias="generationError")
     course_brief: CourseBrief = Field(default_factory=CourseBrief, alias="courseBrief")
     course_scale: Literal["quick", "standard", "series"] = Field(default="standard", alias="courseScale")
+    course_outline: list[CourseOutlineItem] = Field(default_factory=list, alias="courseOutline")
     created_at: datetime = Field(alias="createdAt")
 
 

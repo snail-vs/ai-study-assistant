@@ -148,3 +148,17 @@ class CourseIntakeResult(BaseModel):
     ready: bool = False
     recommended_scale: Literal["quick", "standard", "series"] = "standard"
     outline: list[dict] = Field(default_factory=list)
+
+
+class CourseOutlineItemDraft(BaseModel):
+    title: str = Field(min_length=1)
+    objective: str = Field(min_length=1)
+
+
+class CourseOutlineDraft(BaseModel):
+    outline: list[CourseOutlineItemDraft] = Field(default_factory=list)
+
+
+class CourseOutlineRevisionDraft(BaseModel):
+    outline: list[CourseOutlineItemDraft] = Field(default_factory=list)
+    assistant_message: str = Field(min_length=1)

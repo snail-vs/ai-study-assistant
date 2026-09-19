@@ -121,6 +121,7 @@ async def generate_course(
     learning_goal: str,
     course_brief=None,
     course_scale: str | None = None,
+    course_outline=None,
     lease_token: str | None = None,
 ) -> None:
     db = SessionLocal()
@@ -140,12 +141,20 @@ async def generate_course(
         space.generation_updated_at = now()
         generation_brief = course_brief if course_brief is not None else space.course_brief
         generation_scale = course_scale or space.course_scale or "standard"
+        generation_outline = course_outline if course_outline is not None else space.course_outline
         db.commit()
         gateway = restore_active_provider(db, user_id)
         db.close()
         db = None
 
-        draft = await MainAgent(gateway).create_card(learning_goal, generation_brief, generation_scale)
+        if generation_outline:
+            draft = await MainAgent(gateway).create_card(
+                learning_goal, generation_brief, generation_scale, generation_outline
+            )
+        else:
+            draft = await MainAgent(gateway).create_card(
+                learning_goal, generation_brief, generation_scale
+            )
 
         db = SessionLocal()
         space = db.get(LearningSpace, space_id)
@@ -213,7 +222,7 @@ async def generate_course(
         course_generation_tasks.pop(space_id, None)
 
 
-def schedule_course_generation(space_id: str, user_id: str, learning_goal: str, course_brief=None, course_scale: str | None = None) -> None:
+def schedule_course_generation(space_id: str, user_id: str, learning_goal: str, course_brief=None, course_scale: str | None = None, course_outline=None) -> None:
     existing = course_generation_tasks.get(space_id)
     if existing and not existing.done():
         return
@@ -237,7 +246,7 @@ def schedule_course_generation(space_id: str, user_id: str, learning_goal: str, 
         scheduled_generation_tokens[space_id] = lease_token
     if getattr(generate_course, "__module__", None) == __name__ and lease_token is not None:
         task = asyncio.create_task(
-            generate_course(space_id, user_id, learning_goal, course_brief, course_scale, lease_token=lease_token)
+            generate_course(space_id, user_id, learning_goal, course_brief, course_scale, course_outline, lease_token=lease_token)
         )
     else:
         # Keep the three-argument seam used by callers/tests that replace the
@@ -265,12 +274,16 @@ async def resume_pending_course_generations() -> None:
         for space in spaces:
             # Resume from the persisted requirements.  Passing only the goal
             # here silently reverted resumed jobs to the standard defaults.
-            schedule_course_generation(
-                space.id,
-                space.user_id,
-                space.learning_goal,
-                space.course_brief,
-                space.course_scale,
-            )
+            outline = getattr(space, "course_outline", [])
+            if outline:
+                schedule_course_generation(
+                    space.id, space.user_id, space.learning_goal,
+                    space.course_brief, space.course_scale, outline,
+                )
+            else:
+                schedule_course_generation(
+                    space.id, space.user_id, space.learning_goal,
+                    space.course_brief, space.course_scale,
+                )
     finally:
         db.close()

@@ -43,6 +43,22 @@ class MockTextProvider:
                 "recommended_scale": "standard",
                 "outline": [],
             }
+        if task == "course_outline":
+            prompt = messages[-1]["content"] if messages else ""
+            scale = "series" if "课程规模：series" in prompt else "quick" if "课程规模：quick" in prompt else "standard"
+            count = {"quick": 3, "standard": 6, "series": 10}[scale]
+            match = re.search(r'"topic"\s*:\s*"([^"]+)"', prompt)
+            topic = match.group(1) if match else "Mock 课程主题"
+            stages = ["主题全景", "基础概念", "工作机制", "动手实践", "常见问题", "综合应用", "方案取舍", "进阶优化", "项目拆解", "复盘检验"]
+            return {"outline": [{"title": f"{topic}：{stages[i]}", "objective": f"掌握 {topic} 的第 {i + 1} 项学习能力"} for i in range(count)]}
+        if task == "course_outline_revision":
+            prompt = messages[-1]["content"] if messages else ""
+            scale = "series" if "课程规模：series" in prompt else "quick" if "课程规模：quick" in prompt else "standard"
+            count = {"quick": 3, "standard": 6, "series": 10}[scale]
+            match = re.search(r'"topic"\s*:\s*"([^"]+)"', prompt)
+            topic = match.group(1) if match else "Mock 课程主题"
+            stages = ["主题全景", "基础概念", "工作机制", "动手实践", "常见问题", "综合应用", "方案取舍", "进阶优化", "项目拆解", "复盘检验"]
+            return {"outline": [{"title": f"{topic}：{stages[i]}", "objective": f"掌握 {topic} 的第 {i + 1} 项学习能力"} for i in range(count)], "assistant_message": "已根据你的建议调整课程大纲。"}
         if task == "gap_diagnosis":
             question = messages[-1]["content"] if messages else ""
             gap = any(word in question for word in ("进程", "内核", "隔离", "namespace"))

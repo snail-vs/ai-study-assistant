@@ -23,8 +23,8 @@ describe('course design store', () => {
       message: '好的，这是课程安排。',
       ready: true,
       brief: { learningOutcome: '完成数据分析项目' },
-      outline: [{ title: '基础语法', objective: '建立基础' }],
     })
+    mockedRequest.mockResolvedValueOnce({ outline: [{ title: '基础语法', objective: '建立基础' }] })
     const store = useCourseDesignStore()
 
     await store.begin('我想学 Python')
@@ -33,11 +33,14 @@ describe('course design store', () => {
     await store.answer('完成实际项目')
     expect(store.phase).toBe('review')
     expect(store.draftBrief.learningOutcome).toBe('完成数据分析项目')
+    expect(store.selectedScale).toBe(null)
+    store.chooseScale('standard')
+    await store.generateOutline()
     expect(store.outline).toHaveLength(1)
-    expect(mockedRequest).toHaveBeenLastCalledWith('/course-design/turn', expect.objectContaining({
+    expect(mockedRequest.mock.calls[1]).toEqual(['/course-design/turn', expect.objectContaining({
       method: 'POST',
       body: expect.stringContaining('"brief"'),
-    }))
+    })])
     const firstPayload = JSON.parse(mockedRequest.mock.calls[0][1]?.body as string)
     expect(firstPayload.messages).toEqual([{ role: 'user', content: '我想学 Python' }])
     expect(firstPayload).not.toHaveProperty('courseScale')
@@ -55,7 +58,7 @@ describe('course design store', () => {
     await store.begin('我想学 Kubernetes')
 
     expect(store.phase).toBe('interview')
-    expect(store.outline).toEqual([{ title: '概念基础' }])
+    expect(store.outline).toEqual([])
     expect(store.quickOptions).toEqual(['工作', '个人兴趣'])
   })
 
@@ -70,7 +73,51 @@ describe('course design store', () => {
       learningGoal: '学习 Kubernetes',
       courseBrief: { topic: 'Kubernetes', learningOutcome: '能部署服务', courseScale: 'series' },
       courseScale: 'series',
+      courseOutline: [],
     })
+  })
+
+  it('generates a scale-specific outline and exposes failures for retry', async () => {
+    const store = useCourseDesignStore()
+    store.goal = '学习 Python'
+    store.editBrief({ topic: 'Python' })
+    store.chooseScale('quick')
+    mockedRequest.mockResolvedValueOnce({ outline: [{ title: '快速入门' }] })
+
+    await store.generateOutline()
+
+    expect(store.outline).toEqual([{ title: '快速入门' }])
+    const payload = JSON.parse(mockedRequest.mock.calls[0][1]?.body as string)
+    expect(payload).toEqual({ brief: { topic: 'Python', courseScale: 'quick' }, courseScale: 'quick' })
+
+    mockedRequest.mockRejectedValueOnce(new Error('大纲服务不可用'))
+    await expect(store.generateOutline()).rejects.toThrow('大纲服务不可用')
+    expect(store.outlineError).toBe('大纲服务不可用')
+    expect(store.outline).toEqual([])
+  })
+
+  it('revises the outline conversationally and requires explicit confirmation', async () => {
+    const store = useCourseDesignStore()
+    store.goal = '学习 Git'
+    store.editBrief({ topic: 'Git' })
+    store.chooseScale('quick')
+    mockedRequest.mockResolvedValueOnce({ outline: [{ title: '基础' }] })
+    await store.generateOutline()
+    expect(store.outlineConfirmed).toBe(false)
+    mockedRequest.mockResolvedValueOnce({ outline: [{ title: '基础与实战' }], assistantMessage: '已加入实战内容。' })
+
+    await store.reviseOutline('增加一个实战项目')
+
+    expect(store.outline).toEqual([{ title: '基础与实战' }])
+    expect(store.outlineConfirmed).toBe(false)
+    expect(store.revisionMessages).toEqual([
+      { role: 'user', content: '增加一个实战项目' },
+      { role: 'assistant', content: '已加入实战内容。' },
+    ])
+    const payload = JSON.parse(mockedRequest.mock.calls[1][1]?.body as string)
+    expect(payload).toMatchObject({ courseScale: 'quick', feedback: '增加一个实战项目', currentOutline: [{ title: '基础' }] })
+    store.confirmOutline()
+    expect(store.outlineConfirmed).toBe(true)
   })
 
   it('supports the direct-generation escape hatch', async () => {

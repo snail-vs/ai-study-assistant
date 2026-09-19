@@ -24,6 +24,7 @@ class LearningSpace(Base):
     learning_goal: Mapped[str] = mapped_column(Text)
     course_brief_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
     course_scale: Mapped[str] = mapped_column(String(20), default="standard", server_default="standard")
+    course_outline_json: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
     root_card_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     generation_status: Mapped[str] = mapped_column(String(20), default="completed", server_default="completed")
     generation_phase: Mapped[str] = mapped_column(String(30), default="completed", server_default="completed")
@@ -46,6 +47,18 @@ class LearningSpace(Base):
     @course_brief.setter
     def course_brief(self, value: dict) -> None:
         self.course_brief_json = json.dumps(value if isinstance(value, dict) else {}, ensure_ascii=False)
+
+    @property
+    def course_outline(self) -> list[dict]:
+        try:
+            value = json.loads(self.course_outline_json or "[]")
+            return value if isinstance(value, list) else []
+        except (TypeError, json.JSONDecodeError):
+            return []
+
+    @course_outline.setter
+    def course_outline(self, value: list[dict]) -> None:
+        self.course_outline_json = json.dumps(value if isinstance(value, list) else [], ensure_ascii=False)
 
 
 class KnowledgeCard(Base):

@@ -26,7 +26,13 @@ class MainAgent:
     def __init__(self, gateway: AIGateway | None = None) -> None:
         self.gateway = gateway or AIGateway()
 
-    async def create_card(self, goal: str, brief: dict | None = None, scale: str = "standard") -> KnowledgeCardDraft:
+    async def create_card(
+        self,
+        goal: str,
+        brief: dict | None = None,
+        scale: str = "standard",
+        approved_outline: list[dict] | None = None,
+    ) -> KnowledgeCardDraft:
         constraints = {"quick": (2, 3, "300～500"), "standard": (5, 8, "500～900"), "series": (8, 12, "350～700")}.get(scale, (5, 8, "500～900"))
         brief_text = json.dumps(brief or {}, ensure_ascii=False)
         plan_result = await self.gateway.structured(
@@ -38,6 +44,15 @@ class MainAgent:
             schema=KnowledgeCardPlanDraft.model_json_schema(),
         )
         plan = KnowledgeCardPlanDraft.model_validate(plan_result)
+        if approved_outline:
+            plan.sections = [
+                SectionPlanDraft(
+                    title=str(item.get("title", "")).strip(),
+                    teaching_objective=str(item.get("objective", "")).strip(),
+                    content_type="concept",
+                )
+                for item in approved_outline
+            ]
         if len(plan.sections) > constraints[1]:
             plan.sections = plan.sections[:constraints[1]]
         filler_titles = ["核心概念回顾", "典型案例演练", "常见误区与边界", "综合应用任务", "学习路径总结"]

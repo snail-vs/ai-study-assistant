@@ -63,6 +63,9 @@ const {
   phase: courseDesignPhase, goal: designGoal, messages: designMessages,
   quickOptions: designQuickOptions, draftBrief: designBrief, selectedScale: designScale,
   recommendedScale: designRecommendedScale, outline: designOutline,
+  outlineLoading: designOutlineLoading, outlineError: designOutlineError,
+  outlineConfirmed: designOutlineConfirmed, revisionMessages: designRevisionMessages,
+  revisionLoading: designRevisionLoading, revisionError: designRevisionError,
   loading: designLoading, error: designError, canAskMore: designCanAskMore,
   waitingForUser: designWaitingForUser,
   scaleOptions: designScaleOptions,
@@ -542,8 +545,35 @@ async function retryCourseDesign() {
   }
 }
 
+async function generateCourseOutlineIfReady() {
+  if (courseDesignPhase.value !== 'review' || !designScale.value) return
+  try {
+    await courseDesignStore.generateOutline()
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
+async function selectCourseScale(scale) {
+  courseDesignStore.chooseScale(scale)
+  await generateCourseOutlineIfReady()
+}
+
+async function reviseCourseOutline(feedback) {
+  if (designRevisionLoading.value) return
+  try {
+    await courseDesignStore.reviseOutline(feedback)
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
+function confirmCourseOutline() {
+  courseDesignStore.confirmOutline()
+}
+
 async function startLearning() {
-  if (!designGoal.value.trim() || designLoading.value || creatingCard.value) return
+  if (!designGoal.value.trim() || designLoading.value || designOutlineLoading.value || designRevisionLoading.value || !designOutline.value.length || !designOutlineConfirmed.value || designOutlineError.value || creatingCard.value) return
   creatingCard.value = true
   error.value = ''
   try {
@@ -843,9 +873,16 @@ function nextSection() {
           <div v-if="designBrief.focus?.length" class="brief-field"><span>重点范围</span><div class="brief-tags"><em v-for="item in designBrief.focus" :key="item">{{ item }}</em></div></div>
           <div v-if="designBrief.timeBudgetMinutes" class="brief-field"><span>预计投入</span><strong>{{ designBrief.timeBudgetMinutes }} 分钟</strong></div>
         </div>
-        <div class="scale-picker"><h3>课程规模</h3><div class="scale-cards"><button v-for="option in designScaleOptions" :key="option.id" type="button" :class="['scale-card', { selected: designScale === option.id }]" @click="courseDesignStore.chooseScale(option.id)"><strong>{{ option.label }}</strong><small>{{ option.hint }}</small><span>{{ option.detail }}</span><em v-if="designRecommendedScale === option.id">AI 推荐</em></button></div></div>
-        <div v-if="designOutline.length" class="outline-preview"><h3>课程大纲预览</h3><ol><li v-for="item in designOutline" :key="item.title"><strong>{{ item.title }}</strong><span v-if="item.objective">{{ item.objective }}</span></li></ol><p v-if="designScale === 'series'" class="route-hint">系列课程本轮先生成总览和第一阶段，后续模块可继续展开。</p></div>
-        <div class="start-options"><span class="route-hint">{{ designScale === 'series' ? '预计先生成系列总览与第一阶段' : '确认后将在后台生成课程内容' }}</span><button type="button" :disabled="creatingCard" @click="startLearning">{{ creatingCard ? '正在提交…' : editingFailedSpace ? '重新生成课程' : '确认并生成课程' }}</button><button v-if="editingFailedSpace" type="button" class="secondary" @click="cancelFailedGenerationEdit">取消</button></div>
+        <div class="scale-picker"><h3>课程规模</h3><div class="scale-cards"><button v-for="option in designScaleOptions" :key="option.id" type="button" :class="['scale-card', { selected: designScale === option.id }]" :disabled="designOutlineLoading || designRevisionLoading" @click="selectCourseScale(option.id)"><strong>{{ option.label }}</strong><small>{{ option.hint }}</small><span>{{ option.detail }}</span><em v-if="designRecommendedScale === option.id">AI 推荐</em></button></div></div>
+        <div v-if="designOutlineLoading" class="outline-loading" aria-live="polite"><i class="status-spinner"></i><span>正在生成课程大纲…</span></div>
+        <div v-else-if="designOutlineError" class="design-error outline-error" role="alert"><span>{{ designOutlineError }}</span><button type="button" class="secondary" @click="generateCourseOutlineIfReady">重新生成大纲</button></div>
+        <div v-else-if="designOutline.length" class="outline-preview"><h3>课程大纲预览</h3><ol><li v-for="item in designOutline" :key="item.title"><strong>{{ item.title }}</strong><span v-if="item.objective">{{ item.objective }}</span></li></ol><p v-if="designScale === 'series'" class="route-hint">系列课程本轮先生成总览和第一阶段，后续模块可继续展开。</p>
+          <div v-if="designRevisionMessages.length" class="outline-revisions"><article v-for="(message, index) in designRevisionMessages" :key="`${index}-${message.role}`" :class="['design-message', message.role]"><span>{{ message.role === 'user' ? '你' : 'AI' }}</span><p>{{ message.content }}</p></article></div>
+          <p v-if="designRevisionError" class="design-error" role="alert">{{ designRevisionError }}</p>
+          <form class="design-answer outline-revision-form" @submit.prevent="reviseCourseOutline($event.target.elements.feedback.value); $event.target.reset()"><input name="feedback" :disabled="designRevisionLoading" placeholder="想调整哪些章节？例如：增加一个实战项目…" autocomplete="off" /><button :disabled="designRevisionLoading">{{ designRevisionLoading ? '修改中…' : '修改大纲' }}</button></form>
+          <button v-if="!designOutlineConfirmed" type="button" class="primary outline-confirm" :disabled="designRevisionLoading" @click="confirmCourseOutline">确认这份大纲</button><span v-else class="outline-confirmed">大纲已确认，可生成课程</span>
+        </div>
+        <div class="start-options"><span class="route-hint">{{ !designScale ? '请先选择课程规模' : designOutlineLoading ? '大纲生成完成后才能确认' : !designOutlineConfirmed ? '确认大纲后才能生成课程' : designScale === 'series' ? '预计先生成系列总览与第一阶段' : '确认后将在后台生成课程内容' }}</span><button type="button" :disabled="creatingCard || designOutlineLoading || designRevisionLoading || !designOutline.length || !designOutlineConfirmed || designOutlineError" @click="startLearning">{{ creatingCard ? '正在提交…' : editingFailedSpace ? '重新生成课程' : '确认并生成课程' }}</button><button v-if="editingFailedSpace" type="button" class="secondary" @click="cancelFailedGenerationEdit">取消</button></div>
       </section>
       <div v-if="creatingCard" class="create-card-status"><i class="status-spinner"></i><span>正在规划课程结构并生成章节内容…</span></div>
       <p v-if="generationNotice" class="generation-notice">{{ generationNotice }}</p>

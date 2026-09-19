@@ -142,13 +142,16 @@ async def create_learning_space(
             ensure_ascii=False,
         ),
         course_scale=payload.course_scale,
+        course_outline_json=json.dumps(
+            [item.model_dump(by_alias=True) for item in payload.course_outline], ensure_ascii=False
+        ),
         generation_status="queued",
         generation_phase="queued",
     )
     db.add(space)
     db.commit()
     db.refresh(space)
-    schedule_course_generation(space.id, user_id, payload.learning_goal, payload.course_brief, payload.course_scale)
+    schedule_course_generation(space.id, user_id, payload.learning_goal, payload.course_brief, payload.course_scale, payload.course_outline)
     return space
 
 
@@ -199,11 +202,12 @@ async def retry_course_generation(
     if payload.course_brief is not None:
         space.course_brief = payload.course_brief.model_dump(by_alias=True)
     space.course_scale = payload.course_scale
+    space.course_outline = [item.model_dump(by_alias=True) for item in payload.course_outline]
     space.generation_status = "queued"
     space.generation_phase = "queued"
     space.generation_error = None
     space.generation_updated_at = now()
     db.commit()
     db.refresh(space)
-    schedule_course_generation(space.id, space.user_id, space.learning_goal, payload.course_brief, payload.course_scale)
+    schedule_course_generation(space.id, space.user_id, space.learning_goal, payload.course_brief, payload.course_scale, payload.course_outline)
     return space

@@ -283,6 +283,38 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CourseDesignTurnResponse' }
+  /course-design/outline:
+    post:
+      operationId: courseDesignOutline
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseOutlineRequest' }
+      responses:
+        '200':
+          description: Generated course outline
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseOutlineResponse' }
+        '502':
+          description: AI did not return a valid outline
+  /course-design/outline/revise:
+    post:
+      operationId: reviseCourseDesignOutline
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseOutlineRevisionRequest' }
+      responses:
+        '200':
+          description: Revised course outline
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseOutlineRevisionResponse' }
+        '502':
+          description: AI did not return a valid outline
   /learning-spaces/{spaceId}:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
@@ -877,6 +909,7 @@ components:
         learningGoal: { type: string, minLength: 1 }
         courseBrief: { $ref: '#/components/schemas/CourseBrief' }
         courseScale: { type: string, enum: [quick, standard, series], default: standard }
+        courseOutline: { type: array, maxItems: 12, items: { $ref: '#/components/schemas/CourseOutlineItem' } }
     CourseBrief:
       type: object
       properties:
@@ -896,7 +929,7 @@ components:
         content: { type: string }
     CourseOutlineItem:
       type: object
-      required: [title]
+      required: [title, objective]
       properties:
         title: { type: string }
         objective: { type: string }
@@ -920,6 +953,40 @@ components:
         courseScale: { type: string, enum: [quick, standard, series] }
         outline: { type: array, items: { $ref: '#/components/schemas/CourseOutlineItem' } }
         turn: { type: integer, minimum: 0, maximum: 3 }
+    CourseOutlineRequest:
+      type: object
+      required: [brief, courseScale]
+      properties:
+        brief: { $ref: '#/components/schemas/CourseBrief' }
+        courseScale: { type: string, enum: [quick, standard, series] }
+    CourseOutlineResponse:
+      type: object
+      required: [courseScale, outline]
+      properties:
+        courseScale: { type: string, enum: [quick, standard, series] }
+        outline: { type: array, minItems: 1, maxItems: 12, items: { $ref: '#/components/schemas/CourseOutlineItem' } }
+    CourseOutlineRevisionMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+    CourseOutlineRevisionRequest:
+      type: object
+      required: [brief, courseScale, currentOutline, feedback]
+      properties:
+        brief: { $ref: '#/components/schemas/CourseBrief' }
+        courseScale: { type: string, enum: [quick, standard, series] }
+        currentOutline: { type: array, minItems: 1, maxItems: 12, items: { $ref: '#/components/schemas/CourseOutlineItem' } }
+        feedback: { type: string }
+        messages: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/CourseOutlineRevisionMessage' } }
+    CourseOutlineRevisionResponse:
+      type: object
+      required: [courseScale, outline, assistantMessage]
+      properties:
+        courseScale: { type: string, enum: [quick, standard, series] }
+        outline: { type: array, minItems: 1, maxItems: 12, items: { $ref: '#/components/schemas/CourseOutlineItem' } }
+        assistantMessage: { type: string }
     LearningSpace:
       type: object
       required: [id, title, learningGoal, rootCardId, generationStatus, generationPhase, courseBrief, courseScale, createdAt]
@@ -933,6 +1000,7 @@ components:
         generationError: { type: string, nullable: true }
         courseBrief: { $ref: '#/components/schemas/CourseBrief' }
         courseScale: { type: string, enum: [quick, standard, series] }
+        courseOutline: { type: array, items: { $ref: '#/components/schemas/CourseOutlineItem' } }
         createdAt: { type: string, format: date-time }
     GenerationStatus:
       type: object

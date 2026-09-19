@@ -280,6 +280,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/course-design/outline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["courseDesignOutline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/course-design/outline/revise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reviseCourseDesignOutline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/learning-spaces/{spaceId}": {
         parameters: {
             query?: never;
@@ -759,6 +791,7 @@ export interface components {
              * @enum {string}
              */
             courseScale: "quick" | "standard" | "series";
+            courseOutline?: components["schemas"]["CourseOutlineItem"][];
         };
         CourseBrief: {
             topic?: string;
@@ -777,7 +810,7 @@ export interface components {
         };
         CourseOutlineItem: {
             title: string;
-            objective?: string;
+            objective: string;
         };
         CourseDesignTurnRequest: {
             messages?: components["schemas"]["CourseIntakeMessage"][];
@@ -800,6 +833,35 @@ export interface components {
             outline: components["schemas"]["CourseOutlineItem"][];
             turn: number;
         };
+        CourseOutlineRequest: {
+            brief: components["schemas"]["CourseBrief"];
+            /** @enum {string} */
+            courseScale: "quick" | "standard" | "series";
+        };
+        CourseOutlineResponse: {
+            /** @enum {string} */
+            courseScale: "quick" | "standard" | "series";
+            outline: components["schemas"]["CourseOutlineItem"][];
+        };
+        CourseOutlineRevisionMessage: {
+            /** @enum {string} */
+            role: "user" | "assistant";
+            content: string;
+        };
+        CourseOutlineRevisionRequest: {
+            brief: components["schemas"]["CourseBrief"];
+            /** @enum {string} */
+            courseScale: "quick" | "standard" | "series";
+            currentOutline: components["schemas"]["CourseOutlineItem"][];
+            feedback: string;
+            messages?: components["schemas"]["CourseOutlineRevisionMessage"][];
+        };
+        CourseOutlineRevisionResponse: {
+            /** @enum {string} */
+            courseScale: "quick" | "standard" | "series";
+            outline: components["schemas"]["CourseOutlineItem"][];
+            assistantMessage: string;
+        };
         LearningSpace: {
             id: string;
             title: string;
@@ -813,6 +875,7 @@ export interface components {
             courseBrief: components["schemas"]["CourseBrief"];
             /** @enum {string} */
             courseScale: "quick" | "standard" | "series";
+            courseOutline?: components["schemas"]["CourseOutlineItem"][];
             /** Format: date-time */
             createdAt: string;
         };
@@ -1583,6 +1646,68 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CourseDesignTurnResponse"];
                 };
+            };
+        };
+    };
+    courseDesignOutline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CourseOutlineRequest"];
+            };
+        };
+        responses: {
+            /** @description Generated course outline */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseOutlineResponse"];
+                };
+            };
+            /** @description AI did not return a valid outline */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reviseCourseDesignOutline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CourseOutlineRevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Revised course outline */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseOutlineRevisionResponse"];
+                };
+            };
+            /** @description AI did not return a valid outline */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

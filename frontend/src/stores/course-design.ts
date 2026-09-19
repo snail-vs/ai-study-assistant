@@ -62,9 +62,15 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
   const messages = ref<CourseDesignMessage[]>([])
   const draftBrief = ref<CourseBrief>({})
   const quickOptions = ref<string[]>([])
-  const selectedScale = ref<CourseScale>('standard')
+  const selectedScale = ref<CourseScale | null>(null)
   const recommendedScale = ref<CourseScale>('standard')
   const outline = ref<CourseOutlineItem[]>([])
+  const outlineLoading = ref(false)
+  const outlineError = ref('')
+  const outlineConfirmed = ref(false)
+  const revisionMessages = ref<CourseDesignMessage[]>([])
+  const revisionLoading = ref(false)
+  const revisionError = ref('')
   const turnCount = ref(0)
   const loading = ref(false)
   const error = ref('')
@@ -82,9 +88,15 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
     messages.value = []
     draftBrief.value = {}
     quickOptions.value = []
-    selectedScale.value = 'standard'
+    selectedScale.value = null
     recommendedScale.value = 'standard'
     outline.value = []
+    outlineLoading.value = false
+    outlineError.value = ''
+    outlineConfirmed.value = false
+    revisionMessages.value = []
+    revisionLoading.value = false
+    revisionError.value = ''
     turnCount.value = 0
     loading.value = false
     error.value = ''
@@ -107,9 +119,10 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
     draftBrief.value = { ...draftBrief.value, ...(response.brief || response.courseBrief || {}) }
     if (response.recommendedScale) {
       recommendedScale.value = response.recommendedScale
-      if (selectedScale.value === 'standard') selectedScale.value = response.recommendedScale
     }
-    if (Array.isArray(response.outline)) outline.value = response.outline
+    // The turn endpoint may include a draft outline. It is deliberately not
+    // used for confirmation; the dedicated outline endpoint creates the
+    // scale-aware outline after the learner chooses a scale.
     // An outline can be returned as an early draft while the agent still
     // needs another high-value answer. Only an explicit ready response or
     // the three-turn client limit ends the interview.
@@ -187,6 +200,71 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
   function chooseScale(scale: CourseScale) {
     selectedScale.value = scale
     draftBrief.value = { ...draftBrief.value, courseScale: scale }
+    outline.value = []
+    outlineError.value = ''
+    outlineConfirmed.value = false
+    revisionMessages.value = []
+    revisionError.value = ''
+  }
+
+  async function generateOutline() {
+    if (outlineLoading.value || !goal.value.trim() || !selectedScale.value) return null
+    outlineLoading.value = true
+    outlineError.value = ''
+    outline.value = []
+    try {
+      const response = await request<{ outline?: CourseOutlineItem[] }>('/course-design/outline', {
+        method: 'POST',
+        body: JSON.stringify({ brief: draftBrief.value, courseScale: selectedScale.value }),
+      })
+      const generated = Array.isArray(response?.outline) ? response.outline : []
+      if (!generated.length) throw new Error('课程大纲为空，请重试')
+      outline.value = generated
+      return generated
+    } catch (err) {
+      outlineError.value = err instanceof Error ? err.message : '课程大纲生成失败，请重试'
+      throw err
+    } finally {
+      outlineLoading.value = false
+    }
+  }
+
+  async function reviseOutline(feedback: string) {
+    const text = feedback.trim()
+    if (!text || revisionLoading.value || !selectedScale.value || !outline.value.length) return null
+    revisionLoading.value = true
+    revisionError.value = ''
+    revisionMessages.value.push({ role: 'user', content: text })
+    try {
+      const response = await request<{ outline?: CourseOutlineItem[]; assistantMessage?: string }>('/course-design/outline/revise', {
+        method: 'POST',
+        body: JSON.stringify({
+          brief: draftBrief.value,
+          courseScale: selectedScale.value,
+          currentOutline: outline.value,
+          feedback: text,
+          // `feedback` carries the current turn; messages contains only prior
+          // revision turns so the backend does not receive it twice.
+          messages: revisionMessages.value.slice(0, -1),
+        }),
+      })
+      const generated = Array.isArray(response?.outline) ? response.outline : []
+      if (!generated.length) throw new Error('修改后的课程大纲为空，请重试')
+      outline.value = generated
+      outlineConfirmed.value = false
+      if (response.assistantMessage) revisionMessages.value.push({ role: 'assistant', content: response.assistantMessage })
+      return generated
+    } catch (err) {
+      revisionMessages.value.pop()
+      revisionError.value = err instanceof Error ? err.message : '大纲修改失败，请重试'
+      throw err
+    } finally {
+      revisionLoading.value = false
+    }
+  }
+
+  function confirmOutline() {
+    if (outline.value.length && !outlineLoading.value && !revisionLoading.value) outlineConfirmed.value = true
   }
 
   function editBrief(next: Partial<CourseBrief>) {
@@ -202,8 +280,9 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
     return {
       title,
       learningGoal: goal.value.trim(),
-      courseBrief: { ...draftBrief.value, courseScale: selectedScale.value },
+      courseBrief: { ...draftBrief.value, ...(selectedScale.value ? { courseScale: selectedScale.value } : {}) },
       courseScale: selectedScale.value,
+      courseOutline: outline.value,
     }
   }
 
@@ -213,7 +292,8 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
 
   return {
     phase, goal, messages, draftBrief, quickOptions, selectedScale, recommendedScale,
-    outline, turnCount, loading, error, canAskMore, ready, waitingForAI, waitingForUser, scaleOptions,
-    reset, begin, answer, generateDirectly, retry, chooseScale, editBrief, review, payload, markGenerating,
+    outline, outlineLoading, outlineError, outlineConfirmed, revisionMessages, revisionLoading, revisionError,
+    turnCount, loading, error, canAskMore, ready, waitingForAI, waitingForUser, scaleOptions,
+    reset, begin, answer, generateDirectly, retry, chooseScale, generateOutline, reviseOutline, confirmOutline, editBrief, review, payload, markGenerating,
   }
 })
