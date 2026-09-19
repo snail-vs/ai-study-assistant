@@ -5,9 +5,11 @@ import { request as apiRequest } from './api/client'
 import { storeToRefs } from 'pinia'
 import { useAuthStore } from './stores/auth'
 import { useSettingsStore } from './stores/settings'
+import { useLearningStore } from './stores/learning'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
+const learningStore = useLearningStore()
 const {
   checked: authChecked, user: authUser, mode: authMode, username: authUsername,
   password: authPassword, inviteCode: authInviteCode, loading: authLoading,
@@ -17,19 +19,13 @@ const {
   selectedDefaultModel, taskRoutes, showAdvancedRoutes, saving: savingSettings,
   fetchingModels, editingKey, savingModelAssignments, chatgptLogin,
 } = storeToRefs(settingsStore)
+const {
+  history, historyCards, generationNotice, editingFailedSpace, space, card, rootCard,
+  relatedCards, navigationStack, activeSection, section,
+} = storeToRefs(learningStore)
 
 const base = '/api/v1'
 const goal = ref('')
-const history = ref([])
-const historyCards = ref({})
-const generationNotice = ref('')
-const editingFailedSpace = ref(null)
-const space = ref(null)
-const card = ref(null)
-const rootCard = ref(null)
-const relatedCards = ref([])
-const navigationStack = ref([])
-const activeSection = ref(0)
 const learningView = ref('content')
 const activities = ref([])
 const activeActivity = ref(null)
@@ -171,10 +167,8 @@ onUnmounted(() => {
   stopChatResize()
   stopChatgptPolling()
   window.removeEventListener('popstate', restoreStudyRoute)
-  if (generationPollTimer) clearInterval(generationPollTimer)
+  learningStore.stopGenerationPolling()
 })
-
-const section = computed(() => card.value?.sections?.[activeSection.value] || null)
 
 function stripRepeatedSectionTitle(content, title) {
   const source = String(content || '').replace(/\r\n?/g, '\n')
@@ -233,7 +227,6 @@ const homeCards = computed(() => history.value.flatMap((spaceItem) => (
 const creatingSpaces = computed(() => history.value.filter((item) => (
   item.generationStatus === 'queued' || item.generationStatus === 'running' || item.generationStatus === 'failed'
 )))
-let generationPollTimer = null
 const noteCardOptions = computed(() => {
   const cards = homeCards.value.map((item) => item.card)
   if (card.value && !cards.some((item) => item.id === card.value.id)) cards.unshift(card.value)
@@ -298,7 +291,7 @@ async function restoreStudyRoute() {
   loading.value = true
   error.value = ''
   try {
-    space.value = spaceItem
+    learningStore.setSpace(spaceItem)
     const target = await request(`/cards/${cardId}`)
     rootCard.value = target.cardType === 'root' ? target : null
     const runtime = await request(`/learning-spaces/${spaceId}/runtime`)
@@ -380,20 +373,7 @@ async function logout() {
 }
 
 async function persistLearningRuntime(eventType = 'navigation') {
-  if (!space.value || !card.value) return
-  try {
-    await request(`/learning-spaces/${space.value.id}/runtime`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        currentCardId: card.value.id,
-        currentSectionId: section.value?.id || null,
-        navigationStack: navigationStack.value,
-        eventType,
-      }),
-    })
-  } catch (_) {
-    // Runtime persistence must not block reading an otherwise available course.
-  }
+  return learningStore.persistRuntime(eventType)
 }
 
 async function loadSectionActivities() {
@@ -721,47 +701,16 @@ function cancelFailedGenerationEdit() {
 }
 
 async function loadHistory() {
-  try {
-    const nextHistory = (await request('/learning-spaces')).items || []
-    const previousStatuses = new Map(history.value.map((item) => [item.id, item.generationStatus]))
-    for (const item of nextHistory) {
-      const previous = previousStatuses.get(item.id)
-      if (previous && previous !== item.generationStatus && item.generationStatus === 'completed') {
-        generationNotice.value = `课程“${item.title}”已生成完成。`
-      } else if (previous && previous !== item.generationStatus && item.generationStatus === 'failed') {
-        generationNotice.value = `课程“${item.title}”生成失败：${item.generationError || '请重试。'}`
-      }
-    }
-    history.value = nextHistory
-    const entries = await Promise.all(history.value.map(async (item) => {
-      try {
-        return [item.id, await request(`/learning-spaces/${item.id}/cards`)]
-      } catch (_) {
-        return [item.id, []]
-      }
-    }))
-    historyCards.value = Object.fromEntries(entries)
-    const hasPending = history.value.some((item) => item.generationStatus === 'queued' || item.generationStatus === 'running')
-    if (hasPending && !generationPollTimer) {
-      generationPollTimer = setInterval(() => loadHistory(), 3000)
-    } else if (!hasPending && generationPollTimer) {
-      clearInterval(generationPollTimer)
-      generationPollTimer = null
-    }
-  } catch (_) {
-    // The empty state remains usable if the API is temporarily unavailable.
-  }
+  return learningStore.loadHistory()
 }
 
 async function openHistory(item) {
   loading.value = true
   error.value = ''
   try {
-    space.value = item
-    card.value = await request(`/cards/${item.rootCardId}`)
-    rootCard.value = card.value
-    activeSection.value = 0
-    navigationStack.value = []
+    learningStore.setSpace(item)
+    learningStore.setCard(await request(`/cards/${item.rootCardId}`), { root: true })
+    learningStore.resetNavigation()
     learningView.value = 'content'
     activeActivity.value = null
     activityResult.value = null
@@ -783,11 +732,7 @@ async function openHistory(item) {
 }
 
 function goHome() {
-  space.value = null
-  card.value = null
-  rootCard.value = null
-  relatedCards.value = []
-  navigationStack.value = []
+  learningStore.clearWorkspace()
   activeConversation.value = null
   showConversationList.value = false
   teacherGuidance.value = []
@@ -1028,11 +973,11 @@ async function loadRelatedCards() {
 
 async function openCard(target, navigationContext = null, options = {}) {
   if (navigationContext) {
-    navigationStack.value = [...navigationStack.value, navigationContext]
+    learningStore.pushNavigation(navigationContext)
   } else if (!options.preserveNavigation) {
-    navigationStack.value = []
+    learningStore.resetNavigation()
   }
-  card.value = target
+  learningStore.setCard(target)
   learningView.value = 'content'
   activeActivity.value = null
   activityResult.value = null
@@ -1061,8 +1006,8 @@ async function openHistoryCard(spaceItem, target) {
   loading.value = true
   error.value = ''
   try {
-    space.value = spaceItem
-    rootCard.value = target.cardType === 'root' ? target : null
+    learningStore.setSpace(spaceItem)
+    learningStore.setCard(target, { root: target.cardType === 'root' })
     await openCard(target, null)
     await loadNotes()
   } catch (err) {
@@ -1097,7 +1042,7 @@ function openHomeCard(item) {
 async function returnToMain() {
   const context = navigationStack.value[navigationStack.value.length - 1]
   if (!context) return
-  navigationStack.value = navigationStack.value.slice(0, -1)
+  learningStore.popNavigation()
   try {
     const sourceCard = await request(`/cards/${context.cardId}`)
     await openCard(sourceCard, null, { preserveNavigation: true, persist: false })
