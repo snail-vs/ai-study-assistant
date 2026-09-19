@@ -2,15 +2,23 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { request as apiRequest } from './api/client'
+import { storeToRefs } from 'pinia'
+import { useAuthStore } from './stores/auth'
+import { useSettingsStore } from './stores/settings'
+
+const authStore = useAuthStore()
+const settingsStore = useSettingsStore()
+const {
+  checked: authChecked, user: authUser, mode: authMode, username: authUsername,
+  password: authPassword, inviteCode: authInviteCode, loading: authLoading,
+} = storeToRefs(authStore)
+const {
+  status: providerStatus, selectedProvider, apiKey, availableModels, selectedModels,
+  selectedDefaultModel, taskRoutes, showAdvancedRoutes, saving: savingSettings,
+  fetchingModels, editingKey, savingModelAssignments, chatgptLogin,
+} = storeToRefs(settingsStore)
 
 const base = '/api/v1'
-const authChecked = ref(false)
-const authUser = ref(null)
-const authMode = ref('login')
-const authUsername = ref('')
-const authPassword = ref('')
-const authInviteCode = ref('')
-const authLoading = ref(false)
 const goal = ref('')
 const history = ref([])
 const historyCards = ref({})
@@ -54,7 +62,6 @@ const noteTargetCardId = ref('')
 const noteTargetSectionId = ref('')
 const loading = ref(false)
 const creatingCard = ref(false)
-const savingSettings = ref(false)
 const creatingBranch = ref(false)
 const startingDiscussion = ref(false)
 const error = ref('')
@@ -89,16 +96,6 @@ const recommendationGroupLabel = computed(() => {
 })
 const theme = ref(localStorage.getItem('studycenter.theme') || 'light')
 const showSettings = ref(false)
-const selectedProvider = ref('deepseek')
-const apiKey = ref('')
-const providerStatus = ref({ activeProvider: null, providers: {} })
-const selectableProviders = ['deepseek', 'google', 'opencode', 'openrouter', 'anthropic', 'chatgpt']
-const availableModels = ref([])
-const selectedModels = ref([])
-const selectedDefaultModel = ref('')
-const taskRoutes = ref({})
-const showAdvancedRoutes = ref(false)
-const savingModelAssignments = ref(false)
 const taskDefinitions = [
   { id: 'course_plan', label: '课程规划' },
   { id: 'section_content', label: '章节内容生成' },
@@ -147,10 +144,6 @@ const allModelOptions = computed(() => {
   }
   return options
 })
-const fetchingModels = ref(false)
-const editingKey = ref(false)
-const chatgptLogin = ref({ status: 'idle', method: 'device_code', userCode: '', verificationUri: '', authUrl: '', input: '', sessionId: '', error: '' })
-let chatgptPollTimer = null
 const proposal = ref(null)
 const recommendations = ref([])
 const selectedRecommendation = ref(null)
@@ -367,35 +360,21 @@ async function request(path, options = {}) {
 }
 
 async function checkAuth() {
-  try {
-    authUser.value = await request('/auth/me')
-  } catch (_) {
-    authUser.value = null
-  }
+  return authStore.check()
 }
 
 async function submitAuth() {
-  authLoading.value = true
   error.value = ''
   try {
-    const path = authMode.value === 'login' ? '/auth/login' : '/auth/register'
-    const body = authMode.value === 'login'
-      ? { username: authUsername.value, password: authPassword.value }
-      : { username: authUsername.value, password: authPassword.value, inviteCode: authInviteCode.value }
-    authUser.value = await request(path, { method: 'POST', body: JSON.stringify(body) })
-    authPassword.value = ''
-    authInviteCode.value = ''
+    await authStore.submit()
     await Promise.all([loadHistory(), loadProviderSettings()])
   } catch (err) {
     error.value = err.message
-  } finally {
-    authLoading.value = false
   }
 }
 
 async function logout() {
-  await request('/auth/logout', { method: 'POST' }).catch(() => {})
-  authUser.value = null
+  await authStore.logout()
   space.value = null
   history.value = []
 }
@@ -539,18 +518,7 @@ async function submitFollowUp() {
 }
 
 async function openSettings() {
-  await loadProviderSettings()
-  selectedProvider.value = selectableProviders.includes(providerStatus.value.activeProvider)
-    ? providerStatus.value.activeProvider
-    : 'deepseek'
-  selectedModels.value = [...(providerStatus.value.models?.[selectedProvider.value] || [])]
-  selectedDefaultModel.value = providerStatus.value.activeModel
-    ? `${providerStatus.value.activeProvider}:${providerStatus.value.activeModel}` : ''
-  taskRoutes.value = { ...(providerStatus.value.taskRoutes || {}) }
-  availableModels.value = [...selectedModels.value]
-  apiKey.value = ''
-  editingKey.value = false
-  showAdvancedRoutes.value = false
+  await settingsStore.open()
   showSettings.value = true
 }
 
@@ -656,89 +624,25 @@ async function removeNote(item) {
 }
 
 function changeProvider() {
-  availableModels.value = [...(providerStatus.value.models?.[selectedProvider.value] || [])]
-  selectedModels.value = [...availableModels.value]
-  apiKey.value = ''
-  editingKey.value = false
-  stopChatgptPolling()
-  resetChatgptLogin()
-}
-
-function resetChatgptLogin() {
-  chatgptLogin.value = { status: 'idle', method: 'device_code', userCode: '', verificationUri: '', authUrl: '', input: '', sessionId: '', error: '' }
+  settingsStore.changeProvider()
 }
 
 function stopChatgptPolling() {
-  if (chatgptPollTimer) {
-    clearInterval(chatgptPollTimer)
-    chatgptPollTimer = null
-  }
+  settingsStore.stopChatgptPolling()
 }
 
 async function startChatgptLogin(method = 'device_code') {
-  stopChatgptPolling()
-  chatgptLogin.value = { status: 'starting', method, userCode: '', verificationUri: '', authUrl: '', input: '', sessionId: '', error: '' }
-  try {
-    const result = await request('/settings/providers/chatgpt/oauth/login', { method: 'POST', body: JSON.stringify({ method }) })
-    if (method === 'browser') {
-      chatgptLogin.value = { status: 'browser', method, userCode: '', verificationUri: '', authUrl: result.authUrl, input: '', sessionId: result.sessionId, error: '' }
-      return
-    }
-    chatgptLogin.value = { status: 'pending', method, userCode: result.userCode, verificationUri: result.verificationUri, authUrl: '', input: '', sessionId: result.sessionId, error: '' }
-    chatgptPollTimer = setInterval(pollChatgptLogin, Math.max(2, result.intervalSeconds || 5) * 1000)
-  } catch (err) {
-    chatgptLogin.value = { ...chatgptLogin.value, status: 'failed', error: err.message }
-  }
+  return settingsStore.startChatgptLogin(method)
 }
 
 async function completeChatgptLogin() {
-  const sessionId = chatgptLogin.value.sessionId
-  const input = chatgptLogin.value.input.trim()
-  if (!sessionId || !input) return
-  chatgptLogin.value = { ...chatgptLogin.value, error: '' }
-  try {
-    const result = await request('/settings/providers/chatgpt/oauth/complete', { method: 'POST', body: JSON.stringify({ sessionId, input }) })
-    if (result.state === 'done') {
-      resetChatgptLogin()
-      chatgptLogin.value = { ...chatgptLogin.value, status: 'done' }
-      await loadProviderSettings()
-    } else {
-      chatgptLogin.value = { ...chatgptLogin.value, error: result.error || '授权失败' }
-    }
-  } catch (err) {
-    chatgptLogin.value = { ...chatgptLogin.value, error: err.message }
-  }
-}
-
-async function pollChatgptLogin() {
-  const sessionId = chatgptLogin.value.sessionId
-  if (!sessionId) return
-  try {
-    const result = await request('/settings/providers/chatgpt/oauth/status', { method: 'POST', body: JSON.stringify({ sessionId }) })
-    if (result.state === 'pending') return
-    stopChatgptPolling()
-    if (result.state === 'done') {
-      resetChatgptLogin()
-      chatgptLogin.value = { ...chatgptLogin.value, status: 'done' }
-      await loadProviderSettings()
-    } else if (result.state === 'failed') {
-      chatgptLogin.value = { ...chatgptLogin.value, status: 'failed', error: result.error || '登录失败' }
-    }
-  } catch (err) {
-    stopChatgptPolling()
-    chatgptLogin.value = { ...chatgptLogin.value, status: 'failed', error: err.message }
-  }
+  return settingsStore.completeChatgptLogin()
 }
 
 async function logoutChatgpt() {
-  stopChatgptPolling()
   try {
-    providerStatus.value = await request('/settings/providers/chatgpt/oauth/logout', { method: 'POST', body: JSON.stringify({}) })
-    resetChatgptLogin()
+    await settingsStore.logoutChatgpt()
   } catch (err) { error.value = err.message }
-}
-
-function ensureDefaultModel() {
 }
 
 function roleRouteValue(role) {
@@ -757,55 +661,28 @@ function setRoleRoute(role, model) {
 }
 
 async function loadProviderSettings() {
-  try {
-    providerStatus.value = await request('/settings/providers')
-  } catch (_) {
-    // Keep the page usable when settings are temporarily unavailable.
-  }
+  return settingsStore.load()
 }
 
 async function fetchModels() {
-  if (!apiKey.value.trim() && !keyConfigured.value) return
-  fetchingModels.value = true
   error.value = ''
   try {
-    const body = apiKey.value.trim() ? { apiKey: apiKey.value.trim() } : {}
-    const result = await request(`/settings/providers/${selectedProvider.value}/models`, {
-      method: 'POST', body: JSON.stringify(body),
-    })
-    availableModels.value = result.models || []
-    selectedModels.value = selectedModels.value.filter((model) => availableModels.value.includes(model))
-    ensureDefaultModel()
-  } catch (err) { error.value = err.message } finally { fetchingModels.value = false }
+    await settingsStore.fetchModels()
+  } catch (err) { error.value = err.message }
 }
 
 async function saveProvider() {
-  if ((!apiKey.value.trim() && !keyConfigured.value) || !selectedModels.value.length) return
-  savingSettings.value = true
+  error.value = ''
   try {
-    providerStatus.value = await request(`/settings/providers/${selectedProvider.value}`, {
-      method: 'PUT', body: JSON.stringify({ ...(apiKey.value.trim() ? { apiKey: apiKey.value.trim() } : {}), models: selectedModels.value }),
-    })
-    apiKey.value = ''
-    editingKey.value = false
-  } catch (err) { error.value = err.message } finally { savingSettings.value = false }
+    await settingsStore.saveProvider()
+  } catch (err) { error.value = err.message }
 }
 
 async function saveModelAssignments() {
-  if (!selectedDefaultModel.value) {
-    error.value = '请先选择全局默认模型'
-    return
-  }
-  savingModelAssignments.value = true
   error.value = ''
   try {
-    const routes = Object.fromEntries(Object.entries(taskRoutes.value).filter(([, model]) => model))
-    await request('/settings/model-routes', { method: 'PUT', body: JSON.stringify({ routes }) })
-    providerStatus.value = await request('/settings/model', {
-      method: 'PUT', body: JSON.stringify({ model: selectedDefaultModel.value }),
-    })
-    taskRoutes.value = { ...(providerStatus.value.taskRoutes || {}) }
-  } catch (err) { error.value = err.message } finally { savingModelAssignments.value = false }
+    await settingsStore.saveModelAssignments()
+  } catch (err) { error.value = err.message }
 }
 
 async function startLearning() {
