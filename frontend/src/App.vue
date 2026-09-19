@@ -64,6 +64,7 @@ const {
   quickOptions: designQuickOptions, draftBrief: designBrief, selectedScale: designScale,
   recommendedScale: designRecommendedScale, outline: designOutline,
   loading: designLoading, error: designError, canAskMore: designCanAskMore,
+  waitingForUser: designWaitingForUser,
   scaleOptions: designScaleOptions,
 } = storeToRefs(courseDesignStore)
 
@@ -532,6 +533,15 @@ async function generateCourseDirectly() {
   }
 }
 
+async function retryCourseDesign() {
+  if (designLoading.value) return
+  try {
+    await courseDesignStore.retry()
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
 async function startLearning() {
   if (!designGoal.value.trim() || designLoading.value || creatingCard.value) return
   creatingCard.value = true
@@ -811,10 +821,15 @@ function nextSection() {
       <section v-else-if="courseDesignPhase === 'interview'" class="course-design-stage" aria-live="polite">
         <div class="course-design-head"><span class="eyebrow">课程需求澄清 · {{ Math.max(courseDesignStore.turnCount, 1) }} / 3</span><button class="secondary" type="button" :disabled="designLoading" @click="generateCourseDirectly">按 AI 判断直接生成</button></div>
         <div class="design-messages">
-          <article v-for="(message, index) in designMessages" :key="`${index}-${message.role}`" :class="['design-message', message.role]"><span>{{ message.role === 'user' ? '你' : 'AI' }}</span><p>{{ message.content }}</p></article>
+          <article v-for="(message, index) in designMessages" :key="`${index}-${message.role}`" :class="['design-message', message.role, { pending: message.pending }]">
+            <span>{{ message.role === 'user' ? '你' : 'AI' }}</span><p>{{ message.pending ? '正在思考你的学习需求…' : message.content }}</p>
+          </article>
         </div>
-        <div v-if="designQuickOptions.length" class="design-options" aria-label="快捷选项"><button v-for="option in designQuickOptions" :key="option" type="button" class="secondary" :disabled="designLoading" @click="answerCourseDesign(option)">{{ option }}</button></div>
-        <form class="design-answer" @submit.prevent="answerCourseDesign($event.target.elements.answer.value); $event.target.reset()"><input name="answer" :disabled="designLoading" placeholder="也可以直接输入你的回答…" autocomplete="off" /><button :disabled="designLoading">{{ designLoading ? '思考中…' : '回答' }}</button></form>
+        <div v-if="designError" class="design-error" role="alert"><span>{{ designError }}</span><button type="button" class="secondary" :disabled="designLoading" @click="retryCourseDesign">重新获取问题</button></div>
+        <template v-if="designWaitingForUser">
+          <div v-if="designQuickOptions.length" class="design-options" aria-label="快捷选项"><button v-for="option in designQuickOptions" :key="option" type="button" class="secondary" :disabled="designLoading" @click="answerCourseDesign(option)">{{ option }}</button></div>
+          <form class="design-answer" @submit.prevent="answerCourseDesign($event.target.elements.answer.value); $event.target.reset()"><input name="answer" :disabled="designLoading" placeholder="也可以直接输入你的回答…" autocomplete="off" /><button :disabled="designLoading">回答</button></form>
+        </template>
         <button v-if="designCanAskMore" class="design-direct" type="button" :disabled="designLoading" @click="generateCourseDirectly">跳过追问，直接生成</button>
       </section>
       <section v-else-if="courseDesignPhase === 'review'" class="course-design-stage course-design-review">

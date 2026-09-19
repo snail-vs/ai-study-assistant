@@ -22,6 +22,14 @@ class FakeGateway:
         }
 
 
+class MissingQuestionGateway(FakeGateway):
+    async def structured(self, _messages, *, task, schema):
+        result = await super().structured(_messages, task=task, schema=schema)
+        result["assistant_message"] = "我了解了你的方向。"
+        result["question"] = None
+        return result
+
+
 class CourseIntakeTests(unittest.TestCase):
     def test_agent_merges_existing_brief_and_uses_intake_task(self):
         gateway = FakeGateway()
@@ -73,6 +81,17 @@ class CourseIntakeTests(unittest.TestCase):
         self.assertTrue(response.ready)
         self.assertEqual(response.course_scale, "standard")
         self.assertEqual(len(response.outline), 6)
+
+    def test_non_ready_response_always_has_a_real_question(self):
+        from backend import course_design_api
+
+        request = CourseDesignTurnRequest(messages=[])
+        with patch.object(course_design_api, "restore_active_provider", return_value=MissingQuestionGateway()), patch.object(
+            course_design_api, "current_user_id", return_value="user-1"
+        ):
+            response = asyncio.run(course_design_turn(request, db=object()))
+        self.assertEqual(response.assistant_message, "我了解了你的方向。")
+        self.assertEqual(response.question, "为了更准确地设计课程，请告诉我你希望学完后能够完成什么？")
 
 
 if __name__ == "__main__":

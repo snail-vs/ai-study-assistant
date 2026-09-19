@@ -82,4 +82,40 @@ describe('course design store', () => {
     expect(store.phase).toBe('review')
     expect(mockedRequest).toHaveBeenCalledTimes(2)
   })
+
+  it('hides answer controls while the AI is preparing the first question', async () => {
+    let resolveRequest!: (value: unknown) => void
+    mockedRequest.mockReturnValueOnce(new Promise((resolve) => { resolveRequest = resolve }))
+    const store = useCourseDesignStore()
+    const pending = store.begin('我想系统了解 OpenStack')
+
+    expect(store.waitingForAI).toBe(true)
+    expect(store.waitingForUser).toBe(false)
+    expect(store.messages[store.messages.length - 1]).toMatchObject({ role: 'assistant', pending: true })
+    resolveRequest({ question: '你希望重点理解哪些内容？', assistantMessage: '先确认学习重点。', quickOptions: ['架构', '实现流程'] })
+    await pending
+    expect(store.waitingForAI).toBe(false)
+    expect(store.waitingForUser).toBe(true)
+  })
+
+  it('combines an assistant lead-in and question into one assistant turn', async () => {
+    mockedRequest.mockResolvedValueOnce({ assistantMessage: '为了安排合适的路径，', question: '你目前对 OpenStack 的基础如何？' })
+    const store = useCourseDesignStore()
+    await store.begin('我想了解 OpenStack')
+    expect(store.messages.filter((message) => message.role === 'assistant')).toHaveLength(1)
+    expect(store.messages[store.messages.length - 1]?.content).toBe('为了安排合适的路径，\n你目前对 OpenStack 的基础如何？')
+  })
+
+  it('keeps the answer controls hidden after failure and retries without duplicating the goal', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('服务暂时不可用'))
+    mockedRequest.mockResolvedValueOnce({ question: '你希望学完后做到什么？' })
+    const store = useCourseDesignStore()
+    await expect(store.begin('我想了解 OpenStack')).rejects.toThrow('服务暂时不可用')
+    expect(store.error).toBe('服务暂时不可用')
+    expect(store.waitingForUser).toBe(false)
+    await store.retry()
+    expect(store.error).toBe('')
+    expect(store.messages.filter((message) => message.role === 'user')).toEqual([{ role: 'user', content: '我想了解 OpenStack' }])
+    expect(mockedRequest).toHaveBeenCalledTimes(2)
+  })
 })

@@ -22,6 +22,7 @@ export interface CourseDesignMessage {
   role: 'user' | 'assistant'
   content: string
   quickOptions?: string[]
+  pending?: boolean
 }
 
 export interface CourseOutlineItem {
@@ -70,6 +71,9 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
 
   const canAskMore = computed(() => turnCount.value < 3)
   const ready = computed(() => phase.value === 'review' && Boolean(goal.value.trim()))
+  const waitingForAI = computed(() => phase.value === 'interview' && loading.value)
+  const waitingForUser = computed(() => phase.value === 'interview' && !loading.value
+    && !error.value && messages.value.some((message) => message.role === 'assistant' && !message.pending && Boolean(message.content.trim())))
   const scaleOptions = computed(() => SCALE_OPTIONS)
 
   function reset() {
@@ -87,12 +91,19 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
   }
 
   function applyResponse(response: CourseDesignResponse) {
-    const assistant = normalizeMessage(response.message)
-      || (response.assistantMessage ? { role: 'assistant' as const, content: response.assistantMessage } : null)
-    const question = response.question || assistant?.content
-    if (assistant) messages.value.push(assistant)
-    else if (question) messages.value.push({ role: 'assistant', content: question, quickOptions: response.quickOptions })
-    quickOptions.value = response.quickOptions || assistant?.quickOptions || []
+    const message = normalizeMessage(response.message)
+    const lead = response.assistantMessage || message?.content || ''
+    const question = response.question || (!response.ready ? lead || '为了更准确地设计课程，请告诉我你希望学完后能够完成什么？' : '')
+    const content = response.ready
+      ? lead || question
+      : lead && question && lead.trim() !== question.trim() ? `${lead.trim()}\n${question.trim()}` : question
+    const assistant = content ? { role: 'assistant' as const, content, quickOptions: response.quickOptions || message?.quickOptions } : null
+    const pendingIndex = messages.value.findIndex((item) => item.role === 'assistant' && item.pending)
+    if (pendingIndex >= 0) {
+      if (assistant) messages.value.splice(pendingIndex, 1, assistant)
+      else messages.value.splice(pendingIndex, 1)
+    } else if (assistant) messages.value.push(assistant)
+    quickOptions.value = response.ready ? [] : (response.quickOptions || message?.quickOptions || [])
     draftBrief.value = { ...draftBrief.value, ...(response.brief || response.courseBrief || {}) }
     if (response.recommendedScale) {
       recommendedScale.value = response.recommendedScale
@@ -105,20 +116,21 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
     if (response.ready || !canAskMore.value) phase.value = 'review'
   }
 
-  async function submitTurn(answer: string, options: { direct?: boolean } = {}) {
+  async function submitTurn(answer: string, options: { direct?: boolean; initial?: boolean; retry?: boolean } = {}) {
     const text = answer.trim()
     // The first turn is the AI's initial question and intentionally has no
     // user answer yet. Subsequent empty turns are only valid for direct mode.
-    if (!text && !options.direct && turnCount.value > 0) return null
+    if (!text && !options.direct && !options.retry && turnCount.value > 0) return null
     if (loading.value) return null
     error.value = ''
     loading.value = true
     if (text) messages.value.push({ role: 'user', content: text })
+    messages.value.push({ role: 'assistant', content: '', pending: true })
     try {
       const response = await request<CourseDesignResponse>('/course-design/turn', {
         method: 'POST',
         body: JSON.stringify({
-          messages: messages.value,
+          messages: messages.value.filter((message) => !message.pending),
           brief: draftBrief.value,
           skip: Boolean(options.direct),
         }),
@@ -128,7 +140,18 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
       if (phase.value !== 'review' && canAskMore.value) phase.value = 'interview'
       return response
     } catch (err) {
-      if (text && messages.value[messages.value.length - 1]?.role === 'user') messages.value.pop()
+      const pendingIndex = messages.value.findIndex((item) => item.role === 'assistant' && item.pending)
+      if (pendingIndex >= 0) messages.value.splice(pendingIndex, 1)
+      if (text) {
+        let userIndex = -1
+        for (let index = messages.value.length - 1; index >= 0; index -= 1) {
+          if (messages.value[index].role === 'user' && messages.value[index].content === text) {
+            userIndex = index
+            break
+          }
+        }
+        if (userIndex >= 0) messages.value.splice(userIndex, 1)
+      }
       error.value = err instanceof Error ? err.message : '课程设计请求失败'
       throw err
     } finally {
@@ -144,7 +167,7 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
     // The backend derives the topic from the conversation; keep the initial
     // goal as the first user turn instead of sending it as an out-of-band field.
     messages.value.push({ role: 'user', content: text })
-    return submitTurn('', { direct: false })
+    return submitTurn('', { direct: false, initial: true })
   }
 
   async function answer(value: string) {
@@ -154,6 +177,11 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
   async function generateDirectly() {
     if (!goal.value.trim()) return null
     return submitTurn('', { direct: true })
+  }
+
+  async function retry() {
+    if (loading.value || phase.value !== 'interview') return null
+    return submitTurn('', { retry: true })
   }
 
   function chooseScale(scale: CourseScale) {
@@ -185,7 +213,7 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
 
   return {
     phase, goal, messages, draftBrief, quickOptions, selectedScale, recommendedScale,
-    outline, turnCount, loading, error, canAskMore, ready, scaleOptions,
-    reset, begin, answer, generateDirectly, chooseScale, editBrief, review, payload, markGenerating,
+    outline, turnCount, loading, error, canAskMore, ready, waitingForAI, waitingForUser, scaleOptions,
+    reset, begin, answer, generateDirectly, retry, chooseScale, editBrief, review, payload, markGenerating,
   }
 })

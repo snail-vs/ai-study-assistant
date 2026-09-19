@@ -39,10 +39,18 @@ async def course_design_turn(payload: CourseDesignTurnRequest, db=Depends(get_db
     normalized = CourseBrief.model_validate(result.brief)
     normalized_scale = result.recommended_scale if result.recommended_scale in {"quick", "standard", "series"} else "standard"
     outline = [CourseOutlineItem.model_validate(item) for item in result.outline[:12]]
+    # Providers occasionally put the lead-in in assistantMessage and omit the
+    # actual question. Keep the API contract deterministic so the client never
+    # enables answer controls without a question to answer.
+    fallback_question = "为了更准确地设计课程，请告诉我你希望学完后能够完成什么？"
+    question = (result.question or "").strip()
+    assistant_message = (result.assistant_message or question or fallback_question).strip()
+    if not result.ready:
+        question = question or fallback_question
     return CourseDesignTurnResponse(
         brief=normalized,
-        assistant_message=result.assistant_message or result.question or "请补充你的学习目标。",
-        question=None if result.ready else result.question,
+        assistant_message=assistant_message,
+        question=None if result.ready else question,
         quick_options=[] if result.ready else result.quick_options[:4],
         ready=result.ready,
         recommended_scale=normalized_scale,
