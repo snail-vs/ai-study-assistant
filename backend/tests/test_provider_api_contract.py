@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from backend import api
@@ -6,6 +7,7 @@ from backend.main import app
 from backend.provider_api import router as provider_router
 from backend.security.auth import require_current_user
 from backend.services import provider_settings
+from backend.services import chatgpt_oauth
 
 
 class ProviderApiContractTests(unittest.TestCase):
@@ -57,6 +59,17 @@ class ProviderApiContractTests(unittest.TestCase):
         replacement = object()
         with patch.object(api, "restore_active_provider", return_value=replacement):
             self.assertIs(api.restore_active_provider(), replacement)
+
+    def test_oauth_workflow_service_has_no_router_or_api_dependency(self):
+        source = Path(chatgpt_oauth.__file__).read_text()
+        self.assertNotIn("from ..api", source)
+        self.assertNotIn("from ..provider_api", source)
+        self.assertNotIn("import router", source)
+
+    def test_oauth_routes_delegate_to_service_workflow(self):
+        source = Path(__file__).parents[1].joinpath("provider_api.py").read_text()
+        for symbol in ("start_login", "login_status", "complete_login", "logout"):
+            self.assertIn(symbol, source)
 
 
 if __name__ == "__main__":
