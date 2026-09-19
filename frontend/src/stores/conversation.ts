@@ -6,6 +6,7 @@ type Conversation = Record<string, any>
 type Message = Record<string, any>
 type Section = Record<string, any>
 type Card = Record<string, any>
+type StudyAssistEventHandler = (event: string, data: Record<string, any>) => void
 
 const idleRun = () => ({ active: false, phase: '', label: '' })
 
@@ -18,13 +19,11 @@ export const useConversationStore = defineStore('conversation', () => {
   const messages = ref<Message[]>([])
   const highlightedMessageIds = ref<string[]>([])
   const sideRun = ref(idleRun())
-  const proposal = ref<Record<string, any> | null>(null)
-  const recommendations = ref<Record<string, any>[]>([])
-  const teacherGuidance = ref<Record<string, any>[]>([])
   const streamError = ref('')
 
   let conversationLoadVersion = 0
   let highlightTimer: ReturnType<typeof setTimeout> | null = null
+  let studyAssistEventHandler: StudyAssistEventHandler | null = null
 
   function clearMessages() {
     messages.value = []
@@ -141,12 +140,13 @@ export const useConversationStore = defineStore('conversation', () => {
               sideRun.value = { active: true, phase: 'answering', label: '答疑助教正在回答' }
               assistant.content += data.delta || ''
             }
-            if (block.includes('related_card.proposed')) {
-              proposal.value = data
-              recommendations.value = [data, ...recommendations.value.filter((item) => item.proposalId !== data.proposalId)]
+            if (block.includes('related_card.proposed')) studyAssistEventHandler?.('related_card.proposed', data)
+            if (block.includes('guidance.updated')) studyAssistEventHandler?.('guidance.updated', data)
+            if (block.includes('guidance.failed')) {
+              const message = `课程导师引导失败：${data.message || '未知错误'}`
+              streamError.value = message
+              studyAssistEventHandler?.('guidance.failed', data)
             }
-            if (block.includes('guidance.updated')) teacherGuidance.value = [...teacherGuidance.value, data]
-            if (block.includes('guidance.failed')) streamError.value = `课程导师引导失败：${data.message || '未知错误'}`
             if (block.includes('run.failed')) {
               streamError.value = data.message || 'AI 服务调用失败'
               if (!assistant.content) removeAssistant()
@@ -192,16 +192,18 @@ export const useConversationStore = defineStore('conversation', () => {
     activeConversation.value = null
     showConversationList.value = false
     clearMessages()
-    proposal.value = null
-    recommendations.value = []
     highlightedMessageIds.value = []
+  }
+
+  function setStudyAssistEventHandler(handler: StudyAssistEventHandler | null) {
+    studyAssistEventHandler = handler
   }
 
   return {
     conversations, activeConversation, showConversationList, showMobileDiscussion,
-    messages, highlightedMessageIds, sideRun, proposal, recommendations, teacherGuidance,
+    messages, highlightedMessageIds, sideRun,
     streamError,
     loadSectionConversations, loadConversationMessages, sendMessage, selectConversation,
-    highlightMessages, clearMessages, reset,
+    highlightMessages, clearMessages, reset, setStudyAssistEventHandler,
   }
 })

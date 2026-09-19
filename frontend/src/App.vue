@@ -7,6 +7,7 @@ import { useAuthStore } from './stores/auth'
 import { useSettingsStore } from './stores/settings'
 import { useLearningStore } from './stores/learning'
 import { useConversationStore } from './stores/conversation'
+import { useStudyAssistStore } from './stores/study-assist'
 import { useActivityStore } from './stores/activity'
 import { useNotesStore } from './stores/notes'
 
@@ -14,6 +15,7 @@ const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
 const learningStore = useLearningStore()
 const conversationStore = useConversationStore()
+const studyAssistStore = useStudyAssistStore()
 const activityStore = useActivityStore()
 const notesStore = useNotesStore()
 const {
@@ -31,9 +33,11 @@ const {
 } = storeToRefs(learningStore)
 const {
   conversations, activeConversation, showConversationList, showMobileDiscussion,
-  messages, highlightedMessageIds, sideRun, proposal, recommendations, teacherGuidance,
-  streamError,
+  messages, highlightedMessageIds, sideRun, streamError,
 } = storeToRefs(conversationStore)
+const {
+  proposal, recommendations, teacherGuidance, selectedRecommendation,
+} = storeToRefs(studyAssistStore)
 const {
   activities, activeActivity, answers: activityAnswers, result: activityResult,
   loading: activityLoading, submitting: activitySubmitting,
@@ -136,12 +140,12 @@ const allModelOptions = computed(() => {
   }
   return options
 })
-const selectedRecommendation = ref(null)
 const chatWidth = ref(Math.min(560, Math.max(280, Number(localStorage.getItem('studycenter.chatWidth')) || 360)))
 let resizingChat = false
-let guidanceLoadVersion = 0
 // 普通换行按 Markdown 语义处理，避免模型的排版换行被全部渲染成额外的 <br>。
 const md = new MarkdownIt({ html: false, breaks: false, linkify: true })
+
+conversationStore.setStudyAssistEventHandler(studyAssistStore.handleStreamEvent)
 
 function masteryLabel(level) {
   return level === 'mastered' ? '已掌握' : level === 'developing' ? '掌握中' : level === 'needs_review' ? '需要复习' : ''
@@ -601,10 +605,7 @@ async function openHistory(item) {
 function goHome() {
   learningStore.clearWorkspace()
   conversationStore.reset()
-  teacherGuidance.value = []
-  recommendations.value = []
-  selectedRecommendation.value = null
-  proposal.value = null
+  studyAssistStore.reset()
   error.value = ''
   window.history.replaceState({}, '', '/')
   loadHistory()
@@ -668,9 +669,7 @@ async function acceptProposal(item = proposal.value) {
     const sourceEntry = { cardId: card.value.id, sectionId: section.value?.id || null }
     const generatedCard = await request(`/proposals/${id}/accept`, { method: 'POST' })
     await openCard(generatedCard, sourceEntry, { eventType: 'branch_entered' })
-    recommendations.value = recommendations.value.filter((recommendation) => proposalId(recommendation) !== id)
-    proposal.value = null
-    selectedRecommendation.value = null
+    studyAssistStore.removeRecommendation(id)
   } catch (err) { error.value = err.message } finally { creatingBranch.value = false }
 }
 
@@ -688,8 +687,7 @@ async function continueRecommendation(item) {
     conversations.value = [...conversations.value, conversation]
     activeConversation.value = conversation
     messages.value = []
-    proposal.value = null
-    selectedRecommendation.value = null
+    studyAssistStore.clearProposal()
     await sendMessage(`我想先了解“${item.title}”，请先说明它和当前章节的关系，以及我是否需要为它创建学习分支。`)
     await loadRecommendations()
   } catch (err) { error.value = err.message } finally { startingDiscussion.value = false }
@@ -704,9 +702,7 @@ async function deleteRecommendation(item) {
   }
   try {
     await request(`/proposals/${id}/reject`, { method: 'POST' })
-    recommendations.value = recommendations.value.filter((recommendation) => proposalId(recommendation) !== id)
-    if (proposalId(proposal.value) === id) proposal.value = null
-    selectedRecommendation.value = null
+    studyAssistStore.removeRecommendation(id)
   } catch (err) { error.value = err.message }
 }
 
@@ -731,8 +727,7 @@ async function openCard(target, navigationContext = null, options = {}) {
   learningView.value = 'content'
   activityStore.resetActive()
   showConversationList.value = false
-  selectedRecommendation.value = null
-  proposal.value = null
+  studyAssistStore.clearProposal()
   activeSection.value = 0
   await loadTeacherGuidance()
   await loadRecommendations()
@@ -835,32 +830,16 @@ async function openGuidanceDiscussion(guidance) {
 }
 
 async function loadTeacherGuidance() {
-  const version = ++guidanceLoadVersion
-  const sectionId = card.value?.sections?.[activeSection.value]?.id
-  if (!card.value || !sectionId) {
-    teacherGuidance.value = []
-    return
-  }
   try {
-    let stored = await request(`/cards/${card.value.id}/sections/${sectionId}/guidance`)
-    if (!stored.length) {
-      await request(`/cards/${card.value.id}/sections/${sectionId}/guidance`, { method: 'POST' })
-      stored = await request(`/cards/${card.value.id}/sections/${sectionId}/guidance`)
-    }
-    if (version === guidanceLoadVersion) teacherGuidance.value = stored
+    await studyAssistStore.loadTeacherGuidance(card.value, section.value)
   } catch (err) {
-    if (version === guidanceLoadVersion) error.value = err.message
+    error.value = err.message
   }
 }
 
 async function loadRecommendations() {
-  if (!card.value || !section.value) {
-    recommendations.value = []
-    return
-  }
   try {
-    const all = await request(`/cards/${card.value.id}/proposals`)
-    recommendations.value = all.filter((item) => item.sectionId === section.value.id)
+    await studyAssistStore.loadRecommendations(card.value, section.value)
   } catch (err) {
     error.value = err.message
   }
@@ -1039,9 +1018,9 @@ function nextSection() {
       </aside>
     </div>
 
-    <div v-if="selectedRecommendation" class="recommendation-backdrop" @click.self="selectedRecommendation = null">
+    <div v-if="selectedRecommendation" class="recommendation-backdrop" @click.self="studyAssistStore.setSelectedRecommendation(null)">
       <section class="recommendation-modal">
-        <div class="recommendation-modal-head"><div><span class="recommendation-kicker">{{ proposalKicker(selectedRecommendation) }}</span><h3>{{ selectedRecommendation.title }}</h3></div><button @click="selectedRecommendation = null">×</button></div>
+        <div class="recommendation-modal-head"><div><span class="recommendation-kicker">{{ proposalKicker(selectedRecommendation) }}</span><h3>{{ selectedRecommendation.title }}</h3></div><button @click="studyAssistStore.setSelectedRecommendation(null)">×</button></div>
         <p>{{ selectedRecommendation.reason }}</p>
         <div class="recommendation-source">来自：当前知识卡 · {{ section?.title }}</div>
             <div class="recommendation-actions"><button class="danger" :disabled="creatingBranch || startingDiscussion" @click="deleteRecommendation(selectedRecommendation)">删除建议</button><button class="secondary" :disabled="creatingBranch || startingDiscussion" @click="continueRecommendation(selectedRecommendation)">{{ startingDiscussion ? '正在创建讨论…' : '继续讨论' }}</button><button class="primary" :disabled="creatingBranch || startingDiscussion" @click="acceptProposal(selectedRecommendation)">{{ creatingBranch ? '正在创建分支…' : '创建学习分支' }}</button></div>
@@ -1068,7 +1047,7 @@ function nextSection() {
         </button>
         <div v-if="!relatedCards.length" class="empty-related">从问题讨论中生成<br />新的学习分支</div>
         <div v-if="recommendations.length" class="tree-label related">{{ recommendationGroupLabel }}</div>
-        <button v-for="item in recommendations" :key="item.id || item.proposalId" class="recommendation-link" @click="selectedRecommendation = item">
+        <button v-for="item in recommendations" :key="item.id || item.proposalId" class="recommendation-link" @click="studyAssistStore.setSelectedRecommendation(item)">
           <span>＋ {{ relationLabel(item.relationType || 'prerequisite') }} · </span>{{ item.title }}
         </button>
       </aside>
@@ -1165,7 +1144,7 @@ function nextSection() {
             <div class="proposal-kicker">{{ proposalKicker(proposal) }}</div>
             <strong>{{ proposal.title }}</strong>
             <p>{{ proposal.reason }}</p>
-            <div class="proposal-actions"><button @click="selectedRecommendation = proposal">查看建议</button><button :disabled="creatingBranch" @click="acceptProposal()">{{ creatingBranch ? '正在创建…' : '创建学习分支' }}</button></div>
+            <div class="proposal-actions"><button @click="studyAssistStore.setSelectedRecommendation(proposal)">查看建议</button><button :disabled="creatingBranch" @click="acceptProposal()">{{ creatingBranch ? '正在创建…' : '创建学习分支' }}</button></div>
           </div>
         </div>
         <div v-if="sideRun.active" class="chat-run-status"><i class="status-spinner"></i>{{ sideRun.label }}</div>

@@ -56,6 +56,8 @@ describe('conversation store', () => {
       'event: run.completed\ndata: {}',
     ]))
     const store = useConversationStore()
+    const assistEvents: Array<[string, Record<string, any>]> = []
+    store.setStudyAssistEventHandler((event, data) => assistEvents.push([event, data]))
     store.activeConversation = { id: 'conversation-1', sectionId: 'section-1' }
 
     await store.sendMessage('问题', { id: 'section-1' })
@@ -65,9 +67,10 @@ describe('conversation store', () => {
       body: JSON.stringify({ content: '问题', sectionId: 'section-1' }),
     }))
     expect(store.messages[1]).toMatchObject({ content: '你好', pending: false, senderName: '主线老师' })
-    expect(store.proposal).toEqual({ proposalId: 'proposal-1' })
-    expect(store.recommendations).toEqual([{ proposalId: 'proposal-1' }])
-    expect(store.teacherGuidance).toEqual([{ id: 'guidance-1' }])
+    expect(assistEvents).toEqual([
+      ['related_card.proposed', { proposalId: 'proposal-1' }],
+      ['guidance.updated', { id: 'guidance-1' }],
+    ])
     expect(store.sideRun).toEqual({ active: false, phase: '', label: '' })
   })
 
@@ -83,6 +86,21 @@ describe('conversation store', () => {
     expect(store.messages).toEqual([{ role: 'user', content: '问题' }])
     expect(store.streamError).toBe('provider down')
     expect(store.sideRun.active).toBe(false)
+  })
+
+  it('keeps the visible guidance failure message while forwarding the event', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(streamResponse([
+      'event: guidance.failed\ndata: {"message":"guidance unavailable"}',
+    ]))
+    const events: Array<[string, Record<string, any>]> = []
+    const store = useConversationStore()
+    store.setStudyAssistEventHandler((event, data) => events.push([event, data]))
+    store.activeConversation = { id: 'conversation-1', sectionId: 'section-1' }
+
+    await store.sendMessage('问题', { id: 'section-1' })
+
+    expect(store.streamError).toBe('课程导师引导失败：guidance unavailable')
+    expect(events).toEqual([['guidance.failed', { message: 'guidance unavailable' }]])
   })
 
   it('clears highlighted messages after the UI highlight window', () => {
