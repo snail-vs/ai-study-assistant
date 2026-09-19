@@ -62,10 +62,12 @@ class KnowledgeCardBehaviorTests(unittest.TestCase):
         generated = SimpleNamespace(id="card-2")
         db = MagicMock()
         db.get.side_effect = [proposal, generated]
-        with patch.object(
-            self.module, "owned_card", return_value=SimpleNamespace(id="card-1")
-        ), patch.object(
-            self.module, "MainAgent", side_effect=AssertionError("AI must not run")
+        with patch(
+            "backend.services.related_card_workflow.owned_card",
+            return_value=SimpleNamespace(id="card-1"),
+        ), patch(
+            "backend.services.related_card_workflow.MainAgent",
+            side_effect=AssertionError("AI must not run"),
         ):
             result = asyncio.run(self.module.accept_proposal("proposal-1", db))
         self.assertIs(result, generated)
