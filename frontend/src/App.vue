@@ -15,6 +15,7 @@ import SettingsDialog from './components/SettingsDialog.vue'
 import NotesDrawer from './components/NotesDrawer.vue'
 import KnowledgeSidebar from './components/KnowledgeSidebar.vue'
 import ActivityPanel from './components/ActivityPanel.vue'
+import { router } from './router'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
@@ -156,7 +157,10 @@ function masteryLabel(level) {
 }
 
 onMounted(async () => {
-  window.addEventListener('popstate', restoreStudyRoute)
+  const removeRouteListener = router.afterEach((to) => {
+    void workspaceStore.restoreStudyRoute(to)
+  })
+  routeListenerCleanup = removeRouteListener
   await checkAuth()
   if (authUser.value) {
     await Promise.all([loadHistory(), loadProviderSettings()])
@@ -167,9 +171,11 @@ onMounted(async () => {
 onUnmounted(() => {
   stopChatResize()
   stopChatgptPolling()
-  window.removeEventListener('popstate', restoreStudyRoute)
+  routeListenerCleanup?.()
   learningStore.stopGenerationPolling()
 })
+
+let routeListenerCleanup
 
 function stripRepeatedSectionTitle(content, title) {
   const source = String(content || '').replace(/\r\n?/g, '\n')

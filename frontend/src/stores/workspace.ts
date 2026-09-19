@@ -6,6 +6,7 @@ import { useConversationStore } from './conversation'
 import { useLearningStore } from './learning'
 import { useNotesStore } from './notes'
 import { useStudyAssistStore } from './study-assist'
+import { router } from '../router'
 
 type LearningSpace = Record<string, any>
 type LearningCard = Record<string, any>
@@ -23,6 +24,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const error = ref('')
   const learningView = ref('content')
   let workflowVersion = 0
+  let internalNavigation = false
 
   const isCurrent = (version: number) => version === workflowVersion
 
@@ -36,8 +38,19 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       params.set('view', 'quiz')
       if (activityStore.activeActivity?.id) params.set('activity', activityStore.activeActivity.id)
     }
-    const url = `/study/${learningStore.space.id}/card/${learningStore.card.id}?${params.toString()}`
-    window.history[replace ? 'replaceState' : 'pushState']({}, '', url)
+    const location = {
+      name: 'study' as const,
+      params: {
+        spaceId: String(learningStore.space.id),
+        cardId: String(learningStore.card.id),
+      },
+      query: Object.fromEntries(params.entries()),
+    }
+    internalNavigation = true
+    const navigation = replace ? router.replace(location) : router.push(location)
+    void navigation.catch(() => {
+      internalNavigation = false
+    })
   }
 
   async function loadSectionConversations(preferredConversationId: string | null = null, version = workflowVersion) {
@@ -87,7 +100,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     learningStore.activeSection = 0
     await loadAssistAndSection(version)
     if (!isCurrent(version)) return false
-    syncStudyUrl({ replace: window.location.pathname.startsWith('/study/') })
+    syncStudyUrl({ replace: router.currentRoute.value.name === 'study' })
     if (options.persist !== false) await learningStore.persistRuntime(options.eventType || 'card_opened')
     return true
   }
@@ -177,14 +190,22 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
-  async function restoreStudyRoute() {
-    const match = window.location.pathname.match(/^\/study\/([^/]+)\/card\/([^/]+)$/)
-    if (!match) {
-      if (window.location.pathname !== '/' || learningStore.space) goHome()
+  async function restoreStudyRoute(route = router.currentRoute.value) {
+    if (internalNavigation) {
+      internalNavigation = false
+      return
+    }
+    if (route.name !== 'study') {
+      if (route.name !== 'home' || learningStore.space) goHome()
       return
     }
     const version = ++workflowVersion
-    const [, spaceId, cardId] = match
+    const spaceId = String(route.params.spaceId || '')
+    const cardId = String(route.params.cardId || '')
+    if (!spaceId || !cardId) {
+      goHome()
+      return
+    }
     const spaceItem = learningStore.history.find((item) => item.id === spaceId)
     if (!spaceItem) {
       goHome()
@@ -200,21 +221,25 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       learningStore.setCard(target, { root: target.cardType === 'root' })
       learningStore.navigationStack = runtime?.currentCardId === cardId ? (runtime.navigationStack || []) : []
       await openCard(target, null, { preserveNavigation: true, persist: false, version })
-      const params = new URLSearchParams(window.location.search)
-      const requestedSection = Number(params.get('section'))
+      const params = route.query
+      const queryValue = (name: string) => {
+        const value = params[name]
+        return Array.isArray(value) ? value[0] : value
+      }
+      const requestedSection = Number(queryValue('section'))
       if (Number.isInteger(requestedSection) && requestedSection >= 0
         && requestedSection < (learningStore.card?.sections?.length || 0)) {
         learningStore.activeSection = requestedSection
       await loadAssistAndSection(version)
       }
-      const conversation = conversationStore.conversations.find((item) => item.id === params.get('conversation'))
+      const conversation = conversationStore.conversations.find((item) => item.id === queryValue('conversation'))
       if (conversation && conversationStore.activeConversation?.id !== conversation.id) {
         await conversationStore.selectConversation(conversation)
       }
       await loadSectionActivities()
-      if (params.get('view') === 'quiz') {
+      if (queryValue('view') === 'quiz') {
         learningView.value = 'activity'
-        await activityStore.openQuiz(learningStore.card, learningStore.section, params.get('activity'))
+        await activityStore.openQuiz(learningStore.card, learningStore.section, queryValue('activity'))
       }
       if (!isCurrent(version)) return
       syncStudyUrl({ replace: true })
@@ -239,7 +264,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     learningView.value = 'content'
     loading.value = false
     error.value = ''
-    window.history.replaceState({}, '', '/')
+    internalNavigation = true
+    void router.replace({ name: 'home' }).catch(() => {
+      internalNavigation = false
+    })
     void learningStore.loadHistory()
   }
 

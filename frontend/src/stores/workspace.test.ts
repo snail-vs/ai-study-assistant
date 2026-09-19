@@ -6,26 +6,26 @@ import { useLearningStore } from './learning'
 import { useNotesStore } from './notes'
 import { useWorkspaceStore } from './workspace'
 
+const routerMock = vi.hoisted(() => ({
+  currentRoute: { value: { name: 'home', path: '/', params: {}, query: {} } },
+  replace: vi.fn().mockResolvedValue(undefined),
+  push: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('../router', () => ({ router: routerMock }))
+
 vi.mock('../api/client', () => ({ request: vi.fn() }))
 
 const mockedRequest = vi.mocked(request)
-
-function installWindow(pathname = '/') {
-  Object.defineProperty(globalThis, 'window', {
-    configurable: true,
-    value: {
-      location: { pathname, search: '' },
-      history: { replaceState: vi.fn(), pushState: vi.fn() },
-    },
-  })
-}
 
 describe('workspace store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     mockedRequest.mockReset()
     mockedRequest.mockResolvedValue([] as never)
-    installWindow()
+    routerMock.currentRoute.value = { name: 'home', path: '/', params: {}, query: {} }
+    routerMock.replace.mockClear()
+    routerMock.push.mockClear()
   })
 
   it('clears every domain when returning home and reloads history', async () => {
@@ -44,7 +44,7 @@ describe('workspace store', () => {
     expect(learning.space).toBeNull()
     expect(activity.activeActivity).toBeNull()
     expect(notes.showNotes).toBe(false)
-    expect(window.history.replaceState).toHaveBeenCalledWith({}, '', '/')
+    expect(routerMock.replace).toHaveBeenCalledWith({ name: 'home' })
     expect(mockedRequest).toHaveBeenCalledWith('/learning-spaces')
   })
 
@@ -68,16 +68,19 @@ describe('workspace store', () => {
   })
 
   it('resets an invalid study URL to home', async () => {
-    installWindow('/study/missing/card/card-1')
+    routerMock.currentRoute.value = {
+      name: 'study', path: '/study/missing/card/card-1',
+      params: { spaceId: 'missing', cardId: 'card-1' }, query: {},
+    }
     const workspace = useWorkspaceStore()
     const learning = useLearningStore()
     learning.history = [{ id: 'space-1' }]
     learning.setSpace({ id: 'space-1' })
 
-    await workspace.restoreStudyRoute()
+    await workspace.restoreStudyRoute(routerMock.currentRoute.value as never)
 
     expect(learning.space).toBeNull()
-    expect(window.history.replaceState).toHaveBeenCalledWith({}, '', '/')
+    expect(routerMock.replace).toHaveBeenCalledWith({ name: 'home' })
   })
 
   it('does not let a stale history request replace the current workspace', async () => {
