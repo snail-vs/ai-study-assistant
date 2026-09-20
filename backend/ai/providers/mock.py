@@ -35,6 +35,11 @@ class MockTextProvider:
                 "brief": {
                     "topic": topic,
                     "learningOutcome": current.get("learningOutcome") or "理解并应用核心概念",
+                    "learningGoals": current.get("learningGoals", []),
+                    "learningGoalDetails": current.get("learningGoalDetails", ""),
+                    "priorKnowledgeLevels": current.get("priorKnowledgeLevels", []),
+                    "priorKnowledgeDetails": current.get("priorKnowledgeDetails", ""),
+                    "priorKnowledge": current.get("priorKnowledge", ""),
                 },
                 "assistant_message": "你目前对这个主题的基础如何？",
                 "question": "你目前对这个主题的基础如何？",

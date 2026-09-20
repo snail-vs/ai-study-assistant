@@ -78,6 +78,8 @@ const composerInput = ref(null)
 const creatingCard = ref(false)
 const creatingBranch = ref(false)
 const startingDiscussion = ref(false)
+const learningGoalOptions = ['理解整体架构', '掌握核心原理', '完成部署实践', '能够排查问题', '进行二次开发']
+const priorKnowledgeOptions = ['完全零基础', '了解基本概念', '有相关实践', '有生产经验']
 
 const relationLabels = {
   prerequisite: '前置知识',
@@ -87,6 +89,16 @@ const relationLabels = {
 
 function relationLabel(relationType) {
   return relationLabels[relationType] || '学习分支'
+}
+
+function updateCourseBrief(patch) {
+  courseDesignStore.editBrief(patch)
+}
+
+function toggleCourseBriefOption(field, option) {
+  const selected = Array.isArray(designBrief.value[field]) ? designBrief.value[field] : []
+  const next = selected.includes(option) ? selected.filter((item) => item !== option) : [...selected, option]
+  updateCourseBrief({ [field]: next })
 }
 
 function proposalKicker(proposalItem) {
@@ -867,8 +879,8 @@ function nextSection() {
         <div class="brief-summary">
           <h3>学习需求确认</h3>
           <label v-if="designBrief.topic">主题<input v-model="designBrief.topic" /></label>
-          <label class="brief-goal">学习目标<textarea v-model="designBrief.learningOutcome" placeholder="AI 将据此设计课程内容"></textarea></label>
-          <label v-if="designBrief.priorKnowledge">当前基础<input v-model="designBrief.priorKnowledge" /></label>
+          <div class="brief-field brief-choice-field"><span>学习目标（可多选）</span><div class="brief-tags selectable-tags"><button v-for="option in learningGoalOptions" :key="option" type="button" :class="{ selected: designBrief.learningGoals?.includes(option) }" @click="toggleCourseBriefOption('learningGoals', option)">{{ option }}</button></div><textarea :value="designBrief.learningGoalDetails || designBrief.learningOutcome || ''" @change="updateCourseBrief({ learningGoalDetails: $event.target.value, learningOutcome: $event.target.value })" placeholder="还想达成什么目标？可以补充说明"></textarea></div>
+          <div class="brief-field brief-choice-field"><span>个人基础（可多选）</span><div class="brief-tags selectable-tags"><button v-for="option in priorKnowledgeOptions" :key="option" type="button" :class="{ selected: designBrief.priorKnowledgeLevels?.includes(option) }" @click="toggleCourseBriefOption('priorKnowledgeLevels', option)">{{ option }}</button></div><input :value="designBrief.priorKnowledgeDetails || designBrief.priorKnowledge || ''" @change="updateCourseBrief({ priorKnowledgeDetails: $event.target.value, priorKnowledge: $event.target.value })" placeholder="可以补充使用过的技术、项目经验等" /></div>
           <label v-if="designBrief.useCase">使用场景<input v-model="designBrief.useCase" /></label>
           <div v-if="designBrief.focus?.length" class="brief-field"><span>重点范围</span><div class="brief-tags"><em v-for="item in designBrief.focus" :key="item">{{ item }}</em></div></div>
           <div v-if="designBrief.timeBudgetMinutes" class="brief-field"><span>预计投入</span><strong>{{ designBrief.timeBudgetMinutes }} 分钟</strong></div>

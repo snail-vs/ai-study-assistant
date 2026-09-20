@@ -8,7 +8,11 @@ export type CourseDesignPhase = 'goal' | 'interview' | 'review' | 'generating'
 export interface CourseBrief {
   topic?: string
   learningOutcome?: string
+  learningGoals?: string[]
+  learningGoalDetails?: string
   priorKnowledge?: string
+  priorKnowledgeLevels?: string[]
+  priorKnowledgeDetails?: string
   useCase?: string
   focus?: string[]
   excludedTopics?: string[]
@@ -268,7 +272,17 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
   }
 
   function editBrief(next: Partial<CourseBrief>) {
+    const outlineFields = ['learningOutcome', 'learningGoals', 'learningGoalDetails', 'priorKnowledge', 'priorKnowledgeLevels', 'priorKnowledgeDetails', 'useCase', 'focus', 'excludedTopics', 'preferredStyle', 'timeBudgetMinutes'] as const
+    const changed = outlineFields.some((key) => Object.prototype.hasOwnProperty.call(next, key)
+      && JSON.stringify(draftBrief.value[key]) !== JSON.stringify(next[key]))
     draftBrief.value = { ...draftBrief.value, ...next }
+    if (changed) {
+      outline.value = []
+      outlineError.value = ''
+      outlineConfirmed.value = false
+      revisionMessages.value = []
+      revisionError.value = ''
+    }
   }
 
   function review() {

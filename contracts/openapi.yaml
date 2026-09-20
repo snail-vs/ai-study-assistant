@@ -915,7 +915,11 @@ components:
       properties:
         topic: { type: string }
         learningOutcome: { type: string }
+        learningGoals: { type: array, maxItems: 20, items: { type: string } }
+        learningGoalDetails: { type: string }
         priorKnowledge: { type: string }
+        priorKnowledgeLevels: { type: array, maxItems: 20, items: { type: string } }
+        priorKnowledgeDetails: { type: string }
         useCase: { type: string }
         focus: { type: array, items: { type: string } }
         excludedTopics: { type: array, items: { type: string } }

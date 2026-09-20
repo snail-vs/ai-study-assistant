@@ -131,7 +131,13 @@ class CourseBrief(ApiModel):
 
     topic: str = Field(default="", max_length=500)
     learning_outcome: str = Field(default="", alias="learningOutcome", max_length=2000)
+    # Structured selections are additive to the legacy free-text fields.  The
+    # latter remain available for old clients and for richer learner wording.
+    learning_goals: list[str] = Field(default_factory=list, alias="learningGoals", max_length=20)
+    learning_goal_details: str = Field(default="", alias="learningGoalDetails", max_length=2000)
     prior_knowledge: str = Field(default="", alias="priorKnowledge", max_length=2000)
+    prior_knowledge_levels: list[str] = Field(default_factory=list, alias="priorKnowledgeLevels", max_length=20)
+    prior_knowledge_details: str = Field(default="", alias="priorKnowledgeDetails", max_length=2000)
     use_case: str = Field(default="", alias="useCase", max_length=1000)
     focus: list[str] = Field(default_factory=list, max_length=20)
     excluded_topics: list[str] = Field(default_factory=list, alias="excludedTopics", max_length=20)

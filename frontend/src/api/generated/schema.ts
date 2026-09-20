@@ -796,7 +796,11 @@ export interface components {
         CourseBrief: {
             topic?: string;
             learningOutcome?: string;
+            learningGoals?: string[];
+            learningGoalDetails?: string;
             priorKnowledge?: string;
+            priorKnowledgeLevels?: string[];
+            priorKnowledgeDetails?: string;
             useCase?: string;
             focus?: string[];
             excludedTopics?: string[];

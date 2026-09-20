@@ -33,10 +33,20 @@ class MissingQuestionGateway(FakeGateway):
 class CourseIntakeTests(unittest.TestCase):
     def test_agent_merges_existing_brief_and_uses_intake_task(self):
         gateway = FakeGateway()
-        result = asyncio.run(CourseIntakeAgent(gateway).turn([], {"topic": "Python"}))
+        result = asyncio.run(CourseIntakeAgent(gateway).turn([], {
+            "topic": "Python",
+            "learningGoals": ["完成部署实践", "能够排查问题"],
+            "priorKnowledgeLevels": ["了解基本概念", "有相关实践"],
+            "learningGoalDetails": "需要一个真实项目",
+            "priorKnowledgeDetails": "用过 Linux",
+        }))
         self.assertEqual(gateway.task, "course_intake")
         self.assertEqual(result.brief["topic"], "Python")
         self.assertEqual(result.brief["learningOutcome"], "完成数据分析")
+        self.assertEqual(result.brief["learningGoals"], ["完成部署实践", "能够排查问题"])
+        self.assertEqual(result.brief["priorKnowledgeLevels"], ["了解基本概念", "有相关实践"])
+        self.assertEqual(result.brief["learningGoalDetails"], "需要一个真实项目")
+        self.assertEqual(result.brief["priorKnowledgeDetails"], "用过 Linux")
 
     def test_mock_provider_returns_a_valid_intake_result(self):
         result = asyncio.run(CourseIntakeAgent(MockTextProvider()).turn([], {"topic": "Python"}))
@@ -57,6 +67,18 @@ class CourseIntakeTests(unittest.TestCase):
         self.assertEqual(request.course_scale, None)
         self.assertEqual(brief.topic, "")
         self.assertEqual(CreateLearningSpaceRequest(title="x", learningGoal="y").course_scale, "standard")
+
+    def test_course_brief_accepts_structured_profile_fields_and_legacy_fields(self):
+        brief = CourseBrief.model_validate({
+            "learningGoals": ["掌握核心原理", "完成部署实践"],
+            "learningGoalDetails": "希望能独立排查问题",
+            "priorKnowledge": "接触过 Linux",
+            "priorKnowledgeLevels": ["了解基本概念", "有相关实践"],
+            "priorKnowledgeDetails": "做过虚拟机部署",
+        })
+        self.assertEqual(brief.learning_goals, ["掌握核心原理", "完成部署实践"])
+        self.assertEqual(brief.prior_knowledge_levels, ["了解基本概念", "有相关实践"])
+        self.assertEqual(brief.model_dump(by_alias=True)["priorKnowledge"], "接触过 Linux")
 
     def test_first_turn_does_not_return_a_fake_outline(self):
         from backend import course_design_api

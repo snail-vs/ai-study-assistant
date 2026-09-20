@@ -77,6 +77,27 @@ describe('course design store', () => {
     })
   })
 
+  it('carries structured learning goals and background details and invalidates a stale outline', async () => {
+    const store = useCourseDesignStore()
+    store.goal = '学习 OpenStack'
+    store.editBrief({ topic: 'OpenStack', learningGoals: ['理解整体架构', '完成部署实践'], learningGoalDetails: '希望能定位服务故障', priorKnowledgeLevels: ['了解基本概念', '有相关实践'], priorKnowledgeDetails: '用过 Linux 和虚拟机' })
+    store.chooseScale('quick')
+    mockedRequest.mockResolvedValueOnce({ outline: [{ title: '架构', objective: '理解组件关系' }] })
+    await store.generateOutline()
+    store.confirmOutline()
+    expect(store.outlineConfirmed).toBe(true)
+
+    store.editBrief({ learningGoals: ['理解整体架构'] })
+    expect(store.outline).toEqual([])
+    expect(store.outlineConfirmed).toBe(false)
+    expect(store.payload().courseBrief).toMatchObject({
+      learningGoals: ['理解整体架构'],
+      learningGoalDetails: '希望能定位服务故障',
+      priorKnowledgeLevels: ['了解基本概念', '有相关实践'],
+      priorKnowledgeDetails: '用过 Linux 和虚拟机',
+    })
+  })
+
   it('generates a scale-specific outline and exposes failures for retry', async () => {
     const store = useCourseDesignStore()
     store.goal = '学习 Python'
