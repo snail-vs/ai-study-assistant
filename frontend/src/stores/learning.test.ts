@@ -46,6 +46,21 @@ describe('learning store', () => {
     expect(store.navigationStack).toEqual([])
   })
 
+  it('deletes a failed space and removes its cached history cards', async () => {
+    mockedRequest.mockResolvedValueOnce({ status: 'deleted', spaceId: 'space-1' } as never)
+    const store = useLearningStore()
+    store.history = [{ id: 'space-1', generationStatus: 'failed' }, { id: 'space-2' }]
+    store.historyCards = { 'space-1': [{ id: 'card-1' }], 'space-2': [{ id: 'card-2' }] }
+    store.editingFailedSpace = store.history[0]
+
+    await store.deleteFailedSpace(store.history[0])
+
+    expect(mockedRequest).toHaveBeenCalledWith('/learning-spaces/space-1', { method: 'DELETE' })
+    expect(store.history).toEqual([{ id: 'space-2' }])
+    expect(store.historyCards).toEqual({ 'space-2': [{ id: 'card-2' }] })
+    expect(store.editingFailedSpace).toBeNull()
+  })
+
   it('persists runtime payload without making navigation fail on an API error', async () => {
     mockedRequest.mockRejectedValueOnce(new Error('offline'))
     const store = useLearningStore()

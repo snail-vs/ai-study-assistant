@@ -518,6 +518,18 @@ async function handleCourseQueued(spaceId, title) {
   void spaceId
 }
 
+async function deleteFailedGeneration(item) {
+  if (!window.confirm(`确定删除“${item.title}”吗？\n\n这会删除失败的学习空间和课程编辑记录，之后无法恢复。`)) return
+  try {
+    const wasEditing = editingFailedSpace.value?.id === item.id
+    await learningStore.deleteFailedSpace(item)
+    if (wasEditing) courseDesignStore.reset()
+    generationNotice.value = `已删除失败课程“${item.title}”。`
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
 async function loadHistory() {
   return learningStore.loadHistory()
 }
@@ -761,6 +773,7 @@ function nextSection() {
             <small>{{ item.generationStatus === 'queued' ? '排队中' : item.generationStatus === 'failed' ? `生成失败：${item.generationError || '请重试'}` : '正在生成课程内容…' }}</small>
           </div>
           <button v-if="item.generationStatus === 'failed'" class="history-delete retry-generation" @click="editFailedGeneration(item)">重新编辑</button>
+          <button v-if="item.generationStatus === 'failed'" class="history-delete" @click="deleteFailedGeneration(item)">删除</button>
         </div>
         <div v-for="item in homeCards" :key="item.card.id" class="history-item">
           <button class="history-open" @click="openHomeCard(item)">

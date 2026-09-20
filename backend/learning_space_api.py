@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from .db import get_db
 from .models import (
     CardSection,
+    CourseDesignSession,
     KnowledgeCard,
     LearningRuntime,
     LearningRuntimeRecord,
@@ -171,6 +172,51 @@ def list_learning_spaces(db: Session = Depends(get_db)):
 @router.get("/learning-spaces/{space_id}", response_model=LearningSpaceResponse)
 def get_learning_space(space_id: str, db: Session = Depends(get_db)):
     return owned_space(db, space_id)
+
+
+@router.delete("/learning-spaces/{space_id}")
+def delete_failed_learning_space(space_id: str, db: Session = Depends(get_db)):
+    space = owned_space(db, space_id)
+    if space.generation_status != "failed":
+        raise HTTPException(
+            status_code=409,
+            detail="Only failed course generations can be deleted",
+        )
+    if space.root_card_id:
+        raise HTTPException(
+            status_code=409,
+            detail="A learning space with a generated root card cannot be deleted here",
+        )
+
+    existing_card = db.scalar(
+        select(KnowledgeCard).where(KnowledgeCard.space_id == space_id)
+    )
+    if existing_card:
+        raise HTTPException(
+            status_code=409,
+            detail="A learning space with knowledge cards cannot be deleted here",
+        )
+    existing_runtime = db.scalar(
+        select(LearningRuntime).where(LearningRuntime.space_id == space_id)
+    )
+    if existing_runtime:
+        raise HTTPException(
+            status_code=409,
+            detail="A learning space with learning progress cannot be deleted here",
+        )
+
+    sessions = list(
+        db.scalars(
+            select(CourseDesignSession).where(
+                CourseDesignSession.source_learning_space_id == space_id
+            )
+        )
+    )
+    for session in sessions:
+        db.delete(session)
+    db.delete(space)
+    db.commit()
+    return {"status": "deleted", "spaceId": space_id}
 
 
 @router.get("/learning-spaces/{space_id}/generation", response_model=GenerationStatusResponse)

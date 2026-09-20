@@ -15,6 +15,7 @@ class LearningSpaceApiContractTests(unittest.TestCase):
             ("POST", "/api/v1/learning-spaces"),
             ("GET", "/api/v1/learning-spaces"),
             ("GET", "/api/v1/learning-spaces/{space_id}"),
+            ("DELETE", "/api/v1/learning-spaces/{space_id}"),
             ("GET", "/api/v1/learning-spaces/{space_id}/generation"),
             ("PUT", "/api/v1/learning-spaces/{space_id}/generation"),
             ("GET", "/api/v1/learning-spaces/{space_id}/runtime"),

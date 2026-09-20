@@ -60,6 +60,15 @@ export const useLearningStore = defineStore('learning', () => {
     return history.value
   }
 
+  async function deleteFailedSpace(spaceItem: LearningSpace) {
+    await request(`/learning-spaces/${spaceItem.id}`, { method: 'DELETE' })
+    history.value = history.value.filter((item) => item.id !== spaceItem.id)
+    const nextHistoryCards = { ...historyCards.value }
+    delete nextHistoryCards[spaceItem.id]
+    historyCards.value = nextHistoryCards
+    if (editingFailedSpace.value?.id === spaceItem.id) editingFailedSpace.value = null
+  }
+
   async function persistRuntime(eventType = 'navigation') {
     if (!space.value || !card.value) return
     try {
@@ -133,7 +142,7 @@ export const useLearningStore = defineStore('learning', () => {
   return {
     history, historyCards, generationNotice, editingFailedSpace, space, card, rootCard,
     relatedCards, navigationStack, activeSection, section,
-    loadHistory, persistRuntime, loadRelatedCards, stopGenerationPolling, setSpace, setCard, resetNavigation,
+    loadHistory, deleteFailedSpace, persistRuntime, loadRelatedCards, stopGenerationPolling, setSpace, setCard, resetNavigation,
     pushNavigation, popNavigation, clearWorkspace,
   }
 })

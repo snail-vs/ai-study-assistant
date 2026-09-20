@@ -378,6 +378,21 @@ paths:
                 $ref: '#/components/schemas/LearningSpace'
         '404':
           $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteFailedLearningSpace
+      responses:
+        '200':
+          description: Failed learning space deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, spaceId]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  spaceId: { type: string }
+        '409':
+          description: Learning space is not an undeveloped failed generation
   /learning-spaces/{spaceId}/generation:
     parameters:
       - $ref: '#/components/parameters/SpaceId'

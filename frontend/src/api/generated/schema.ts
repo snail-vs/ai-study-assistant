@@ -376,7 +376,7 @@ export interface paths {
         get: operations["getLearningSpace"];
         put?: never;
         post?: never;
-        delete?: never;
+        delete: operations["deleteFailedLearningSpace"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1944,6 +1944,39 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    deleteFailedLearningSpace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: components["parameters"]["SpaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Failed learning space deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "deleted";
+                        spaceId: string;
+                    };
+                };
+            };
+            /** @description Learning space is not an undeveloped failed generation */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     getCourseGenerationStatus: {
