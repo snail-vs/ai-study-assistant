@@ -32,6 +32,21 @@ describe('course design session store', () => {
     expect(mockedRequest).toHaveBeenCalledWith('/course-design/sessions', expect.objectContaining({ method: 'POST' }))
   })
 
+  it('returns to the topic page while preserving the topic and clearing the active session', () => {
+    const store = useCourseDesignStore()
+    store.applySnapshot(snapshot())
+    store.topic = '学习 OpenStack'
+    store.toggleOption('a')
+    store.returnToTopic()
+    expect(store.phase).toBe('topic')
+    expect(store.topic).toBe('学习 OpenStack')
+    expect(store.session).toBe(null)
+    expect(store.selectedOptionIds).toEqual([])
+    expect(localStorage.getItem('studycenter.courseDesign.sessionId')).toBe(null)
+    store.reset()
+    expect(store.topic).toBe('')
+  })
+
   it('does not request when selecting chips; Next sends one typed command', async () => {
     mockedRequest.mockResolvedValueOnce(snapshot())
     const store = useCourseDesignStore()

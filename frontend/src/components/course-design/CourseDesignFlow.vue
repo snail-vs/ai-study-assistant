@@ -22,7 +22,7 @@ async function answer(selected: string[], custom: string) {
   try { await store.answerQuestion() } catch { /* store exposes the error in the flow */ }
 }
 async function backFromQuestion() {
-  if (store.isGoalStage) { store.reset(); return }
+  if (store.isGoalStage) { store.returnToTopic(); return }
   try { await store.goBack() } catch { /* store exposes the error in the flow */ }
 }
 async function completeWithAI() { try { await store.completeWithAI() } catch { /* store exposes the error in the flow */ } }

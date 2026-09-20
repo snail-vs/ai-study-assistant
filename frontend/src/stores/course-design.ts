@@ -96,6 +96,12 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
     persistSessionId()
   }
 
+  function returnToTopic() {
+    const preservedTopic = topic.value
+    reset()
+    topic.value = preservedTopic
+  }
+
   async function restore() {
     const id = localStorage.getItem(SESSION_KEY)
     if (!id || loading.value) return null
@@ -203,7 +209,7 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
     session, topic, phase, question, isGoalStage, isBackgroundStage, brief, selectedScale,
     recommendedScale, outline, outlineConfirmed, revisionMessages, scaleOptions, selectedOptionIds,
     customAnswer, learningOutcomeDraft, priorKnowledgeDraft, loading, isBusy, activeCommand, error, operationError,
-    applySnapshot, reset, restore, begin, execute, toggleOption, setCustomAnswer, answerQuestion,
+    applySnapshot, reset, returnToTopic, restore, begin, execute, toggleOption, setCustomAnswer, answerQuestion,
     completeWithAI, goBack, restart, updateBrief, selectScale, generateOutline, reviseOutline,
     confirmOutline, generateCourse, setOutcomeDraft, setPriorKnowledgeDraft,
     setSelectedOptionIds, updateBriefAndGenerateOutline,

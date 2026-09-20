@@ -3,6 +3,7 @@
 import json
 
 from ..ai.gateway import AIGateway
+from .language_policy import infer_response_language, response_language_instruction
 from .prompts import COURSE_OUTLINE_SYSTEM
 from .schemas import CourseOutlineDraft, CourseOutlineRevisionDraft
 
@@ -16,12 +17,13 @@ class CourseOutlineAgent:
 
     async def generate(self, brief: dict, scale: str) -> list[dict[str, str]]:
         expected_count = _SCALE_COUNTS[scale]
+        language = infer_response_language(brief.get("topic", ""))
         result = await self.gateway.structured(
             [
-                {"role": "system", "content": COURSE_OUTLINE_SYSTEM},
+                {"role": "system", "content": COURSE_OUTLINE_SYSTEM + "\n" + response_language_instruction(language)},
                 {
                     "role": "user",
-                    "content": f"课程规模：{scale}（必须生成 {expected_count} 节）\n结构化需求：{json.dumps(brief, ensure_ascii=False)}",
+                    "content": f"responseLanguage={language}\n课程规模：{scale}（必须生成 {expected_count} 节）\n结构化需求：{json.dumps(brief, ensure_ascii=False)}",
                 },
             ],
             task="course_outline",
@@ -52,13 +54,15 @@ class CourseOutlineAgent:
         messages: list[dict],
     ) -> tuple[list[dict[str, str]], str]:
         expected_count = _SCALE_COUNTS[scale]
+        language = infer_response_language(brief.get("topic", ""))
         result = await self.gateway.structured(
             [
-                {"role": "system", "content": COURSE_OUTLINE_SYSTEM + "\n你正在修订已有大纲。保留合理结构，只按用户意见调整；必须返回 outline 和 assistant_message。"},
+                {"role": "system", "content": COURSE_OUTLINE_SYSTEM + "\n" + response_language_instruction(language) + "\n你正在修订已有大纲。保留合理结构，只按用户意见调整；必须返回 outline 和 assistant_message。"},
                 {
                     "role": "user",
                     "content": (
                         f"课程规模：{scale}（必须生成 {expected_count} 节）\n"
+                        f"responseLanguage={language}\n"
                         f"结构化需求：{json.dumps(brief, ensure_ascii=False)}\n"
                         f"当前大纲：{json.dumps(current_outline, ensure_ascii=False)}\n"
                         f"用户修改建议：{feedback}\n"

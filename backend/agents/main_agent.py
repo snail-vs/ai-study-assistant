@@ -16,6 +16,7 @@ from .schemas import (
     SectionQualityReport,
     SectionQualityReview,
 )
+from .language_policy import infer_response_language, response_language_instruction
 from ..ai.gateway import AIGateway
 
 
@@ -35,10 +36,11 @@ class MainAgent:
     ) -> KnowledgeCardDraft:
         constraints = {"quick": (2, 3, "300～500"), "standard": (5, 8, "500～900"), "series": (8, 12, "350～700")}.get(scale, (5, 8, "500～900"))
         brief_text = json.dumps(brief or {}, ensure_ascii=False)
+        language = infer_response_language((brief or {}).get("topic") or goal)
         plan_result = await self.gateway.structured(
             [
-                {"role": "system", "content": COURSE_PLANNER_SYSTEM + f"\n本次规模为 {scale}：章节数必须为 {constraints[0]}～{constraints[1]} 节，每节正文约 {constraints[2]} 字。series 只生成系列总览型主卡。"},
-                {"role": "user", "content": f"学习目标：{goal}\n结构化需求：{brief_text}"},
+                {"role": "system", "content": COURSE_PLANNER_SYSTEM + "\n" + response_language_instruction(language) + f"\n本次规模为 {scale}：章节数必须为 {constraints[0]}～{constraints[1]} 节，每节正文约 {constraints[2]} 字。series 只生成系列总览型主卡。"},
+                {"role": "user", "content": f"responseLanguage={language}\n学习目标：{goal}\n结构化需求：{brief_text}"},
             ],
             task="course_plan",
             schema=KnowledgeCardPlanDraft.model_json_schema(),
@@ -55,22 +57,29 @@ class MainAgent:
             ]
         if len(plan.sections) > constraints[1]:
             plan.sections = plan.sections[:constraints[1]]
-        filler_titles = ["核心概念回顾", "典型案例演练", "常见误区与边界", "综合应用任务", "学习路径总结"]
+        filler_titles = (
+            ["Core concept review", "Hands-on case", "Common pitfalls and boundaries", "Integrated application", "Learning path review"]
+            if language == "en"
+            else ["核心概念回顾", "典型案例演练", "常见误区与边界", "综合应用任务", "学习路径总结"]
+        )
         while len(plan.sections) < constraints[0]:
             index = len(plan.sections)
             title = filler_titles[index % len(filler_titles)]
             focus = (brief or {}).get("focus") or []
-            objective = f"围绕 {focus[index % len(focus)]} 巩固本课程的核心目标" if focus else "巩固本课程的核心目标并完成一次迁移练习"
+            if language == "en":
+                objective = f"Reinforce the course objective through {focus[index % len(focus)]}" if focus else "Reinforce the core course objective through a transfer exercise"
+            else:
+                objective = f"围绕 {focus[index % len(focus)]} 巩固本课程的核心目标" if focus else "巩固本课程的核心目标并完成一次迁移练习"
             plan.sections.append(SectionPlanDraft(title=title, teaching_objective=objective, content_type="practice"))
         sections: list[CardSectionDraft] = []
         for index, section in enumerate(plan.sections):
             content_result = await self.gateway.structured(
                 [
-                    {"role": "system", "content": CONTENT_AUTHOR_SYSTEM},
+                    {"role": "system", "content": CONTENT_AUTHOR_SYSTEM + "\n" + response_language_instruction(language)},
                     {
                         "role": "user",
                         "content": (
-                            f"学习目标：{goal}\n知识卡：{plan.title}\n知识卡摘要：{plan.summary}\n"
+                            f"responseLanguage={language}\n学习目标：{goal}\n知识卡：{plan.title}\n知识卡摘要：{plan.summary}\n"
                             f"章节序号：{index + 1}/{len(plan.sections)}\n章节标题：{section.title}\n"
                             f"教学目标：{section.teaching_objective}\n内容类型：{section.content_type}\n规模：{scale}，正文长度约 {constraints[2]} 字"
                         ),
@@ -82,11 +91,11 @@ class MainAgent:
             content = SectionContentDraft.model_validate(content_result)
             review_result = await self.gateway.structured(
                 [
-                    {"role": "system", "content": CONTENT_REVIEWER_SYSTEM},
+                    {"role": "system", "content": CONTENT_REVIEWER_SYSTEM + "\n" + response_language_instruction(language)},
                     {
                         "role": "user",
                         "content": (
-                            f"学习目标：{goal}\n知识卡：{plan.title}\n章节标题：{section.title}\n"
+                            f"responseLanguage={language}\n学习目标：{goal}\n知识卡：{plan.title}\n章节标题：{section.title}\n"
                             f"本节教学目标：{section.teaching_objective}\n内容类型：{section.content_type}\n\n"
                             f"待审查正文：\n{content.content_markdown}"
                         ),
@@ -126,11 +135,11 @@ class MainAgent:
                 )
                 repaired_result = await self.gateway.structured(
                     [
-                        {"role": "system", "content": CONTENT_REPAIR_SYSTEM},
+                        {"role": "system", "content": CONTENT_REPAIR_SYSTEM + "\n" + response_language_instruction(language)},
                         {
                             "role": "user",
                             "content": (
-                                f"章节标题：{section.title}\n教学目标：{section.teaching_objective}\n"
+                                f"responseLanguage={language}\n章节标题：{section.title}\n教学目标：{section.teaching_objective}\n"
                                 f"原正文：\n{content.content_markdown}\n\n"
                                 f"阻断问题：{json.dumps(review.blocking_issues, ensure_ascii=False)}\n"
                                 f"修订指令：{json.dumps(review.repair_instructions, ensure_ascii=False)}"
@@ -143,11 +152,11 @@ class MainAgent:
                 content = SectionContentDraft.model_validate(repaired_result)
                 final_review_result = await self.gateway.structured(
                     [
-                        {"role": "system", "content": CONTENT_REVIEWER_SYSTEM},
+                        {"role": "system", "content": CONTENT_REVIEWER_SYSTEM + "\n" + response_language_instruction(language)},
                         {
                             "role": "user",
                             "content": (
-                                f"学习目标：{goal}\n知识卡：{plan.title}\n章节标题：{section.title}\n"
+                                f"responseLanguage={language}\n学习目标：{goal}\n知识卡：{plan.title}\n章节标题：{section.title}\n"
                                 f"本节教学目标：{section.teaching_objective}\n内容类型：{section.content_type}\n\n"
                                 f"待审查正文：\n{content.content_markdown}"
                             ),

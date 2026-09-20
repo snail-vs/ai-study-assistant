@@ -49,6 +49,16 @@ describe('CourseDesignFlow', () => {
     expect(JSON.parse(mockedRequest.mock.calls[1][1]?.body as string)).toMatchObject({ topic: '学习 OpenStack 网络与 Nova' })
   })
 
+  it('returns from the first question to the topic page without losing the topic', async () => {
+    mockedRequest.mockResolvedValueOnce(snapshot({ brief: { topic: '学习 OpenStack' } }))
+    const wrapper = mount(CourseDesignFlow)
+    await wrapper.get('textarea[name="topic"]').setValue('学习 OpenStack')
+    await wrapper.get('form').trigger('submit')
+    await wrapper.get('button.secondary').trigger('click')
+    expect(wrapper.get('textarea[name="topic"]').element).toHaveProperty('value', '学习 OpenStack')
+    expect(localStorage.getItem('studycenter.courseDesign.sessionId')).toBe(null)
+  })
+
   it('runs update_brief before generate_outline with explicit two-stage feedback', async () => {
     mockedRequest.mockResolvedValueOnce(snapshot({ state: 'reviewing_brief', revision: 3, briefRevision: 2, brief, currentQuestion: null, recommendedScale: 'standard' }))
     const wrapper = mount(CourseDesignFlow)

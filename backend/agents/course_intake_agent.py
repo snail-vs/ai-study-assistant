@@ -4,6 +4,7 @@ import json
 import re
 
 from ..ai.gateway import AIGateway
+from .language_policy import infer_response_language, response_language_instruction
 from .prompts import COURSE_INTAKE_STATE_SYSTEM, COURSE_INTAKE_SYSTEM
 from .schemas import CourseIntakeResult, CourseIntakeStateResult
 
@@ -134,10 +135,14 @@ class CourseIntakeAgent:
     async def turn(self, messages: list[dict], brief: dict | None = None, scale: str | None = None) -> CourseIntakeResult:
         current = dict(brief or {})
         history = json.dumps(messages, ensure_ascii=False)
+        language = infer_response_language(current.get("topic") or next(
+            (item.get("content", "") for item in messages if item.get("role") == "user"),
+            "",
+        ))
         result = await self.gateway.structured(
             [
-                {"role": "system", "content": COURSE_INTAKE_SYSTEM},
-                {"role": "user", "content": f"已有 brief：{json.dumps(current, ensure_ascii=False)}\n对话：{history}\n用户选择的规模：{scale or '未选择'}"},
+                {"role": "system", "content": COURSE_INTAKE_SYSTEM + "\n" + response_language_instruction(language)},
+                {"role": "user", "content": f"responseLanguage={language}\n已有 brief：{json.dumps(current, ensure_ascii=False)}\n对话：{history}\n用户选择的规模：{scale or '未选择'}"},
             ],
             task="course_intake",
             schema=CourseIntakeResult.model_json_schema(),
@@ -159,14 +164,16 @@ class CourseIntakeAgent:
         custom_text: str = "",
     ) -> CourseIntakeStateResult:
         """Evaluate one explicit stage answer; the service owns transitions."""
+        language = infer_response_language(brief.get("topic", ""))
         result = await self.gateway.structured(
             [
-                {"role": "system", "content": COURSE_INTAKE_STATE_SYSTEM},
+                {"role": "system", "content": COURSE_INTAKE_STATE_SYSTEM + "\n" + response_language_instruction(language)},
                 {"role": "user", "content": json.dumps({
                     "task": "evaluate_intake_answer",
                     "stage": stage,
                     "brief": brief,
                     "answer": {"selectedLabels": selected_labels, "customText": custom_text},
+                    "responseLanguage": language,
                 }, ensure_ascii=False)},
             ],
             task="course_intake_state",
@@ -175,10 +182,11 @@ class CourseIntakeAgent:
         return normalize_state_result(result, stage=stage)
 
     async def start(self, *, topic: str) -> CourseIntakeStateResult:
+        language = infer_response_language(topic)
         result = await self.gateway.structured(
             [
-                {"role": "system", "content": COURSE_INTAKE_STATE_SYSTEM},
-                {"role": "user", "content": json.dumps({"task": "start_intake", "topic": topic}, ensure_ascii=False)},
+                {"role": "system", "content": COURSE_INTAKE_STATE_SYSTEM + "\n" + response_language_instruction(language)},
+                {"role": "user", "content": json.dumps({"task": "start_intake", "topic": topic, "responseLanguage": language}, ensure_ascii=False)},
             ],
             task="course_intake_state",
             schema=CourseIntakeStateResult.model_json_schema(),
@@ -186,11 +194,13 @@ class CourseIntakeAgent:
         return normalize_state_result(result, stage="collecting_goals")
 
     async def complete(self, *, stage: str, brief: dict) -> CourseIntakeStateResult:
+        language = infer_response_language(brief.get("topic", ""))
         result = await self.gateway.structured(
             [
-                {"role": "system", "content": COURSE_INTAKE_STATE_SYSTEM},
+                {"role": "system", "content": COURSE_INTAKE_STATE_SYSTEM + "\n" + response_language_instruction(language)},
                 {"role": "user", "content": json.dumps({
                     "task": "complete_with_ai", "stage": stage, "brief": brief,
+                    "responseLanguage": language,
                 }, ensure_ascii=False)},
             ],
             task="course_intake_state",

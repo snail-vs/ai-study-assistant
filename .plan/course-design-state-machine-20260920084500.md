@@ -166,3 +166,9 @@
 - 前端全量 Vitest、typecheck、build。
 - 浏览器人工走通两种主题：主题 → 多选目标 → 多选基础 → 确认 → 选规模 → 生成/修改/确认大纲 → 生成课程。
 - `git diff --check`，并检查课程设计样式无硬编码主题色。
+
+## 语言响应兼容记录（2026-09-20）
+
+- 课程设计 Agent 不新增状态或持久化字段；由原始 topic/brief/回答集中推导 `responseLanguage`。
+- 含中文自然语言的技术主题（例如 Kubernetes、Operator、CRD）统一使用 `zh-CN`；日文/韩文分别使用 `ja`/`ko`，其他语言使用 `same-as-user` 严格跟随原始 topic。Intake、outline、planner、content author/reviewer/revision 的 system 与 user 请求均携带明确语言策略。
+- Mock provider 与 Agent 测试覆盖中英文语言推导及技术专名保留；Agent 输出仍通过既有结构化 schema 校验。

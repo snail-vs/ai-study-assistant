@@ -3,6 +3,8 @@ import unittest
 from unittest.mock import patch
 
 from backend.agents.course_intake_agent import CourseIntakeAgent, CourseIntakeInvalidResult
+from backend.agents.outline_agent import CourseOutlineAgent
+from backend.agents.language_policy import infer_response_language
 from backend.ai.providers.mock import MockTextProvider
 from backend.course_design_api import course_design_outline, course_design_turn
 from backend.schemas import CourseBrief, CourseDesignTurnRequest, CourseOutlineRequest, CreateLearningSpaceRequest
@@ -44,6 +46,15 @@ class LegacyStateGateway:
             },
             "recommendedScale": "standard",
         }
+
+
+class CapturingLegacyGateway(LegacyStateGateway):
+    def __init__(self):
+        self.messages = None
+
+    async def structured(self, messages, *, task, schema):
+        self.messages = messages
+        return await super().structured(messages, task=task, schema=schema)
 
 
 class InvalidStateGateway:
@@ -133,6 +144,74 @@ class CourseIntakeTests(unittest.TestCase):
         ))
         self.assertEqual(result.decision.type, "advance")
         self.assertEqual(result.decision.next_stage, "collecting_background")
+
+    def test_response_language_policy_handles_technical_terms(self):
+        self.assertEqual(infer_response_language("学习 Kubernetes Operator 和 CRD"), "zh-CN")
+        self.assertEqual(infer_response_language("Learn Kubernetes Operator and CRD"), "same-as-user")
+        self.assertEqual(infer_response_language("Aprender Kubernetes y CRD"), "same-as-user")
+        self.assertEqual(infer_response_language("私はKubernetesを学びたい"), "ja")
+        self.assertEqual(infer_response_language("Kubernetes 오퍼레이터를 배우고 싶어요"), "ko")
+
+    def test_intake_agent_sends_explicit_response_language(self):
+        gateway = CapturingLegacyGateway()
+        asyncio.run(CourseIntakeAgent(gateway).start(topic="学习 Kubernetes Operator"))
+        self.assertIn("responseLanguage=zh-CN", gateway.messages[0]["content"])
+        self.assertIn('"responseLanguage": "zh-CN"', gateway.messages[1]["content"])
+
+    def test_answer_language_uses_topic_not_generated_labels(self):
+        gateway = CapturingLegacyGateway()
+        asyncio.run(CourseIntakeAgent(gateway).answer(
+            stage="collecting_goals",
+            brief={"topic": "Learn Kubernetes Operator"},
+            selected_labels=["理解核心原理", "完成实践"],
+        ))
+        self.assertIn("responseLanguage=same-as-user", gateway.messages[0]["content"])
+        self.assertIn('"responseLanguage": "same-as-user"', gateway.messages[1]["content"])
+
+        gateway = CapturingLegacyGateway()
+        asyncio.run(CourseIntakeAgent(gateway).answer(
+            stage="collecting_goals",
+            brief={"topic": "学习 Kubernetes Operator"},
+            selected_labels=["Understand Kubernetes architecture", "Write a CRD"],
+        ))
+        self.assertIn("responseLanguage=zh-CN", gateway.messages[0]["content"])
+        self.assertIn('"responseLanguage": "zh-CN"', gateway.messages[1]["content"])
+
+    def test_outline_agent_sends_language_policy(self):
+        class OutlineCapture:
+            def __init__(self):
+                self.messages = None
+
+            async def structured(self, messages, *, task, schema):
+                self.messages = messages
+                return {"outline": [{"title": f"OpenStack：阶段 {i}", "objective": f"掌握能力 {i}"} for i in range(1, 4)]}
+
+        gateway = OutlineCapture()
+        asyncio.run(CourseOutlineAgent(gateway).generate({"topic": "系统学习 OpenStack"}, "quick"))
+        self.assertIn("responseLanguage=zh-CN", gateway.messages[0]["content"])
+        self.assertIn("responseLanguage=zh-CN", gateway.messages[1]["content"])
+
+    def test_outline_revision_language_uses_topic_not_feedback(self):
+        class OutlineCapture:
+            def __init__(self):
+                self.messages = None
+
+            async def structured(self, messages, *, task, schema):
+                self.messages = messages
+                return {"outline": [
+                    {"title": "OpenStack: Overview", "objective": "Understand the architecture"},
+                    {"title": "OpenStack: Core concepts", "objective": "Understand the core concepts"},
+                    {"title": "OpenStack: Practice", "objective": "Apply the concepts"},
+                ], "assistant_message": "Updated."}
+
+        gateway = OutlineCapture()
+        asyncio.run(CourseOutlineAgent(gateway).revise(
+            {"topic": "Learn OpenStack"}, "quick", [{"title": "OpenStack: Overview", "objective": "Understand the architecture"}],
+            "请改成更适合初学者",
+            [],
+        ))
+        self.assertIn("responseLanguage=same-as-user", gateway.messages[0]["content"])
+        self.assertIn("responseLanguage=same-as-user", gateway.messages[1]["content"])
 
     def test_explicit_scale_does_not_overwrite_model_recommendation(self):
         gateway = FakeGateway()
