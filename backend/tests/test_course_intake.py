@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-from backend.agents.course_intake_agent import CourseIntakeAgent, CourseIntakeInvalidResult
+from backend.agents.course_intake_agent import CourseIntakeAgent, CourseIntakeInvalidResult, normalize_state_result
 from backend.agents.outline_agent import CourseOutlineAgent
 from backend.agents.language_policy import infer_response_language
 from backend.ai.providers.mock import MockTextProvider
@@ -142,6 +142,33 @@ class CourseIntakeTests(unittest.TestCase):
         result = asyncio.run(CourseIntakeAgent(gateway).start(topic="Python"))
         self.assertEqual(result.decision.next_stage, "collecting_background")
         self.assertEqual(result.next_question.stage, "collecting_background")
+
+    def test_legacy_question_stage_and_target_aliases_are_normalized(self):
+        result = normalize_state_result({
+            "decision": {"type": "advance", "nextStage": "collecting_prior_knowledge"},
+            "nextQuestion": {
+                "stage": "collecting_prior_knowledge",
+                "target": "prior_knowledge_levels",
+                "prompt": "你的基础？",
+                "options": [],
+            },
+        }, stage="collecting_goals")
+        self.assertEqual(result.decision.next_stage, "collecting_background")
+        self.assertEqual(result.next_question.stage, "collecting_background")
+        self.assertEqual(result.next_question.target, "priorKnowledgeLevels")
+
+    def test_question_stage_overrides_stale_target_from_previous_stage(self):
+        result = normalize_state_result({
+            "decision": {"type": "advance", "nextStage": "collecting_background"},
+            "nextQuestion": {
+                "stage": "collecting_background",
+                "target": "learningGoals",
+                "prompt": "你的基础？",
+                "options": [],
+            },
+        }, stage="collecting_goals")
+        self.assertEqual(result.next_question.stage, "collecting_background")
+        self.assertEqual(result.next_question.target, "priorKnowledgeLevels")
 
     def test_missing_decision_type_uses_next_stage_transition(self):
         gateway = StageShapeGateway(

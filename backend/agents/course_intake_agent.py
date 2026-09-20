@@ -25,6 +25,19 @@ _STAGE_ALIASES = {
     "reviewing_brief": "reviewing_brief",
 }
 
+_QUESTION_TARGET_ALIASES = {
+    "learninggoals": "learningGoals",
+    "learning_goals": "learningGoals",
+    "learning-goals": "learningGoals",
+    "goals": "learningGoals",
+    "priorknowledgelevels": "priorKnowledgeLevels",
+    "prior_knowledge_levels": "priorKnowledgeLevels",
+    "prior-knowledge-levels": "priorKnowledgeLevels",
+    "prior_knowledge": "priorKnowledgeLevels",
+    "prior-knowledge": "priorKnowledgeLevels",
+    "background": "priorKnowledgeLevels",
+}
+
 
 def _stage(value: object, fallback: str) -> str:
     fallback_key = str(fallback or "").strip().lower()
@@ -41,6 +54,18 @@ def _stage(value: object, fallback: str) -> str:
 def _option_id(value: str, index: int) -> str:
     slug = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "-", value).strip("-").lower()
     return slug[:80] or f"option-{index + 1}"
+
+
+def _question_target(value: object, question_stage: str) -> str:
+    # The normalized question stage is authoritative. Older models sometimes
+    # reuse the previous target when advancing; accepting that value would
+    # make a valid stage transition fail the service's canonical guard.
+    canonical = "learningGoals" if question_stage == "collecting_goals" else "priorKnowledgeLevels"
+    if value is None or not str(value).strip():
+        return canonical
+    raw = str(value).strip()
+    alias = _QUESTION_TARGET_ALIASES.get(raw.lower())
+    return canonical if alias in {"learningGoals", "priorKnowledgeLevels"} else canonical
 
 
 def normalize_state_result(raw: dict, *, stage: str) -> CourseIntakeStateResult:
@@ -86,9 +111,7 @@ def normalize_state_result(raw: dict, *, stage: str) -> CourseIntakeStateResult:
             raise CourseIntakeInvalidResult("nextQuestion 不是对象")
         question = dict(raw_question)
         question_stage = _stage(question.get("stage"), target_stage)
-        target = question.get("target")
-        if not target:
-            target = "learningGoals" if question_stage == "collecting_goals" else "priorKnowledgeLevels"
+        target = _question_target(question.get("target"), question_stage)
         title = question.get("title") or question.get("question") or question.get("prompt") or question.get("text")
         if not isinstance(title, str) or not title.strip():
             raise CourseIntakeInvalidResult("nextQuestion 缺少 title")

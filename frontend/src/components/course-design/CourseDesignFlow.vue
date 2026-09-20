@@ -44,6 +44,7 @@ async function backFromOutline() { try { await store.goBack() } catch { /* store
     <form
       v-if="store.phase === 'topic'"
       class="course-design-panel course-topic-step"
+      :aria-busy="store.loading"
       @submit.prevent="start"
     >
       <span class="eyebrow">创建你的课程</span><h2>你想学习什么？</h2><textarea
@@ -68,6 +69,16 @@ async function backFromOutline() { try { await store.goBack() } catch { /* store
           {{ store.loading ? '正在准备…' : '开始设计课程' }}
         </button>
       </div>
+      <div
+        v-if="store.loading"
+        class="course-operation-status"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <i class="status-spinner" />
+        <span>正在准备课程设计…</span>
+      </div>
     </form>
     <MultiSelectQuestion
       v-else-if="store.phase === 'intake' && store.question"
@@ -76,6 +87,8 @@ async function backFromOutline() { try { await store.goBack() } catch { /* store
       :selected="store.selectedOptionIds"
       :custom-text="store.customAnswer"
       :busy="store.loading"
+      :active-command="store.activeCommand"
+      :error="store.error"
       @submit="answer"
       @back="backFromQuestion"
       @complete="completeWithAI"
@@ -104,7 +117,7 @@ async function backFromOutline() { try { await store.goBack() } catch { /* store
       @generate-course="generateCourse"
     />
     <div
-      v-if="store.error && store.phase !== 'outline'"
+      v-if="store.error && store.phase !== 'outline' && store.phase !== 'intake'"
       class="course-design-error"
       role="alert"
     >

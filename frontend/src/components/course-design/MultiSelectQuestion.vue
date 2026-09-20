@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue'
 import type { CourseDesignQuestion } from '../../stores/course-design'
 
-const props = defineProps<{ question: CourseDesignQuestion; selected?: string[]; customText?: string; busy?: boolean }>()
+const props = defineProps<{ question: CourseDesignQuestion; selected?: string[]; customText?: string; busy?: boolean; activeCommand?: string | null; error?: string }>()
 const emit = defineEmits<{ submit: [selected: string[], customText: string]; back: [] ; complete: [] }>()
 const selected = ref<string[]>([...(props.selected || [])])
 const customText = ref(props.customText || '')
@@ -23,10 +23,28 @@ function submit() { emit('submit', selected.value, customText.value) }
   <section
     class="course-design-panel course-question"
     aria-live="polite"
+    :aria-busy="busy"
   >
     <div class="course-design-stepper">
       <span>课程需求澄清</span><strong>{{ question.stage === 'collecting_goals' ? '1 / 3' : '2 / 3' }}</strong>
     </div>
+    <div
+      v-if="busy"
+      class="course-operation-status"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <i class="status-spinner" />
+      <span>{{ activeCommand === 'complete_with_ai' ? 'AI 正在补全你的学习信息…' : activeCommand === 'go_back' ? '正在返回上一步…' : '正在整理你的回答…' }}</span>
+    </div>
+    <p
+      v-if="error"
+      class="course-design-error"
+      role="alert"
+    >
+      {{ error }}
+    </p>
     <div class="course-question-copy">
       <span class="course-speaker">AI</span>
       <div>

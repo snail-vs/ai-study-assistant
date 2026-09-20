@@ -8,7 +8,7 @@ import { useCourseDesignStore } from '../../stores/course-design'
 vi.mock('../../api/client', () => ({ request: vi.fn() }))
 const mockedRequest = vi.mocked(request)
 const brief = { topic: 'Kubernetes', learningOutcome: '掌握原理', priorKnowledge: '有基础', learningGoals: ['理解原理'], priorKnowledgeLevels: ['有基础'] }
-const question = { id: 'goal-1', stage: 'collecting_goals' as const, target: 'learningGoals' as const, type: 'multi_select_with_text' as const, title: '目标', description: '', options: [], allowCustom: true, minimumSelections: 0 }
+const question = { id: 'goal-1', stage: 'collecting_goals' as const, target: 'learningGoals' as const, type: 'multi_select_with_text' as const, title: '目标', description: '', options: [{ id: 'goal-a', label: '理解原理' }], allowCustom: true, minimumSelections: 0 }
 const snapshot = (overrides: Record<string, unknown> = {}) => ({ sessionId: 's', state: 'collecting_goals' as const, revision: 1, briefRevision: 0, brief: { topic: 'Kubernetes' }, currentQuestion: question, recommendedScale: 'standard' as const, selectedScale: null, outline: [], outlineConfirmed: false, allowedActions: ['answer_question'], operation: {}, outlineRevisionMessages: [], ...overrides })
 
 describe('CourseDesignFlow', () => {
@@ -57,6 +57,36 @@ describe('CourseDesignFlow', () => {
     await wrapper.get('button.secondary').trigger('click')
     expect(wrapper.get('textarea[name="topic"]').element).toHaveProperty('value', '学习 OpenStack')
     expect(localStorage.getItem('studycenter.courseDesign.sessionId')).toBe(null)
+  })
+
+  it('shows answer loading while the command is pending and hides it after success', async () => {
+    mockedRequest.mockResolvedValueOnce(snapshot())
+    const wrapper = mount(CourseDesignFlow)
+    await wrapper.get('textarea[name="topic"]').setValue('学习 OpenStack')
+    await wrapper.get('form').trigger('submit')
+    await wrapper.get('.course-option-chip').trigger('click')
+    let resolveAnswer!: (value: unknown) => void
+    mockedRequest.mockReturnValueOnce(new Promise((resolve) => { resolveAnswer = resolve }))
+    const answering = wrapper.get('button.primary').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('正在整理你的回答…'))
+    expect(wrapper.get('.course-question').attributes('aria-live')).toBe('polite')
+    expect(wrapper.get('.course-question').attributes('aria-busy')).toBe('true')
+    resolveAnswer(snapshot({ revision: 2, state: 'collecting_background', brief: { topic: 'OpenStack', learningGoals: ['理解原理'], learningOutcome: '掌握原理' }, currentQuestion: { ...question, id: 'background-1', stage: 'collecting_background', target: 'priorKnowledgeLevels' } }))
+    await answering
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('正在整理你的回答…')
+  })
+
+  it('shows the answer error after a failed command and keeps the action available', async () => {
+    mockedRequest.mockResolvedValueOnce(snapshot())
+    const wrapper = mount(CourseDesignFlow)
+    await wrapper.get('textarea[name="topic"]').setValue('学习 OpenStack')
+    await wrapper.get('form').trigger('submit')
+    await wrapper.get('.course-option-chip').trigger('click')
+    mockedRequest.mockRejectedValueOnce(new Error('回答服务不可用'))
+    await wrapper.get('button.primary').trigger('click')
+    expect(wrapper.get('[role="alert"]').text()).toContain('回答服务不可用')
+    expect(wrapper.get('button.primary').text()).toContain('下一步')
   })
 
   it('runs update_brief before generate_outline with explicit two-stage feedback', async () => {

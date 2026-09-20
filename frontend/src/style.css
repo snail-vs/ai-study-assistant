@@ -148,6 +148,7 @@ button { cursor: pointer; }
 .course-scale-card small, .course-scale-card span { color: var(--course-muted); font-size: 11px; line-height: 1.45; }
 .course-scale-card em { color: var(--course-accent); font-size: 10px; font-style: normal; }
 .course-outline-loading { display: flex; align-items: center; gap: 9px; color: var(--course-muted); }
+.course-operation-status { display: flex; align-items: center; gap: 9px; color: var(--course-muted); font-size: 12px; }
 .course-outline-list { margin: 0; padding-left: 24px; }
 .course-outline-list li { padding: 9px 0; }
 .course-outline-list span { display: block; margin-top: 4px; color: var(--course-muted); font-size: 12px; line-height: 1.5; }
