@@ -11,15 +11,18 @@ watch(() => props.session.outlineRevisionMessages.length, (count) => {
 })
 const loadingLabel = computed(() => ({
   generate_outline: '正在生成课程大纲…',
-  revise_outline: '正在根据你的建议修改大纲…',
   confirm_outline: '正在确认大纲…',
   generate_course: '正在提交课程生成…',
 }[props.activeCommand || ''] || ''))
+const reviseLoading = computed(() => props.busy && props.activeCommand === 'revise_outline')
 function revise() { if (feedback.value.trim()) emit('revise', feedback.value.trim()) }
 </script>
 
 <template>
-  <section class="course-design-panel course-outline-review">
+  <section
+    class="course-design-panel course-outline-review"
+    :aria-busy="busy"
+  >
     <div class="course-design-head">
       <div><span class="eyebrow">课程大纲</span><h2>确认你的学习路径</h2></div><button
         class="secondary"
@@ -29,13 +32,6 @@ function revise() { if (feedback.value.trim()) emit('revise', feedback.value.tri
       >
         返回调整需求
       </button>
-    </div>
-    <div
-      v-if="busy && loadingLabel"
-      class="course-outline-loading"
-      aria-live="polite"
-    >
-      <i class="status-spinner" /><span>{{ loadingLabel }}</span>
     </div>
     <p
       v-if="error"
@@ -65,7 +61,10 @@ function revise() { if (feedback.value.trim()) emit('revise', feedback.value.tri
         :class="message.role"
       >
         <span>{{ message.role === 'user' ? '你' : 'AI' }}</span><p>{{ message.content }}</p>
-      </article><form @submit.prevent="revise">
+      </article><form
+        :aria-busy="reviseLoading"
+        @submit.prevent="revise"
+      >
         <input
           v-model="feedback"
           :disabled="busy"
@@ -74,9 +73,18 @@ function revise() { if (feedback.value.trim()) emit('revise', feedback.value.tri
           type="submit"
           :disabled="busy || !feedback.trim()"
         >
-          修改大纲
+          {{ reviseLoading ? '正在修改…' : '修改大纲' }}
         </button>
       </form>
+      <div
+        v-if="reviseLoading"
+        class="course-operation-status"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <i class="status-spinner" /><span>正在根据你的建议修改大纲…</span>
+      </div>
     </div>
     <div class="course-design-actions">
       <button
@@ -97,6 +105,15 @@ function revise() { if (feedback.value.trim()) emit('revise', feedback.value.tri
           确认并生成课程
         </button>
       </template>
+    </div>
+    <div
+      v-if="busy && loadingLabel"
+      class="course-operation-status"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <i class="status-spinner" /><span>{{ loadingLabel }}</span>
     </div>
   </section>
 </template>
