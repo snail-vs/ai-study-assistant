@@ -84,6 +84,7 @@ async function backFromOutline() { try { await store.goBack() } catch { /* store
       v-else-if="store.phase === 'intake' && store.question"
       :key="store.question.id"
       :question="store.question"
+      :stage="store.session?.state === 'collecting_background' ? 'collecting_background' : 'collecting_goals'"
       :selected="store.selectedOptionIds"
       :custom-text="store.customAnswer"
       :busy="store.loading"

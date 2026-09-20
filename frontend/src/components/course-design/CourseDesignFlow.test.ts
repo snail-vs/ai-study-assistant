@@ -68,13 +68,14 @@ describe('CourseDesignFlow', () => {
     let resolveAnswer!: (value: unknown) => void
     mockedRequest.mockReturnValueOnce(new Promise((resolve) => { resolveAnswer = resolve }))
     const answering = wrapper.get('button.primary').trigger('click')
-    await vi.waitFor(() => expect(wrapper.text()).toContain('正在整理你的回答…'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('正在提交回答…'))
+    expect(wrapper.get('button.primary').text()).toContain('正在提交回答…')
     expect(wrapper.get('.course-question').attributes('aria-live')).toBe('polite')
     expect(wrapper.get('.course-question').attributes('aria-busy')).toBe('true')
     resolveAnswer(snapshot({ revision: 2, state: 'collecting_background', brief: { topic: 'OpenStack', learningGoals: ['理解原理'], learningOutcome: '掌握原理' }, currentQuestion: { ...question, id: 'background-1', stage: 'collecting_background', target: 'priorKnowledgeLevels' } }))
     await answering
     await flushPromises()
-    expect(wrapper.text()).not.toContain('正在整理你的回答…')
+    expect(wrapper.text()).not.toContain('正在提交回答…')
   })
 
   it('shows the answer error after a failed command and keeps the action available', async () => {

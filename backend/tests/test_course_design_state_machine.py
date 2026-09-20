@@ -136,6 +136,37 @@ class CourseDesignStateMachineTests(unittest.TestCase):
                 payload={"answer": {"questionId": session.current_question.id, "selectedOptionIds": ["understand-core"]}},
             )))
 
+    def test_background_answer_ignores_known_goal_fields(self):
+        class CrossStageProvider(MockTextProvider):
+            async def structured(self, messages, *, task, schema):
+                result = await super().structured(messages, task=task, schema=schema)
+                if task == "course_intake_state" and '"stage": "collecting_background"' in messages[-1]["content"] and ("evaluate_intake_answer" in messages[-1]["content"] or "complete_with_ai" in messages[-1]["content"]):
+                    result["briefPatch"].update({"learningOutcome": "不应覆盖的目标", "learningGoals": ["不应覆盖的目标"]})
+                return result
+
+        service = CourseDesignService(self.db, "user-1", CrossStageProvider())
+        session = asyncio.run(service.create("Python"))
+        session = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="goals", expectedRevision=session.revision, type="complete_with_ai", payload={},
+        )))
+        session = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="background", expectedRevision=session.revision, type="answer_question",
+            payload={"answer": {"questionId": session.current_question.id, "selectedOptionIds": [], "customText": "有 Python 基础"}},
+        )))
+        self.assertEqual(session.state, "reviewing_brief")
+        self.assertNotEqual(session.brief.learning_outcome, "不应覆盖的目标")
+
+        service = CourseDesignService(self.db, "user-1", CrossStageProvider())
+        session = asyncio.run(service.create("Python"))
+        session = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="goals-2", expectedRevision=session.revision, type="complete_with_ai", payload={},
+        )))
+        session = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="background-2", expectedRevision=session.revision, type="complete_with_ai", payload={},
+        )))
+        self.assertEqual(session.state, "reviewing_brief")
+        self.assertNotEqual(session.brief.learning_outcome, "不应覆盖的目标")
+
     def test_missing_summary_repair_failure_does_not_advance_session(self):
         class MissingSummaryProvider(MockTextProvider):
             async def structured(self, messages, *, task, schema):

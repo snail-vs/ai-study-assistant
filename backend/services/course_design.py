@@ -43,6 +43,7 @@ ALLOWED_ACTIONS = {
 
 GOAL_FIELDS = {"learningGoals", "learningGoalDetails", "learningOutcome"}
 BACKGROUND_FIELDS = {"priorKnowledgeLevels", "priorKnowledgeDetails", "priorKnowledge"}
+INTAKE_FIELDS = GOAL_FIELDS | BACKGROUND_FIELDS
 SCALE_VALUES = {"quick", "standard", "series"}
 
 
@@ -182,8 +183,8 @@ class CourseDesignService:
         except ValueError as exc:
             raise CourseDesignInvalid(f"AI 返回的课程需求格式无效：{exc}") from exc
         allowed = GOAL_FIELDS if session.state == "collecting_goals" else BACKGROUND_FIELDS
-        unauthorized = set(agent_result.brief_patch) - allowed
-        if unauthorized:
+        unknown = set(agent_result.brief_patch) - INTAKE_FIELDS
+        if unknown:
             raise CourseDesignInvalid("Agent 返回了当前阶段禁止修改的字段")
         patch = {key: value for key, value in agent_result.brief_patch.items() if key in allowed}
         if session.state == "collecting_goals":
@@ -244,9 +245,10 @@ class CourseDesignService:
             except ValueError as exc:
                 raise CourseDesignInvalid(f"AI 返回的课程需求格式无效：{exc}") from exc
             allowed = GOAL_FIELDS if session.state == "collecting_goals" else BACKGROUND_FIELDS
-            if set(result.brief_patch) - allowed:
+            if set(result.brief_patch) - INTAKE_FIELDS:
                 raise CourseDesignInvalid("Agent 返回了当前阶段禁止修改的字段")
-            session.brief = CourseBrief.model_validate({**session.brief, **result.brief_patch}).model_dump(by_alias=True)
+            patch = {key: value for key, value in result.brief_patch.items() if key in allowed}
+            session.brief = CourseBrief.model_validate({**session.brief, **patch}).model_dump(by_alias=True)
             if session.state == "collecting_goals":
                 if result.decision.type != "advance" or result.decision.next_stage != "collecting_background":
                     raise CourseDesignInvalid("Agent 未完成目标阶段")

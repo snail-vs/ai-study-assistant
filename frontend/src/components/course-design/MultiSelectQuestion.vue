@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue'
 import type { CourseDesignQuestion } from '../../stores/course-design'
 
-const props = defineProps<{ question: CourseDesignQuestion; selected?: string[]; customText?: string; busy?: boolean; activeCommand?: string | null; error?: string }>()
+const props = defineProps<{ question: CourseDesignQuestion; stage?: CourseDesignQuestion['stage']; selected?: string[]; customText?: string; busy?: boolean; activeCommand?: string | null; error?: string }>()
 const emit = defineEmits<{ submit: [selected: string[], customText: string]; back: [] ; complete: [] }>()
 const selected = ref<string[]>([...(props.selected || [])])
 const customText = ref(props.customText || '')
@@ -26,17 +26,7 @@ function submit() { emit('submit', selected.value, customText.value) }
     :aria-busy="busy"
   >
     <div class="course-design-stepper">
-      <span>课程需求澄清</span><strong>{{ question.stage === 'collecting_goals' ? '1 / 3' : '2 / 3' }}</strong>
-    </div>
-    <div
-      v-if="busy"
-      class="course-operation-status"
-      role="status"
-      aria-live="polite"
-      aria-busy="true"
-    >
-      <i class="status-spinner" />
-      <span>{{ activeCommand === 'complete_with_ai' ? 'AI 正在补全你的学习信息…' : activeCommand === 'go_back' ? '正在返回上一步…' : '正在整理你的回答…' }}</span>
+      <span>课程需求澄清</span><strong>{{ stage === 'collecting_background' ? '2 / 3' : '1 / 3' }}</strong>
     </div>
     <p
       v-if="error"
@@ -85,7 +75,7 @@ function submit() { emit('submit', selected.value, customText.value) }
         :disabled="busy"
         @click="emit('back')"
       >
-        返回
+        {{ activeCommand === 'go_back' ? '正在返回…' : '返回' }}
       </button>
       <button
         type="button"
@@ -93,7 +83,7 @@ function submit() { emit('submit', selected.value, customText.value) }
         :disabled="busy"
         @click="emit('complete')"
       >
-        AI 帮我补全
+        {{ activeCommand === 'complete_with_ai' ? '正在补全…' : 'AI 帮我补全' }}
       </button>
       <button
         type="button"
@@ -101,8 +91,18 @@ function submit() { emit('submit', selected.value, customText.value) }
         :disabled="busy || (!selected.length && !customText.trim())"
         @click="submit"
       >
-        下一步
+        {{ activeCommand === 'answer_question' ? '正在提交回答…' : '下一步' }}
       </button>
+    </div>
+    <div
+      v-if="busy"
+      class="course-operation-status"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <i class="status-spinner" />
+      <span>{{ activeCommand === 'complete_with_ai' ? 'AI 正在补全你的学习信息…' : activeCommand === 'go_back' ? '正在返回上一步…' : '正在提交你的回答…' }}</span>
     </div>
   </section>
 </template>

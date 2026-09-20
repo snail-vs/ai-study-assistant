@@ -34,4 +34,9 @@ describe('MultiSelectQuestion', () => {
     expect(wrapper.findAll('button.course-option-chip')[1].classes()).toContain('selected')
     expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('基础补充')
   })
+
+  it('uses the server stage for the step number', async () => {
+    const wrapper = mount(MultiSelectQuestion, { props: { question, stage: 'collecting_background' } })
+    expect(wrapper.text()).toContain('2 / 3')
+  })
 })
