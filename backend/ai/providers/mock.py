@@ -60,6 +60,24 @@ class MockTextProvider:
             english = payload.get("responseLanguage") in ("en", "same-as-user")
             if payload.get("task") == "start_intake":
                 stage = "collecting_goals"
+            if payload.get("task") == "repair_intake_state":
+                if stage == "collecting_goals":
+                    return {
+                        "briefPatch": {"learningOutcome": f"掌握 {topic} 核心原理并完成实践"},
+                        "decision": {"type": "advance", "nextStage": "collecting_background"},
+                        "assistantMessage": "接下来了解你的个人基础。",
+                        "nextQuestion": {
+                            "id": "background-1", "stage": "collecting_background", "target": "priorKnowledgeLevels",
+                            "type": "multi_select_with_text", "title": "你目前具备哪些相关基础？", "description": "可以多选，也可以补充说明。",
+                            "options": [], "allowCustom": True, "minimumSelections": 0,
+                        }, "recommendedScale": "standard",
+                    }
+                return {
+                    "briefPatch": {"priorKnowledge": f"具备 {topic} 相关基础"},
+                    "decision": {"type": "advance", "nextStage": "reviewing_brief"},
+                    "assistantMessage": "需求信息已经比较清楚，请确认课程摘要和规模。",
+                    "nextQuestion": None, "recommendedScale": "standard",
+                }
             if payload.get("task") == "complete_with_ai" and stage == "collecting_goals":
                 return {
                     "briefPatch": {

@@ -73,6 +73,7 @@ class StageShapeGateway:
         result = {
             "stage": self.top_stage or "collecting_goals",
             "ready": False,
+            "briefPatch": {"learningOutcome": "掌握主题核心能力"},
             "decision": {"nextStage": self.decision_stage or "collecting_goals"},
             "nextQuestion": {
                 "prompt": "问题",
@@ -154,6 +155,50 @@ class CourseIntakeTests(unittest.TestCase):
         ))
         self.assertEqual(result.decision.type, "advance")
         self.assertEqual(result.decision.next_stage, "collecting_background")
+
+    def test_answer_repairs_missing_learning_outcome_once(self):
+        class RepairGateway:
+            def __init__(self, repair_complete=True):
+                self.calls = 0
+                self.repair_complete = repair_complete
+
+            async def structured(self, messages, *, task, schema):
+                self.calls += 1
+                if self.calls == 1:
+                    return {"briefPatch": {}, "decision": {"type": "advance", "nextStage": "collecting_background"}, "nextQuestion": {
+                        "id": "background-1", "stage": "collecting_background", "target": "priorKnowledgeLevels", "title": "基础？", "options": []}}
+                return {"briefPatch": {"learningOutcome": "掌握核心能力"} if self.repair_complete else {}, "decision": {"type": "advance", "nextStage": "collecting_background"}, "nextQuestion": {
+                    "id": "background-1", "stage": "collecting_background", "target": "priorKnowledgeLevels", "title": "基础？", "options": []}}
+
+        gateway = RepairGateway()
+        result = asyncio.run(CourseIntakeAgent(gateway).answer(
+            stage="collecting_goals", brief={"topic": "Python"}, selected_labels=["实践"],
+        ))
+        self.assertEqual(gateway.calls, 2)
+        self.assertEqual(result.brief_patch["learningOutcome"], "掌握核心能力")
+
+        gateway = RepairGateway(repair_complete=False)
+        with self.assertRaises(CourseIntakeInvalidResult):
+            asyncio.run(CourseIntakeAgent(gateway).answer(
+                stage="collecting_goals", brief={"topic": "Python"}, selected_labels=["实践"],
+            ))
+        self.assertEqual(gateway.calls, 2)
+
+    def test_complete_repairs_missing_prior_knowledge_once(self):
+        class RepairGateway:
+            def __init__(self):
+                self.calls = 0
+
+            async def structured(self, messages, *, task, schema):
+                self.calls += 1
+                return {"briefPatch": {} if self.calls == 1 else {"priorKnowledge": "了解 Python 基础"}, "decision": {"type": "advance", "nextStage": "reviewing_brief"}, "nextQuestion": None}
+
+        gateway = RepairGateway()
+        result = asyncio.run(CourseIntakeAgent(gateway).complete(
+            stage="collecting_background", brief={"topic": "Python", "priorKnowledgeLevels": ["基础"]},
+        ))
+        self.assertEqual(gateway.calls, 2)
+        self.assertEqual(result.brief_patch["priorKnowledge"], "了解 Python 基础")
 
     def test_response_language_policy_handles_technical_terms(self):
         self.assertEqual(infer_response_language("学习 Kubernetes Operator 和 CRD"), "zh-CN")

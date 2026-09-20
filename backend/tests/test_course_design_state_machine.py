@@ -136,6 +136,29 @@ class CourseDesignStateMachineTests(unittest.TestCase):
                 payload={"answer": {"questionId": session.current_question.id, "selectedOptionIds": ["understand-core"]}},
             )))
 
+    def test_missing_summary_repair_failure_does_not_advance_session(self):
+        class MissingSummaryProvider(MockTextProvider):
+            async def structured(self, messages, *, task, schema):
+                if task == "course_intake_state" and any(token in messages[-1]["content"] for token in ("evaluate_intake_answer", "repair_intake_state")):
+                    return {
+                        "briefPatch": {},
+                        "decision": {"type": "advance", "nextStage": "collecting_background"},
+                        "nextQuestion": {"id": "background-1", "stage": "collecting_background", "target": "priorKnowledgeLevels", "title": "基础？", "options": []},
+                    }
+                return await super().structured(messages, task=task, schema=schema)
+
+        service = CourseDesignService(self.db, "user-1", MissingSummaryProvider())
+        session = asyncio.run(service.create("Python"))
+        revision = session.revision
+        with self.assertRaises(CourseDesignInvalid):
+            asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+                commandId="missing-summary", expectedRevision=session.revision, type="answer_question",
+                payload={"answer": {"questionId": session.current_question.id, "selectedOptionIds": ["understand-core"]}},
+            )))
+        persisted = service.get(session.session_id)
+        self.assertEqual(persisted.revision, revision)
+        self.assertEqual(persisted.state, "collecting_goals")
+
     def test_retry_requires_owned_failed_space_and_reuses_it(self):
         failed = LearningSpace(
             id="failed-space", user_id="user-1", title="旧课程", learning_goal="旧目标",

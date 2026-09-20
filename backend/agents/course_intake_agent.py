@@ -133,6 +133,87 @@ class CourseIntakeAgent:
     def __init__(self, gateway: AIGateway | None = None) -> None:
         self.gateway = gateway or AIGateway()
 
+    @staticmethod
+    def _missing_transition_summary(result: CourseIntakeStateResult, stage: str) -> str | None:
+        if result.decision.type != "advance":
+            return None
+        if stage == "collecting_goals" and result.decision.next_stage == "collecting_background":
+            if not str(result.brief_patch.get("learningOutcome", "") or "").strip():
+                return "learningOutcome"
+        if stage == "collecting_background" and result.decision.next_stage == "reviewing_brief":
+            if not str(result.brief_patch.get("priorKnowledge", "") or "").strip():
+                return "priorKnowledge"
+        return None
+
+    async def _repair_transition_result(
+        self,
+        *,
+        stage: str,
+        brief: dict,
+        answer: dict,
+        original: dict,
+        missing_field: str,
+        language: str,
+    ) -> CourseIntakeStateResult:
+        """Ask the same structured intake contract to repair one unsafe transition."""
+        result = await self.gateway.structured(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        COURSE_INTAKE_STATE_SYSTEM
+                        + "\n"
+                        + response_language_instruction(language)
+                        + f"\n这是一次协议修复请求。当前阶段必须保持为 {stage}，只允许进入下一个合法阶段；必须补齐非空 {missing_field}。"
+                        "请基于原始 brief、用户回答和原响应补齐字段，只返回完整的课程需求状态协议，不得自行跳跃阶段。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "task": "repair_intake_state",
+                            "stage": stage,
+                            "brief": brief,
+                            "answer": answer,
+                            "originalResponse": original,
+                            "missingField": missing_field,
+                            "responseLanguage": language,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            task="course_intake_state",
+            schema=CourseIntakeStateResult.model_json_schema(),
+        )
+        return normalize_state_result(result, stage=stage)
+
+    async def _normalize_with_transition_repair(
+        self,
+        *,
+        result: dict,
+        stage: str,
+        brief: dict,
+        answer: dict,
+        language: str,
+    ) -> CourseIntakeStateResult:
+        parsed = normalize_state_result(result, stage=stage)
+        missing = self._missing_transition_summary(parsed, stage)
+        if not missing:
+            return parsed
+        repaired = await self._repair_transition_result(
+            stage=stage,
+            brief=brief,
+            answer=answer,
+            original=result,
+            missing_field=missing,
+            language=language,
+        )
+        if self._missing_transition_summary(repaired, stage):
+            raise CourseIntakeInvalidResult(f"课程需求 Agent 修复后仍缺少 {missing}")
+        return repaired
+
     async def turn(self, messages: list[dict], brief: dict | None = None, scale: str | None = None) -> CourseIntakeResult:
         current = dict(brief or {})
         history = json.dumps(messages, ensure_ascii=False)
@@ -180,7 +261,13 @@ class CourseIntakeAgent:
             task="course_intake_state",
             schema=CourseIntakeStateResult.model_json_schema(),
         )
-        return normalize_state_result(result, stage=stage)
+        return await self._normalize_with_transition_repair(
+            result=result,
+            stage=stage,
+            brief=brief,
+            answer={"selectedLabels": selected_labels, "customText": custom_text},
+            language=language,
+        )
 
     async def start(self, *, topic: str) -> CourseIntakeStateResult:
         language = infer_response_language(topic)
@@ -207,4 +294,10 @@ class CourseIntakeAgent:
             task="course_intake_state",
             schema=CourseIntakeStateResult.model_json_schema(),
         )
-        return normalize_state_result(result, stage=stage)
+        return await self._normalize_with_transition_repair(
+            result=result,
+            stage=stage,
+            brief=brief,
+            answer={},
+            language=language,
+        )

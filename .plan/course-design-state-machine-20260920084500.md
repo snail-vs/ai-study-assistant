@@ -172,3 +172,8 @@
 - 课程设计 Agent 不新增状态或持久化字段；由原始 topic/brief/回答集中推导 `responseLanguage`。
 - 当前产品默认所有课程设计响应使用 `zh-CN`（包括纯英文技术 topic）；保留语言策略入口，未来接入用户/系统 locale 后再切换。Intake、outline、planner、content author/reviewer/revision 的 system 与 user 请求均携带明确语言策略。
 - Mock provider 与 Agent 测试覆盖中英文语言推导及技术专名保留；Agent 输出仍通过既有结构化 schema 校验。
+
+## Intake 摘要修复记录（2026-09-20）
+
+- 目标阶段进入 `collecting_background` 时，Agent 协议必须包含非空 `learningOutcome`；基础阶段进入 `reviewing_brief` 时必须包含非空 `priorKnowledge`。
+- 首次结构化结果缺少阶段摘要时，CourseIntakeAgent 仅发起一次带原始 brief、用户回答和原响应的同 schema 修复请求；修复仍不完整则返回受控 invalid，不推进服务端状态或 revision。
