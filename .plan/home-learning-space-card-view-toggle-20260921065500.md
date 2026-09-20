@@ -16,9 +16,9 @@
 
 ## 前端改动
 
-### `frontend/src/App.vue`
+### `frontend/src/components/HomeLibrary.vue`
 
-1. 增加首页视图状态：`cards | spaces`，使用 `localStorage` 保存用户选择，默认保持当前的知识卡视图，避免已有用户界面突然变化。
+1. 持有首页视图状态：`cards | spaces`，使用 `localStorage` 保存用户选择，默认保持当前的知识卡视图，避免已有用户界面突然变化。
 2. 在“我的知识卡”标题旁增加切换控件：`知识卡` / `学习空间`。
 3. 增加 `spaceSummaries` 计算数据：
    - 从 `history` 映射空间；
@@ -31,9 +31,17 @@
    - spaces 视图只显示空间行，点击后打开根知识卡，不直接删除知识卡。
 5. 增加空状态和不可打开状态：失败/生成中空间不应调用 `openHistory`，避免请求空的 `rootCardId`。
 
+6. 通过事件向父层交付动作：打开知识卡、打开学习空间、重编辑失败课程、删除失败课程、删除知识卡。组件不直接操作路由或 API。
+
+### `frontend/src/App.vue`
+
+1. 只保留 `HomeLibrary` 的数据输入和动作处理。
+2. 负责调用 workspace store、learning store 和课程设计 store。
+3. 不再持有列表视图状态、空间摘要计算或历史列表模板。
+
 ### 类型与状态位置
 
-第一期可以把视图偏好留在 `App.vue`，因为它只是首页展示偏好，不属于学习运行态；如果后续多个页面都需要该模式，再提取到 `learningStore`。
+第一期把视图偏好留在 `HomeLibrary.vue`，因为它只是首页展示偏好，不属于学习运行态；如果后续多个页面都需要该模式，再提取到 `learningStore`。
 
 ## 后端改动
 
@@ -41,7 +49,7 @@
 
 ## 测试
 
-- 新增/扩展首页组件测试：切换按钮、空间行数量、失败空间操作、完成空间打开根卡。
+- 新增首页组件 `frontend/src/components/HomeLibrary.test.ts`：切换按钮、空间行数量、失败空间操作、完成空间打开根卡。
 - 扩展 learning store 测试：空间列表与卡片缓存可同时支撑两种视图。
 - 回归已有知识卡删除和失败课程删除测试。
 - 运行前端 typecheck、单测和构建；后端仅需确认现有学习空间接口契约未受影响。

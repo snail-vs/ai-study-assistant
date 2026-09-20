@@ -13,6 +13,7 @@ import { useNotesStore } from './stores/notes'
 import { useWorkspaceStore } from './stores/workspace'
 import { useCourseDesignStore } from './stores/course-design'
 import CourseDesignFlow from './components/course-design/CourseDesignFlow.vue'
+import HomeLibrary from './components/HomeLibrary.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import NotesDrawer from './components/NotesDrawer.vue'
 import KnowledgeSidebar from './components/KnowledgeSidebar.vue'
@@ -229,9 +230,6 @@ const homeCards = computed(() => history.value.flatMap((spaceItem) => (
     card: cardItem,
     space: spaceItem,
   }))
-)))
-const creatingSpaces = computed(() => history.value.filter((item) => (
-  item.generationStatus === 'queued' || item.generationStatus === 'running' || item.generationStatus === 'failed'
 )))
 const noteCardOptions = computed(() => {
   const cards = homeCards.value.map((item) => item.card)
@@ -765,24 +763,15 @@ function nextSection() {
       <p class="lead">课程设计 Agent 会先生成一张知识卡。之后的课程内容、问题讨论和学习笔记，都围绕它展开。</p>
       <CourseDesignFlow :editing-learning-space-id="editingFailedSpace?.id" :initial-topic="editingFailedSpace?.learningGoal" @course-queued="handleCourseQueued" @cancel="cancelFailedGenerationEdit" />
       <p v-if="generationNotice" class="generation-notice">{{ generationNotice }}</p>
-      <div v-if="homeCards.length || creatingSpaces.length" class="history">
-        <div class="history-title">我的知识卡</div>
-        <div v-for="item in creatingSpaces" :key="item.id" class="history-item generation-item">
-          <div class="history-open">
-            <span>{{ item.title }}</span>
-            <small>{{ item.generationStatus === 'queued' ? '排队中' : item.generationStatus === 'failed' ? `生成失败：${item.generationError || '请重试'}` : '正在生成课程内容…' }}</small>
-          </div>
-          <button v-if="item.generationStatus === 'failed'" class="history-delete retry-generation" @click="editFailedGeneration(item)">重新编辑</button>
-          <button v-if="item.generationStatus === 'failed'" class="history-delete" @click="deleteFailedGeneration(item)">删除</button>
-        </div>
-        <div v-for="item in homeCards" :key="item.card.id" class="history-item">
-          <button class="history-open" @click="openHomeCard(item)">
-            <span>{{ item.card.title }}</span>
-            <small>{{ new Date(item.space.createdAt).toLocaleDateString('zh-CN') }} · 开始学习 →</small>
-          </button>
-          <button class="history-delete" title="删除知识卡" @click.stop="deleteHomeCard(item)">删除</button>
-        </div>
-      </div>
+      <HomeLibrary
+        :history="history"
+        :history-cards="historyCards"
+        @open-card="openHomeCard"
+        @open-space="openHistory"
+        @edit-failed="editFailedGeneration"
+        @delete-failed="deleteFailedGeneration"
+        @delete-card="deleteHomeCard"
+      />
       <p v-if="error" class="error">{{ error }}</p>
     </section>
 
