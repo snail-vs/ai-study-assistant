@@ -312,6 +312,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/course-design/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createCourseDesignSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/course-design/sessions/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getCourseDesignSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/course-design/sessions/{sessionId}/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["executeCourseDesignCommand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/learning-spaces/{spaceId}": {
         parameters: {
             query?: never;
@@ -865,6 +917,83 @@ export interface components {
             courseScale: "quick" | "standard" | "series";
             outline: components["schemas"]["CourseOutlineItem"][];
             assistantMessage: string;
+        };
+        CourseDesignSessionCreateRequest: {
+            topic: string;
+            learningSpaceId?: string | null;
+        };
+        CourseDesignQuestionOption: {
+            id: string;
+            label: string;
+        };
+        CourseDesignQuestion: {
+            id: string;
+            /** @enum {string} */
+            stage: "collecting_goals" | "collecting_background";
+            /** @enum {string} */
+            target: "learningGoals" | "priorKnowledgeLevels";
+            /** @enum {string} */
+            type: "multi_select_with_text";
+            title: string;
+            description?: string;
+            options: components["schemas"]["CourseDesignQuestionOption"][];
+            allowCustom: boolean;
+            minimumSelections: number;
+        };
+        CourseDesignAnswerPayload: {
+            answer: {
+                questionId: string;
+                selectedOptionIds?: string[];
+                customText?: string;
+            };
+        };
+        CourseDesignBriefUpdate: {
+            learningOutcome?: string;
+            priorKnowledge?: string;
+            learningGoalDetails?: string;
+            priorKnowledgeDetails?: string;
+            useCase?: string;
+            focus?: string[];
+            excludedTopics?: string[];
+            preferredStyle?: string[];
+            timeBudgetMinutes?: number;
+        };
+        CourseDesignBriefPayload: {
+            brief: components["schemas"]["CourseDesignBriefUpdate"];
+        };
+        CourseDesignScalePayload: {
+            /** @enum {string} */
+            courseScale: "quick" | "standard" | "series";
+        };
+        CourseDesignRevisionPayload: {
+            feedback: string;
+        };
+        CourseDesignEmptyPayload: Record<string, never>;
+        CourseDesignCommandRequest: {
+            commandId: string;
+            expectedRevision: number;
+            /** @enum {string} */
+            type: "answer_question" | "complete_with_ai" | "go_back" | "update_brief" | "select_scale" | "generate_outline" | "revise_outline" | "confirm_outline" | "generate_course" | "restart";
+            payload?: components["schemas"]["CourseDesignAnswerPayload"] | components["schemas"]["CourseDesignBriefPayload"] | components["schemas"]["CourseDesignScalePayload"] | components["schemas"]["CourseDesignRevisionPayload"] | components["schemas"]["CourseDesignEmptyPayload"];
+        };
+        CourseDesignSession: {
+            sessionId: string;
+            learningSpaceId?: string | null;
+            /** @enum {string} */
+            state: "collecting_goals" | "collecting_background" | "reviewing_brief" | "reviewing_outline" | "outline_confirmed" | "course_queued" | "cancelled";
+            revision: number;
+            briefRevision: number;
+            brief: components["schemas"]["CourseBrief"];
+            currentQuestion?: components["schemas"]["CourseDesignQuestion"] | null;
+            /** @enum {string|null} */
+            recommendedScale?: "quick" | "standard" | "series" | null;
+            /** @enum {string|null} */
+            selectedScale?: "quick" | "standard" | "series" | null;
+            outline: components["schemas"]["CourseOutlineItem"][];
+            outlineConfirmed: boolean;
+            allowedActions: string[];
+            operation: Record<string, never>;
+            outlineRevisionMessages: components["schemas"]["CourseOutlineRevisionMessage"][];
         };
         LearningSpace: {
             id: string;
@@ -1708,6 +1837,85 @@ export interface operations {
             };
             /** @description AI did not return a valid outline */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createCourseDesignSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CourseDesignSessionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Created course design session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDesignSession"];
+                };
+            };
+        };
+    };
+    getCourseDesignSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Course design session snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDesignSession"];
+                };
+            };
+        };
+    };
+    executeCourseDesignCommand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CourseDesignCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated course design session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDesignSession"];
+                };
+            };
+            /** @description Invalid transition or stale session revision */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

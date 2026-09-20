@@ -203,6 +203,128 @@ class CourseOutlineRevisionResponse(ApiModel):
     assistant_message: str = Field(alias="assistantMessage", min_length=1)
 
 
+CourseDesignState = Literal[
+    "collecting_goals",
+    "collecting_background",
+    "reviewing_brief",
+    "reviewing_outline",
+    "outline_confirmed",
+    "course_queued",
+    "cancelled",
+]
+CourseDesignCommandType = Literal[
+    "answer_question",
+    "complete_with_ai",
+    "go_back",
+    "update_brief",
+    "select_scale",
+    "generate_outline",
+    "revise_outline",
+    "confirm_outline",
+    "generate_course",
+    "restart",
+]
+
+
+class CourseDesignQuestionOption(ApiModel):
+    id: str = Field(min_length=1, max_length=100)
+    label: str = Field(min_length=1, max_length=300)
+
+
+class CourseDesignQuestion(ApiModel):
+    id: str = Field(min_length=1, max_length=100)
+    stage: Literal["collecting_goals", "collecting_background"]
+    target: Literal["learningGoals", "priorKnowledgeLevels"]
+    type: Literal["multi_select_with_text"] = "multi_select_with_text"
+    title: str = Field(min_length=1, max_length=1000)
+    description: str = Field(default="", max_length=2000)
+    options: list[CourseDesignQuestionOption] = Field(default_factory=list, max_length=12)
+    allow_custom: bool = Field(default=True, alias="allowCustom")
+    minimum_selections: int = Field(default=0, ge=0, le=12, alias="minimumSelections")
+
+
+class CourseDesignAnswer(ApiModel):
+    question_id: str = Field(alias="questionId", min_length=1)
+    selected_option_ids: list[str] = Field(default_factory=list, alias="selectedOptionIds", max_length=12)
+    custom_text: str = Field(default="", alias="customText", max_length=2000)
+
+
+class CourseDesignAnswerPayload(ApiModel):
+    model_config = ConfigDict(extra="forbid")
+    answer: CourseDesignAnswer
+
+
+class CourseDesignBriefUpdate(ApiModel):
+    learning_outcome: str | None = Field(default=None, alias="learningOutcome", max_length=2000)
+    prior_knowledge: str | None = Field(default=None, alias="priorKnowledge", max_length=2000)
+    learning_goal_details: str | None = Field(default=None, alias="learningGoalDetails", max_length=2000)
+    prior_knowledge_details: str | None = Field(default=None, alias="priorKnowledgeDetails", max_length=2000)
+    use_case: str | None = Field(default=None, alias="useCase", max_length=1000)
+    focus: list[str] | None = Field(default=None, max_length=20)
+    excluded_topics: list[str] | None = Field(default=None, alias="excludedTopics", max_length=20)
+    preferred_style: list[str] | None = Field(default=None, alias="preferredStyle", max_length=20)
+    time_budget_minutes: int | None = Field(default=None, alias="timeBudgetMinutes", ge=5, le=100000)
+
+
+class CourseDesignBriefPayload(ApiModel):
+    model_config = ConfigDict(extra="forbid")
+    brief: CourseDesignBriefUpdate
+
+
+class CourseDesignScalePayload(ApiModel):
+    model_config = ConfigDict(extra="forbid")
+    course_scale: Literal["quick", "standard", "series"] = Field(alias="courseScale")
+
+
+class CourseDesignRevisionPayload(ApiModel):
+    model_config = ConfigDict(extra="forbid")
+    feedback: str = Field(min_length=1, max_length=4000)
+
+
+class CourseDesignEmptyPayload(ApiModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+CourseDesignPayload = (
+    CourseDesignAnswerPayload
+    | CourseDesignBriefPayload
+    | CourseDesignScalePayload
+    | CourseDesignRevisionPayload
+    | CourseDesignEmptyPayload
+)
+
+
+class CourseDesignCommandRequest(ApiModel):
+    command_id: str = Field(alias="commandId", min_length=1, max_length=100)
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+    type: CourseDesignCommandType
+    payload: CourseDesignPayload = Field(default_factory=CourseDesignEmptyPayload)
+
+
+class CourseDesignSessionCreateRequest(ApiModel):
+    topic: str = Field(min_length=1, max_length=500)
+    learning_space_id: str | None = Field(default=None, alias="learningSpaceId", min_length=1)
+
+
+class CourseDesignSessionResponse(ApiModel):
+    session_id: str = Field(alias="sessionId")
+    learning_space_id: str | None = Field(default=None, alias="learningSpaceId")
+    state: CourseDesignState
+    revision: int = Field(ge=1)
+    brief_revision: int = Field(alias="briefRevision", ge=0)
+    brief: CourseBrief
+    current_question: CourseDesignQuestion | None = Field(default=None, alias="currentQuestion")
+    recommended_scale: Literal["quick", "standard", "series"] | None = Field(default=None, alias="recommendedScale")
+    selected_scale: Literal["quick", "standard", "series"] | None = Field(default=None, alias="selectedScale")
+    outline: list[CourseOutlineItem] = Field(default_factory=list, max_length=12)
+    outline_confirmed: bool = Field(default=False, alias="outlineConfirmed")
+    allowed_actions: list[CourseDesignCommandType] = Field(default_factory=list, alias="allowedActions")
+    operation: dict = Field(default_factory=dict)
+    outline_revision_messages: list[CourseOutlineRevisionMessage] = Field(
+        default_factory=list, alias="outlineRevisionMessages", max_length=20
+    )
+
+
 class LearningSpaceResponse(ApiModel):
     id: str
     title: str

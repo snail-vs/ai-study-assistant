@@ -61,6 +61,99 @@ class LearningSpace(Base):
         self.course_outline_json = json.dumps(value if isinstance(value, list) else [], ensure_ascii=False)
 
 
+class CourseDesignSession(Base):
+    """Server-owned state for the guided course design flow."""
+
+    __tablename__ = "course_design_sessions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    source_learning_space_id: Mapped[str | None] = mapped_column(
+        ForeignKey("learning_spaces.id"), nullable=True
+    )
+    state: Mapped[str] = mapped_column(String(40), nullable=False, default="collecting_goals")
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    brief_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    topic: Mapped[str] = mapped_column(String(500), nullable=False)
+    brief_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    current_question_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    questions_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    recommended_scale: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    selected_scale: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    outline_json: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
+    outline_basis_brief_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    outline_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    processed_commands_json: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
+    operation_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    outline_revision_messages_json: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+    __mapper_args__ = {"version_id_col": revision}
+
+    @staticmethod
+    def _load(value: str, fallback):
+        try:
+            parsed = json.loads(value or "")
+            return parsed if isinstance(parsed, type(fallback)) else fallback
+        except (TypeError, json.JSONDecodeError):
+            return fallback
+
+    @property
+    def brief(self) -> dict:
+        return self._load(self.brief_json, {})
+
+    @brief.setter
+    def brief(self, value: dict) -> None:
+        self.brief_json = json.dumps(value if isinstance(value, dict) else {}, ensure_ascii=False)
+
+    @property
+    def current_question(self) -> dict:
+        return self._load(self.current_question_json, {})
+
+    @current_question.setter
+    def current_question(self, value: dict) -> None:
+        self.current_question_json = json.dumps(value if isinstance(value, dict) else {}, ensure_ascii=False)
+
+    @property
+    def questions(self) -> dict:
+        return self._load(self.questions_json, {})
+
+    @questions.setter
+    def questions(self, value: dict) -> None:
+        self.questions_json = json.dumps(value if isinstance(value, dict) else {}, ensure_ascii=False)
+
+    @property
+    def outline(self) -> list[dict]:
+        return self._load(self.outline_json, [])
+
+    @outline.setter
+    def outline(self, value: list[dict]) -> None:
+        self.outline_json = json.dumps(value if isinstance(value, list) else [], ensure_ascii=False)
+
+    @property
+    def processed_commands(self) -> list[str]:
+        return self._load(self.processed_commands_json, [])
+
+    @processed_commands.setter
+    def processed_commands(self, value: list[str]) -> None:
+        self.processed_commands_json = json.dumps(value if isinstance(value, list) else [], ensure_ascii=False)
+
+    @property
+    def operation(self) -> dict:
+        return self._load(self.operation_json, {})
+
+    @operation.setter
+    def operation(self, value: dict) -> None:
+        self.operation_json = json.dumps(value if isinstance(value, dict) else {}, ensure_ascii=False)
+
+    @property
+    def outline_revision_messages(self) -> list[dict]:
+        return self._load(self.outline_revision_messages_json, [])
+
+    @outline_revision_messages.setter
+    def outline_revision_messages(self, value: list[dict]) -> None:
+        self.outline_revision_messages_json = json.dumps(value if isinstance(value, list) else [], ensure_ascii=False)
+
+
 class KnowledgeCard(Base):
     __tablename__ = "knowledge_cards"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)

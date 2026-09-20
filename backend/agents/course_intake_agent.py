@@ -3,8 +3,8 @@
 import json
 
 from ..ai.gateway import AIGateway
-from .prompts import COURSE_INTAKE_SYSTEM
-from .schemas import CourseIntakeResult
+from .prompts import COURSE_INTAKE_STATE_SYSTEM, COURSE_INTAKE_SYSTEM
+from .schemas import CourseIntakeResult, CourseIntakeStateResult
 
 
 class CourseIntakeAgent:
@@ -29,3 +29,51 @@ class CourseIntakeAgent:
                 merged[key] = value
         parsed.brief = merged
         return parsed
+
+    async def answer(
+        self,
+        *,
+        stage: str,
+        brief: dict,
+        selected_labels: list[str],
+        custom_text: str = "",
+    ) -> CourseIntakeStateResult:
+        """Evaluate one explicit stage answer; the service owns transitions."""
+        result = await self.gateway.structured(
+            [
+                {"role": "system", "content": COURSE_INTAKE_STATE_SYSTEM},
+                {"role": "user", "content": json.dumps({
+                    "task": "evaluate_intake_answer",
+                    "stage": stage,
+                    "brief": brief,
+                    "answer": {"selectedLabels": selected_labels, "customText": custom_text},
+                }, ensure_ascii=False)},
+            ],
+            task="course_intake_state",
+            schema=CourseIntakeStateResult.model_json_schema(),
+        )
+        return CourseIntakeStateResult.model_validate(result)
+
+    async def start(self, *, topic: str) -> CourseIntakeStateResult:
+        result = await self.gateway.structured(
+            [
+                {"role": "system", "content": COURSE_INTAKE_STATE_SYSTEM},
+                {"role": "user", "content": json.dumps({"task": "start_intake", "topic": topic}, ensure_ascii=False)},
+            ],
+            task="course_intake_state",
+            schema=CourseIntakeStateResult.model_json_schema(),
+        )
+        return CourseIntakeStateResult.model_validate(result)
+
+    async def complete(self, *, stage: str, brief: dict) -> CourseIntakeStateResult:
+        result = await self.gateway.structured(
+            [
+                {"role": "system", "content": COURSE_INTAKE_STATE_SYSTEM},
+                {"role": "user", "content": json.dumps({
+                    "task": "complete_with_ai", "stage": stage, "brief": brief,
+                }, ensure_ascii=False)},
+            ],
+            task="course_intake_state",
+            schema=CourseIntakeStateResult.model_json_schema(),
+        )
+        return CourseIntakeStateResult.model_validate(result)

@@ -17,8 +17,45 @@ from .schemas import (
 )
 from .security.auth import current_user_id, require_current_user
 from .services.provider_settings import restore_active_provider
+from .services.course_design import CourseDesignConflict, CourseDesignInvalid, CourseDesignService
+from .schemas import CourseDesignCommandRequest, CourseDesignSessionCreateRequest, CourseDesignSessionResponse
 
 router = APIRouter(dependencies=[Depends(require_current_user)])
+
+
+def _course_design_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, CourseDesignConflict):
+        return HTTPException(status_code=409, detail=str(exc))
+    return HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/course-design/sessions", response_model=CourseDesignSessionResponse)
+async def create_course_design_session(payload: CourseDesignSessionCreateRequest, db=Depends(get_db)):
+    try:
+        return await CourseDesignService(db, current_user_id()).create(
+            payload.topic, payload.learning_space_id
+        )
+    except (CourseDesignConflict, CourseDesignInvalid) as exc:
+        raise _course_design_error(exc) from exc
+
+
+@router.get("/course-design/sessions/{session_id}", response_model=CourseDesignSessionResponse)
+def get_course_design_session(session_id: str, db=Depends(get_db)):
+    try:
+        return CourseDesignService(db, current_user_id()).get(session_id)
+    except (CourseDesignConflict, CourseDesignInvalid) as exc:
+        raise _course_design_error(exc) from exc
+
+
+@router.post("/course-design/sessions/{session_id}/commands", response_model=CourseDesignSessionResponse)
+async def execute_course_design_command(
+    session_id: str, payload: CourseDesignCommandRequest, db=Depends(get_db)
+):
+    service = CourseDesignService(db, current_user_id())
+    try:
+        return await service.execute(session_id, payload)
+    except (CourseDesignConflict, CourseDesignInvalid) as exc:
+        raise _course_design_error(exc) from exc
 
 
 @router.post("/course-design/turn", response_model=CourseDesignTurnResponse)

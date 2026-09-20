@@ -150,6 +150,37 @@ class CourseIntakeResult(BaseModel):
     outline: list[dict] = Field(default_factory=list)
 
 
+class CourseIntakeQuestionOption(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    label: str = Field(min_length=1, max_length=300)
+
+
+class CourseIntakeQuestion(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    stage: Literal["collecting_goals", "collecting_background"]
+    target: Literal["learningGoals", "priorKnowledgeLevels"]
+    type: Literal["multi_select_with_text"] = "multi_select_with_text"
+    title: str = Field(min_length=1, max_length=1000)
+    description: str = Field(default="", max_length=2000)
+    options: list[CourseIntakeQuestionOption] = Field(default_factory=list, max_length=12)
+    allow_custom: bool = Field(default=True, alias="allowCustom")
+    minimum_selections: int = Field(default=0, ge=0, le=12, alias="minimumSelections")
+
+
+class CourseIntakeDecision(BaseModel):
+    type: Literal["ask_follow_up", "advance"]
+    next_stage: Literal["collecting_goals", "collecting_background", "reviewing_brief"] = Field(alias="nextStage")
+    reason: str = Field(default="", max_length=1000)
+
+
+class CourseIntakeStateResult(BaseModel):
+    brief_patch: dict = Field(default_factory=dict, alias="briefPatch")
+    decision: CourseIntakeDecision
+    assistant_message: str = Field(default="", alias="assistantMessage", max_length=2000)
+    next_question: CourseIntakeQuestion | None = Field(default=None, alias="nextQuestion")
+    recommended_scale: Literal["quick", "standard", "series"] | None = Field(default=None, alias="recommendedScale")
+
+
 class CourseOutlineItemDraft(BaseModel):
     title: str = Field(min_length=1)
     objective: str = Field(min_length=1)

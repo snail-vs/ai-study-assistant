@@ -315,6 +315,55 @@ paths:
               schema: { $ref: '#/components/schemas/CourseOutlineRevisionResponse' }
         '502':
           description: AI did not return a valid outline
+  /course-design/sessions:
+    post:
+      operationId: createCourseDesignSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseDesignSessionCreateRequest' }
+      responses:
+        '200':
+          description: Created course design session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseDesignSession' }
+  /course-design/sessions/{sessionId}:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getCourseDesignSession
+      responses:
+        '200':
+          description: Course design session snapshot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseDesignSession' }
+  /course-design/sessions/{sessionId}/commands:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: executeCourseDesignCommand
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseDesignCommandRequest' }
+      responses:
+        '200':
+          description: Updated course design session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseDesignSession' }
+        '409':
+          description: Invalid transition or stale session revision
   /learning-spaces/{spaceId}:
     parameters:
       - $ref: '#/components/parameters/SpaceId'
@@ -991,6 +1040,104 @@ components:
         courseScale: { type: string, enum: [quick, standard, series] }
         outline: { type: array, minItems: 1, maxItems: 12, items: { $ref: '#/components/schemas/CourseOutlineItem' } }
         assistantMessage: { type: string }
+    CourseDesignSessionCreateRequest:
+      type: object
+      required: [topic]
+      properties:
+        topic: { type: string, minLength: 1, maxLength: 500 }
+        learningSpaceId: { type: string, nullable: true }
+    CourseDesignQuestionOption:
+      type: object
+      required: [id, label]
+      properties:
+        id: { type: string }
+        label: { type: string }
+    CourseDesignQuestion:
+      type: object
+      required: [id, stage, target, type, title, options, allowCustom, minimumSelections]
+      properties:
+        id: { type: string }
+        stage: { type: string, enum: [collecting_goals, collecting_background] }
+        target: { type: string, enum: [learningGoals, priorKnowledgeLevels] }
+        type: { type: string, enum: [multi_select_with_text] }
+        title: { type: string }
+        description: { type: string }
+        options: { type: array, items: { $ref: '#/components/schemas/CourseDesignQuestionOption' } }
+        allowCustom: { type: boolean }
+        minimumSelections: { type: integer, minimum: 0 }
+    CourseDesignAnswerPayload:
+      type: object
+      required: [answer]
+      properties:
+        answer:
+          type: object
+          required: [questionId]
+          properties:
+            questionId: { type: string }
+            selectedOptionIds: { type: array, items: { type: string } }
+            customText: { type: string }
+    CourseDesignBriefUpdate:
+      type: object
+      properties:
+        learningOutcome: { type: string }
+        priorKnowledge: { type: string }
+        learningGoalDetails: { type: string }
+        priorKnowledgeDetails: { type: string }
+        useCase: { type: string }
+        focus: { type: array, items: { type: string } }
+        excludedTopics: { type: array, items: { type: string } }
+        preferredStyle: { type: array, items: { type: string } }
+        timeBudgetMinutes: { type: integer, minimum: 5 }
+    CourseDesignBriefPayload:
+      type: object
+      required: [brief]
+      properties:
+        brief: { $ref: '#/components/schemas/CourseDesignBriefUpdate' }
+    CourseDesignScalePayload:
+      type: object
+      required: [courseScale]
+      properties:
+        courseScale: { type: string, enum: [quick, standard, series] }
+    CourseDesignRevisionPayload:
+      type: object
+      required: [feedback]
+      properties:
+        feedback: { type: string, minLength: 1, maxLength: 4000 }
+    CourseDesignEmptyPayload:
+      type: object
+      additionalProperties: false
+    CourseDesignCommandRequest:
+      type: object
+      required: [commandId, expectedRevision, type]
+      properties:
+        commandId: { type: string }
+        expectedRevision: { type: integer, minimum: 1 }
+        type: { type: string, enum: [answer_question, complete_with_ai, go_back, update_brief, select_scale, generate_outline, revise_outline, confirm_outline, generate_course, restart] }
+        payload:
+          anyOf:
+            - { $ref: '#/components/schemas/CourseDesignAnswerPayload' }
+            - { $ref: '#/components/schemas/CourseDesignBriefPayload' }
+            - { $ref: '#/components/schemas/CourseDesignScalePayload' }
+            - { $ref: '#/components/schemas/CourseDesignRevisionPayload' }
+            - { $ref: '#/components/schemas/CourseDesignEmptyPayload' }
+    CourseDesignSession:
+      type: object
+      required: [sessionId, state, revision, briefRevision, brief, outline, outlineConfirmed, allowedActions, operation, outlineRevisionMessages]
+      properties:
+        sessionId: { type: string }
+        learningSpaceId: { type: string, nullable: true }
+        state: { type: string, enum: [collecting_goals, collecting_background, reviewing_brief, reviewing_outline, outline_confirmed, course_queued, cancelled] }
+        revision: { type: integer }
+        briefRevision: { type: integer }
+        brief: { $ref: '#/components/schemas/CourseBrief' }
+        currentQuestion: { allOf: [{ $ref: '#/components/schemas/CourseDesignQuestion' }], nullable: true }
+        recommendedScale: { type: string, enum: [quick, standard, series], nullable: true }
+        selectedScale: { type: string, enum: [quick, standard, series], nullable: true }
+        outline: { type: array, items: { $ref: '#/components/schemas/CourseOutlineItem' } }
+        outlineConfirmed: { type: boolean }
+        allowedActions: { type: array, items: { type: string } }
+        operation: { type: object }
+        outlineRevisionMessages: { type: array, items: { $ref: '#/components/schemas/CourseOutlineRevisionMessage' } }
     LearningSpace:
       type: object
       required: [id, title, learningGoal, rootCardId, generationStatus, generationPhase, courseBrief, courseScale, createdAt]

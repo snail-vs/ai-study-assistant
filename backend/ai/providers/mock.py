@@ -48,6 +48,61 @@ class MockTextProvider:
                 "recommended_scale": "standard",
                 "outline": [],
             }
+        if task == "course_intake_state":
+            prompt = messages[-1]["content"] if messages else ""
+            try:
+                payload = json.loads(prompt)
+            except json.JSONDecodeError:
+                payload = {}
+            stage = payload.get("stage", "collecting_goals")
+            topic = payload.get("topic") or payload.get("brief", {}).get("topic") or "Mock 课程主题"
+            if payload.get("task") == "start_intake":
+                stage = "collecting_goals"
+            if payload.get("task") == "complete_with_ai" and stage == "collecting_goals":
+                return {
+                    "briefPatch": {"learningGoals": ["理解核心原理与架构"], "learningGoalDetails": "由 AI 补全学习目标", "learningOutcome": f"掌握 {payload.get('brief', {}).get('topic') or '主题'} 核心原理并完成实践"},
+                    "decision": {"type": "advance", "nextStage": "collecting_background"},
+                    "assistantMessage": "接下来了解你的个人基础。",
+                    "nextQuestion": {
+                        "id": "background-1", "stage": "collecting_background", "target": "priorKnowledgeLevels",
+                        "type": "multi_select_with_text", "title": "你目前具备哪些相关基础？",
+                        "description": "可以多选，也可以补充说明。", "options": [],
+                        "allowCustom": True, "minimumSelections": 0,
+                    }, "recommendedScale": "standard",
+                }
+            if payload.get("task") == "complete_with_ai" and stage == "collecting_background":
+                return {
+                    "briefPatch": {"priorKnowledgeLevels": ["已有相关基础"], "priorKnowledgeDetails": "由 AI 补全个人基础", "priorKnowledge": "具备相关基础"},
+                    "decision": {"type": "advance", "nextStage": "reviewing_brief"},
+                    "assistantMessage": "需求信息已经比较清楚，请确认课程摘要和规模。",
+                    "nextQuestion": None, "recommendedScale": "standard",
+                }
+            if stage == "collecting_goals":
+                has_answer = bool(payload.get("answer", {}).get("selectedLabels") or payload.get("answer", {}).get("customText"))
+                next_stage = "collecting_background" if has_answer and payload.get("task") == "evaluate_intake_answer" else "collecting_goals"
+                return {
+                    "briefPatch": {"learningOutcome": f"掌握 {topic} 核心原理并完成实践"} if has_answer else {},
+                    "decision": {"type": "advance", "nextStage": next_stage},
+                    "assistantMessage": f"你希望通过 {topic} 课程获得哪些能力？可以多选，也可以补充说明。",
+                    "nextQuestion": {
+                        "id": "background-1" if next_stage == "collecting_background" else "goals-1", "stage": next_stage, "target": "priorKnowledgeLevels" if next_stage == "collecting_background" else "learningGoals",
+                        "type": "multi_select_with_text", "title": f"你希望通过 {topic} 获得哪些能力？",
+                        "description": "可以多选，也可以输入自己的目标。",
+                        "options": [
+                            {"id": "understand-core", "label": "理解核心原理与架构"},
+                            {"id": "hands-on", "label": "能够动手完成实践"},
+                            {"id": "troubleshoot", "label": "能够排查常见问题"},
+                        ], "allowCustom": True, "minimumSelections": 0,
+                    },
+                    "recommendedScale": "standard",
+                }
+            return {
+                "briefPatch": {"priorKnowledge": f"具备 {topic} 相关基础"},
+                "decision": {"type": "advance", "nextStage": "reviewing_brief"},
+                "assistantMessage": "需求信息已经比较清楚，请确认课程摘要和规模。",
+                "nextQuestion": None,
+                "recommendedScale": "standard",
+            }
         if task == "course_outline":
             prompt = messages[-1]["content"] if messages else ""
             scale = "series" if "课程规模：series" in prompt else "quick" if "课程规模：quick" in prompt else "standard"
