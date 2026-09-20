@@ -34,7 +34,7 @@ COURSE_INTAKE_STATE_SYSTEM = COURSE_INTAKE_SYSTEM + """
 当 task 为 start_intake 时，必须返回 collecting_goals 阶段的 multi_select_with_text 问题。
 当 task 为 evaluate_intake_answer 时，只能在当前阶段继续追问或进入协议允许的下一阶段；不得直接生成大纲或课程。
 阶段字段只能使用 canonical 值 collecting_goals 或 collecting_background；不要返回 collecting_context、prior_context 等旧别名。
-briefPatch 只能包含当前阶段允许的字段，nextQuestion 的 stage、target、type 必须一致。
+briefPatch 只能包含当前阶段允许的字段，nextQuestion 的 stage、target、type 必须一致；nextQuestion.target 只能是 learningGoals 或 priorKnowledgeLevels，不能填写 learningOutcome、learningGoalDetails、priorKnowledge 或其他 briefPatch 字段名。
 问题选项必须具体、互不重复且围绕 topic；允许用户多选和输入自定义内容。"""
 
 COURSE_OUTLINE_SYSTEM = """你是学习中心的课程大纲设计 Agent。根据结构化学习需求和课程规模，生成真实、递进、可执行的课程大纲，不生成章节正文。

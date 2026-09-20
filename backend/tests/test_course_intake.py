@@ -63,10 +63,11 @@ class InvalidStateGateway:
 
 
 class StageShapeGateway:
-    def __init__(self, *, top_stage=None, question_stage=None, decision_stage=None, include_type=True):
+    def __init__(self, *, top_stage=None, question_stage=None, decision_stage=None, target=None, include_type=True):
         self.top_stage = top_stage
         self.question_stage = question_stage
         self.decision_stage = decision_stage
+        self.target = target
         self.include_type = include_type
 
     async def structured(self, _messages, *, task, schema):
@@ -78,7 +79,7 @@ class StageShapeGateway:
             "nextQuestion": {
                 "prompt": "问题",
                 "stage": self.question_stage or "collecting_goals",
-                "target": "learningGoals",
+                "target": self.target or "learningGoals",
                 "options": [],
             },
         }
@@ -178,6 +179,25 @@ class CourseIntakeTests(unittest.TestCase):
         ))
         self.assertEqual(answered.decision.next_stage, "collecting_background")
         self.assertEqual(answered.next_question.stage, "collecting_background")
+
+    def test_brief_field_target_aliases_normalize_for_all_intake_paths(self):
+        for target, expected_stage, expected_target in (
+            ("learningGoalDetails", "collecting_goals", "learningGoals"),
+            ("priorKnowledgeDetails", "collecting_background", "priorKnowledgeLevels"),
+        ):
+            next_stage = "collecting_background" if expected_stage == "collecting_background" else "collecting_goals"
+            result = normalize_state_result({
+                "decision": {"type": "ask_follow_up", "nextStage": next_stage},
+                "nextQuestion": {"stage": expected_stage, "target": target, "prompt": "问题？", "options": []},
+            }, stage=expected_stage)
+            self.assertEqual(result.next_question.target, expected_target)
+
+        start = asyncio.run(CourseIntakeAgent(StageShapeGateway(target="learningGoalDetails")).start(topic="Python"))
+        self.assertEqual(start.next_question.target, "learningGoals")
+        answer = asyncio.run(CourseIntakeAgent(StageShapeGateway(target="priorKnowledgeDetails")).answer(
+            stage="collecting_background", brief={"topic": "Python"}, selected_labels=["基础"],
+        ))
+        self.assertEqual(answer.next_question.target, "priorKnowledgeLevels")
 
     def test_question_stage_overrides_stale_target_from_previous_stage(self):
         result = normalize_state_result({

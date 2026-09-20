@@ -33,12 +33,18 @@ _QUESTION_TARGET_ALIASES = {
     "learning_goals": "learningGoals",
     "learning-goals": "learningGoals",
     "goals": "learningGoals",
+    "learninggoaldetails": "learningGoals",
+    "learningoutcome": "learningGoals",
+    "learninggoal": "learningGoals",
     "priorknowledgelevels": "priorKnowledgeLevels",
     "prior_knowledge_levels": "priorKnowledgeLevels",
     "prior-knowledge-levels": "priorKnowledgeLevels",
     "prior_knowledge": "priorKnowledgeLevels",
     "prior-knowledge": "priorKnowledgeLevels",
     "background": "priorKnowledgeLevels",
+    "priorknowledgedetails": "priorKnowledgeLevels",
+    "priorknowledge": "priorKnowledgeLevels",
+    "priorknowledgelevel": "priorKnowledgeLevels",
 }
 
 
