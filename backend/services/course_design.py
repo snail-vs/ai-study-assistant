@@ -120,11 +120,14 @@ class CourseDesignService:
             if source_space.generation_status != "failed":
                 raise CourseDesignInvalid("只有生成失败的课程才能重试")
         agent = CourseIntakeAgent(self._gateway())
-        result = await agent.start(topic=topic)
+        try:
+            result = await agent.start(topic=topic)
+        except ValueError as exc:
+            raise CourseDesignInvalid(f"AI 返回的课程需求格式无效：{exc}") from exc
         question = result.next_question
         if not question or question.stage != "collecting_goals" or question.target != "learningGoals":
             raise CourseDesignInvalid("Intake Agent 返回了无效的目标问题")
-        if set(result.brief_patch) - GOAL_FIELDS or result.brief_patch.get("topic") not in (None, topic):
+        if set(result.brief_patch) - (GOAL_FIELDS | {"topic"}) or result.brief_patch.get("topic") not in (None, topic):
             raise CourseDesignInvalid("Intake Agent 不得修改课程主题")
         brief = {"topic": topic, **result.brief_patch}
         session = CourseDesignSession(
@@ -172,9 +175,12 @@ class CourseDesignService:
         if any(item not in option_map for item in selected_ids):
             raise CourseDesignInvalid("答案包含当前问题不存在的选项")
         labels = [option_map[item] for item in selected_ids]
-        agent_result = await CourseIntakeAgent(self._gateway()).answer(
-            stage=session.state, brief=session.brief, selected_labels=labels, custom_text=custom
-        )
+        try:
+            agent_result = await CourseIntakeAgent(self._gateway()).answer(
+                stage=session.state, brief=session.brief, selected_labels=labels, custom_text=custom
+            )
+        except ValueError as exc:
+            raise CourseDesignInvalid(f"AI 返回的课程需求格式无效：{exc}") from exc
         allowed = GOAL_FIELDS if session.state == "collecting_goals" else BACKGROUND_FIELDS
         unauthorized = set(agent_result.brief_patch) - allowed
         if unauthorized:
@@ -233,7 +239,10 @@ class CourseDesignService:
         if command.type == "answer_question":
             return await self._answer(session, command)
         if command.type == "complete_with_ai":
-            result = await CourseIntakeAgent(self._gateway()).complete(stage=session.state, brief=session.brief)
+            try:
+                result = await CourseIntakeAgent(self._gateway()).complete(stage=session.state, brief=session.brief)
+            except ValueError as exc:
+                raise CourseDesignInvalid(f"AI 返回的课程需求格式无效：{exc}") from exc
             allowed = GOAL_FIELDS if session.state == "collecting_goals" else BACKGROUND_FIELDS
             if set(result.brief_patch) - allowed:
                 raise CourseDesignInvalid("Agent 返回了当前阶段禁止修改的字段")
@@ -322,8 +331,11 @@ class CourseDesignService:
                 session.outline_revision_messages = []
             return self._commit(session, command.command_id)
         if command.type == "restart":
-            result = await CourseIntakeAgent(self._gateway()).start(topic=session.topic)
-            if (set(result.brief_patch) - GOAL_FIELDS
+            try:
+                result = await CourseIntakeAgent(self._gateway()).start(topic=session.topic)
+            except ValueError as exc:
+                raise CourseDesignInvalid(f"AI 返回的课程需求格式无效：{exc}") from exc
+            if (set(result.brief_patch) - (GOAL_FIELDS | {"topic"})
                     or result.brief_patch.get("topic") not in (None, session.topic)
                     or not result.next_question
                     or result.next_question.stage != "collecting_goals"

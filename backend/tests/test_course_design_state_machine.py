@@ -163,6 +163,66 @@ class CourseDesignStateMachineTests(unittest.TestCase):
         with self.assertRaises(CourseDesignInvalid):
             asyncio.run(self.service.create("Python", "missing-space"))
 
+    def test_legacy_create_shape_with_same_topic_is_accepted(self):
+        class LegacyGateway(MockTextProvider):
+            async def structured(self, messages, *, task, schema):
+                return {
+                    "stage": "collecting_goals", "ready": False,
+                    "brief": {"topic": "Kubernetes Operator"},
+                    "nextQuestion": {
+                        "prompt": "你想获得哪些能力？",
+                        "target": "learningGoals",
+                        "options": [{"label": "理解原理", "value": "understand"}],
+                        "allowCustomText": True,
+                    },
+                }
+
+        service = CourseDesignService(self.db, "user-1", LegacyGateway())
+        session = asyncio.run(service.create("Kubernetes Operator"))
+        self.assertEqual(session.current_question.options[0].id, "understand")
+        self.assertEqual(session.current_question.title, "你想获得哪些能力？")
+
+    def test_legacy_changed_topic_is_rejected(self):
+        class ChangedTopicGateway:
+            async def structured(self, _messages, *, task, schema):
+                return {
+                    "stage": "collecting_goals", "ready": False,
+                    "brief": {"topic": "另一主题"},
+                    "nextQuestion": {"prompt": "问题", "target": "learningGoals", "options": []},
+                }
+
+        with self.assertRaises(CourseDesignInvalid):
+            asyncio.run(CourseDesignService(self.db, "user-1", ChangedTopicGateway()).create("Python"))
+
+    def test_malformed_answer_and_complete_are_controlled(self):
+        class MalformedAfterStart:
+            def __init__(self):
+                self.calls = 0
+
+            async def structured(self, _messages, *, task, schema):
+                self.calls += 1
+                if self.calls == 1:
+                    return {
+                        "stage": "collecting_goals", "ready": False,
+                        "nextQuestion": {"prompt": "问题", "target": "learningGoals", "options": [{"value": "a"}]},
+                    }
+                return {"stage": "collecting_goals", "ready": False, "nextQuestion": {"options": [{"bad": True}]}}
+
+        gateway = MalformedAfterStart()
+        service = CourseDesignService(self.db, "user-1", gateway)
+        session = asyncio.run(service.create("Python"))
+        answer = CourseDesignCommandRequest(
+            commandId="malformed-answer", expectedRevision=session.revision, type="answer_question",
+            payload={"answer": {"questionId": session.current_question.id, "selectedOptionIds": ["a"]}},
+        )
+        with self.assertRaises(CourseDesignInvalid):
+            asyncio.run(service.execute(session.session_id, answer))
+        complete = CourseDesignCommandRequest(
+            commandId="malformed-complete", expectedRevision=session.revision, type="complete_with_ai", payload={}
+        )
+        with self.assertRaises(CourseDesignInvalid):
+            asyncio.run(service.execute(session.session_id, complete))
+
 
 if __name__ == "__main__":
     unittest.main()

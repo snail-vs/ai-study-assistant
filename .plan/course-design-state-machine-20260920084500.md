@@ -1,5 +1,9 @@
 # Agent 驱动的课程设计状态机重构
 
+## 线上兼容性修复记录（2026-09-20）
+
+现网 Provider 可能返回旧版 intake 结构（`ready/stage/brief/nextQuestion`、`value` 选项和 `allowCustomText`）。兼容逻辑集中在 `CourseIntakeAgent` 边界：先做字段映射和确定性归一化，再进入严格 `CourseIntakeStateResult` 校验；无法安全映射的结果统一转为受控的 AI invalid-response 业务错误，不放宽状态和目标字段约束。
+
 ## 目标
 
 把当前依赖聊天消息数量和 `ready` 推断的课程设计流程，重构为后端持久化状态机驱动的完整纵向流程：主题 → 学习目标多选与输入 → 个人基础多选与输入 → 需求确认与规模选择 → 大纲生成/修改/确认 → 课程生成。

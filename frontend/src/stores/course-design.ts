@@ -115,13 +115,13 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
   async function begin(value: string, learningSpaceId?: string | null) {
     const text = value.trim()
     if (!text || loading.value) return null
+    topic.value = text
     loading.value = true
     error.value = ''
     try {
       const snapshot = await request<CourseDesignSession>('/course-design/sessions', {
         method: 'POST', body: JSON.stringify({ topic: text, ...(learningSpaceId ? { learningSpaceId } : {}) }),
       })
-      topic.value = text
       applySnapshot(snapshot)
       return snapshot
     } catch (err) {

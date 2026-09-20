@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-from backend.agents.course_intake_agent import CourseIntakeAgent
+from backend.agents.course_intake_agent import CourseIntakeAgent, CourseIntakeInvalidResult
 from backend.ai.providers.mock import MockTextProvider
 from backend.course_design_api import course_design_outline, course_design_turn
 from backend.schemas import CourseBrief, CourseDesignTurnRequest, CourseOutlineRequest, CreateLearningSpaceRequest
@@ -27,6 +27,51 @@ class MissingQuestionGateway(FakeGateway):
         result = await super().structured(_messages, task=task, schema=schema)
         result["assistant_message"] = "我了解了你的方向。"
         result["question"] = None
+        return result
+
+
+class LegacyStateGateway:
+    async def structured(self, _messages, *, task, schema):
+        return {
+            "stage": "collecting_goals",
+            "ready": False,
+            "brief": {"topic": "Kubernetes Operator"},
+            "nextQuestion": {
+                "question": "你想获得哪些能力？",
+                "target": "learningGoals",
+                "options": [{"value": "理解原理"}, {"value": "完成实践"}],
+                "allowCustomText": True,
+            },
+            "recommendedScale": "standard",
+        }
+
+
+class InvalidStateGateway:
+    async def structured(self, _messages, *, task, schema):
+        return {"stage": "collecting_goals", "ready": False, "nextQuestion": {"options": [{"bad": True}]}}
+
+
+class StageShapeGateway:
+    def __init__(self, *, top_stage=None, question_stage=None, decision_stage=None, include_type=True):
+        self.top_stage = top_stage
+        self.question_stage = question_stage
+        self.decision_stage = decision_stage
+        self.include_type = include_type
+
+    async def structured(self, _messages, *, task, schema):
+        result = {
+            "stage": self.top_stage or "collecting_goals",
+            "ready": False,
+            "decision": {"nextStage": self.decision_stage or "collecting_goals"},
+            "nextQuestion": {
+                "prompt": "问题",
+                "stage": self.question_stage or "collecting_goals",
+                "target": "learningGoals",
+                "options": [],
+            },
+        }
+        if self.include_type:
+            result["decision"]["type"] = "ask_follow_up"
         return result
 
 
@@ -55,6 +100,39 @@ class CourseIntakeTests(unittest.TestCase):
         self.assertTrue(result.question)
         self.assertTrue(result.quick_options)
         self.assertEqual(result.recommended_scale, "standard")
+
+    def test_legacy_state_payload_is_normalized_at_agent_boundary(self):
+        result = asyncio.run(CourseIntakeAgent(LegacyStateGateway()).start(topic="Kubernetes Operator"))
+        self.assertEqual(result.decision.type, "ask_follow_up")
+        self.assertEqual(result.next_question.id, "collecting_goals-question")
+        self.assertEqual([item.id for item in result.next_question.options], ["理解原理", "完成实践"])
+        self.assertTrue(result.next_question.allow_custom)
+
+    def test_truly_invalid_state_payload_is_rejected(self):
+        with self.assertRaises(CourseIntakeInvalidResult):
+            asyncio.run(CourseIntakeAgent(InvalidStateGateway()).start(topic="Python"))
+
+    def test_unknown_stage_values_are_rejected(self):
+        for gateway in (
+            StageShapeGateway(top_stage="collecting_goalz"),
+            StageShapeGateway(question_stage="collecting_goalz"),
+            StageShapeGateway(decision_stage="reviewing_outlinex"),
+        ):
+            with self.assertRaises(CourseIntakeInvalidResult):
+                asyncio.run(CourseIntakeAgent(gateway).start(topic="Python"))
+
+    def test_missing_decision_type_uses_next_stage_transition(self):
+        gateway = StageShapeGateway(
+            top_stage="collecting_background",
+            question_stage="collecting_background",
+            decision_stage="collecting_background",
+            include_type=False,
+        )
+        result = asyncio.run(CourseIntakeAgent(gateway).answer(
+            stage="collecting_goals", brief={}, selected_labels=["实践"]
+        ))
+        self.assertEqual(result.decision.type, "advance")
+        self.assertEqual(result.decision.next_stage, "collecting_background")
 
     def test_explicit_scale_does_not_overwrite_model_recommendation(self):
         gateway = FakeGateway()

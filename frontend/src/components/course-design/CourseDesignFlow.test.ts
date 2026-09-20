@@ -22,6 +22,33 @@ describe('CourseDesignFlow', () => {
     expect(useCourseDesignStore().error).toBe('服务不可用')
   })
 
+  it('keeps the topic visible while begin is pending', async () => {
+    let resolveBegin!: (value: unknown) => void
+    mockedRequest.mockReturnValueOnce(new Promise((resolve) => { resolveBegin = resolve }))
+    const wrapper = mount(CourseDesignFlow)
+    const textarea = wrapper.get('textarea[name="topic"]')
+    await textarea.setValue('学习 OpenStack')
+    const submitting = wrapper.get('form').trigger('submit')
+    await vi.waitFor(() => expect(mockedRequest).toHaveBeenCalledTimes(1))
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('学习 OpenStack')
+    resolveBegin(snapshot({ brief: { topic: '学习 OpenStack' } }))
+    await submitting
+  })
+
+  it('keeps failed topic input editable and supports retry', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('服务不可用'))
+    mockedRequest.mockResolvedValueOnce(snapshot({ brief: { topic: '学习 OpenStack' } }))
+    const wrapper = mount(CourseDesignFlow)
+    const textarea = wrapper.get('textarea[name="topic"]')
+    await textarea.setValue('学习 OpenStack')
+    await wrapper.get('form').trigger('submit')
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('学习 OpenStack')
+    await textarea.setValue('学习 OpenStack 网络与 Nova')
+    await wrapper.get('form').trigger('submit')
+    expect(mockedRequest).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(mockedRequest.mock.calls[1][1]?.body as string)).toMatchObject({ topic: '学习 OpenStack 网络与 Nova' })
+  })
+
   it('runs update_brief before generate_outline with explicit two-stage feedback', async () => {
     mockedRequest.mockResolvedValueOnce(snapshot({ state: 'reviewing_brief', revision: 3, briefRevision: 2, brief, currentQuestion: null, recommendedScale: 'standard' }))
     const wrapper = mount(CourseDesignFlow)

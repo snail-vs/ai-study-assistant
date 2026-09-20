@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, watch } from 'vue'
 import MultiSelectQuestion from './MultiSelectQuestion.vue'
 import CourseBriefReview from './CourseBriefReview.vue'
 import CourseOutlineReview from './CourseOutlineReview.vue'
@@ -9,11 +9,12 @@ const props = defineProps<{ editingLearningSpaceId?: string | null; initialTopic
 const emit = defineEmits<{ courseQueued: [spaceId: string, title: string]; cancel: [] }>()
 const store = useCourseDesignStore()
 onMounted(() => { if (!store.session) void store.restore() })
+watch(() => props.initialTopic, (value) => {
+  if (value && !store.session && !store.topic) store.topic = value
+}, { immediate: true })
 
-async function start(event: Event) {
-  const form = event.target as HTMLFormElement
-  const input = form.elements.namedItem('topic') as HTMLTextAreaElement
-  try { await store.begin(input.value, props.editingLearningSpaceId) } catch { /* store exposes the error in the flow */ }
+async function start() {
+  try { await store.begin(store.topic, props.editingLearningSpaceId) } catch { /* store exposes the error in the flow */ }
 }
 async function answer(selected: string[], custom: string) {
   store.setSelectedOptionIds(selected)
@@ -46,9 +47,9 @@ async function backFromOutline() { try { await store.goBack() } catch { /* store
       @submit.prevent="start"
     >
       <span class="eyebrow">创建你的课程</span><h2>你想学习什么？</h2><textarea
+        v-model="store.topic"
         name="topic"
         class="course-design-textarea course-topic-input"
-        :value="initialTopic || store.topic"
         placeholder="例如：我想系统理解 Kubernetes Operator，并能独立开发一个 Operator…"
         autofocus
       /><div class="course-design-actions">
