@@ -132,6 +132,16 @@ class CourseIntakeTests(unittest.TestCase):
             with self.assertRaises(CourseIntakeInvalidResult):
                 asyncio.run(CourseIntakeAgent(gateway).start(topic="Python"))
 
+    def test_legacy_prior_knowledge_stage_alias_is_normalized(self):
+        gateway = StageShapeGateway(
+            top_stage="collecting_prior_knowledge",
+            question_stage="collecting_prior_knowledge",
+            decision_stage="collecting_prior_knowledge",
+        )
+        result = asyncio.run(CourseIntakeAgent(gateway).start(topic="Python"))
+        self.assertEqual(result.decision.next_stage, "collecting_background")
+        self.assertEqual(result.next_question.stage, "collecting_background")
+
     def test_missing_decision_type_uses_next_stage_transition(self):
         gateway = StageShapeGateway(
             top_stage="collecting_background",
@@ -147,10 +157,11 @@ class CourseIntakeTests(unittest.TestCase):
 
     def test_response_language_policy_handles_technical_terms(self):
         self.assertEqual(infer_response_language("学习 Kubernetes Operator 和 CRD"), "zh-CN")
-        self.assertEqual(infer_response_language("Learn Kubernetes Operator and CRD"), "same-as-user")
-        self.assertEqual(infer_response_language("Aprender Kubernetes y CRD"), "same-as-user")
-        self.assertEqual(infer_response_language("私はKubernetesを学びたい"), "ja")
-        self.assertEqual(infer_response_language("Kubernetes 오퍼레이터를 배우고 싶어요"), "ko")
+        self.assertEqual(infer_response_language("k8s operator"), "zh-CN")
+        self.assertEqual(infer_response_language("Learn Kubernetes Operator and CRD"), "zh-CN")
+        self.assertEqual(infer_response_language("Aprender Kubernetes y CRD"), "zh-CN")
+        self.assertEqual(infer_response_language("私はKubernetesを学びたい"), "zh-CN")
+        self.assertEqual(infer_response_language("Kubernetes 오퍼레이터를 배우고 싶어요"), "zh-CN")
 
     def test_intake_agent_sends_explicit_response_language(self):
         gateway = CapturingLegacyGateway()
@@ -165,8 +176,8 @@ class CourseIntakeTests(unittest.TestCase):
             brief={"topic": "Learn Kubernetes Operator"},
             selected_labels=["理解核心原理", "完成实践"],
         ))
-        self.assertIn("responseLanguage=same-as-user", gateway.messages[0]["content"])
-        self.assertIn('"responseLanguage": "same-as-user"', gateway.messages[1]["content"])
+        self.assertIn("responseLanguage=zh-CN", gateway.messages[0]["content"])
+        self.assertIn('"responseLanguage": "zh-CN"', gateway.messages[1]["content"])
 
         gateway = CapturingLegacyGateway()
         asyncio.run(CourseIntakeAgent(gateway).answer(
@@ -210,8 +221,8 @@ class CourseIntakeTests(unittest.TestCase):
             "请改成更适合初学者",
             [],
         ))
-        self.assertIn("responseLanguage=same-as-user", gateway.messages[0]["content"])
-        self.assertIn("responseLanguage=same-as-user", gateway.messages[1]["content"])
+        self.assertIn("responseLanguage=zh-CN", gateway.messages[0]["content"])
+        self.assertIn("responseLanguage=zh-CN", gateway.messages[1]["content"])
 
     def test_explicit_scale_does_not_overwrite_model_recommendation(self):
         gateway = FakeGateway()

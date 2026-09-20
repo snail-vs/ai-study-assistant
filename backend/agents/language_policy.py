@@ -1,29 +1,25 @@
 """Shared response-language policy for course-design agents.
 
-The policy explicitly identifies Chinese, Japanese, and Korean. Other
-languages use ``same-as-user`` so the model follows the persisted original
-topic instead of being incorrectly forced into English. Generated options,
-feedback, and other model-produced text never affect the decision.
+The current product default is Chinese until a user/system locale is
+available. Generated options, feedback, and other model-produced text never
+affect the decision; the resolver keeps a replaceable seam for future locale
+support.
 """
 
 import re
 
 
-_CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
-_KANA = re.compile(r"[\u3040-\u30ff\uff66-\uff9f]")
-_HANGUL = re.compile(r"[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]")
+DEFAULT_RESPONSE_LANGUAGE = "zh-CN"
 
 
 def infer_response_language(*values: object) -> str:
-    """Infer the learner's natural language while allowing English terminology."""
-    text = " ".join(str(value or "") for value in values)
-    if _KANA.search(text):
-        return "ja"
-    if _HANGUL.search(text):
-        return "ko"
-    if _CJK.search(text):
-        return "zh-CN"
-    return "same-as-user"
+    """Return the product default until a user/system locale is available.
+
+    ``values`` remains in the signature so a future locale-aware resolver can
+    replace this implementation without changing Agent call sites.
+    """
+    _ = values
+    return DEFAULT_RESPONSE_LANGUAGE
 
 
 def response_language_instruction(language: str) -> str:

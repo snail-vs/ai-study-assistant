@@ -19,6 +19,7 @@ _STAGE_ALIASES = {
     "collecting_goals": "collecting_goals",
     "background": "collecting_background",
     "prior_knowledge": "collecting_background",
+    "collecting_prior_knowledge": "collecting_background",
     "collecting_background": "collecting_background",
     "brief": "reviewing_brief",
     "reviewing_brief": "reviewing_brief",

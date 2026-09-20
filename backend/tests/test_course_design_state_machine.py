@@ -47,7 +47,7 @@ class CourseDesignStateMachineTests(unittest.TestCase):
             "customText": "能够独立开发一个 Operator",
         }})
         self.assertEqual(session.state, "collecting_background")
-        self.assertEqual(session.brief.learning_goals, ["Understand the core principles and architecture", "Complete hands-on practice"])
+        self.assertEqual(session.brief.learning_goals, ["理解核心原理与架构", "能够动手完成实践"])
 
     def test_stale_revision_and_illegal_transition_are_rejected(self):
         session = asyncio.run(self.service.create("Python"))
