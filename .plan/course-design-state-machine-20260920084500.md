@@ -180,3 +180,4 @@
 - Intake normalize 兼容旧阶段 `collecting_prior_knowledge` 及 `prior_knowledge_levels`/`learning_goals` 等已知问题目标别名，统一为服务端 canonical stage/target；未知值仍拒绝。
 - Intake 问题协议以 effective stage 为准：`ask_follow_up` 固定当前阶段，`advance` 使用合法 nextStage；问题 target 按该阶段推导，已知 stale target 可覆盖，未知 stage/target 仍拒绝。
 - 状态回答仅应用当前阶段字段；已知另一阶段字段会安全忽略，未知字段仍作为协议错误拒绝，避免跨阶段覆盖 brief。
+- Intake 兼容旧阶段 `collecting_context`/`prior_context` 到 `collecting_background`，Agent prompt 要求只返回 canonical 阶段名。

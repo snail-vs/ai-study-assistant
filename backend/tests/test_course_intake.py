@@ -158,6 +158,27 @@ class CourseIntakeTests(unittest.TestCase):
         self.assertEqual(result.next_question.stage, "collecting_background")
         self.assertEqual(result.next_question.target, "priorKnowledgeLevels")
 
+    def test_collecting_context_alias_normalizes_for_normalize_start_and_answer(self):
+        raw = normalize_state_result({
+            "decision": {"type": "advance", "nextStage": "collecting_context"},
+            "nextQuestion": {"stage": "collecting_context", "target": "priorKnowledgeLevels", "prompt": "基础？", "options": []},
+        }, stage="collecting_goals")
+        self.assertEqual(raw.decision.next_stage, "collecting_background")
+        self.assertEqual(raw.next_question.stage, "collecting_background")
+
+        gateway = StageShapeGateway(
+            top_stage="collecting_context", question_stage="collecting_context",
+            decision_stage="collecting_context", include_type=False,
+        )
+        started = asyncio.run(CourseIntakeAgent(gateway).start(topic="Python"))
+        self.assertEqual(started.decision.next_stage, "collecting_background")
+        self.assertEqual(started.next_question.stage, "collecting_background")
+        answered = asyncio.run(CourseIntakeAgent(gateway).answer(
+            stage="collecting_goals", brief={"topic": "Python"}, selected_labels=["实践"],
+        ))
+        self.assertEqual(answered.decision.next_stage, "collecting_background")
+        self.assertEqual(answered.next_question.stage, "collecting_background")
+
     def test_question_stage_overrides_stale_target_from_previous_stage(self):
         result = normalize_state_result({
             "decision": {"type": "advance", "nextStage": "collecting_background"},
