@@ -138,6 +138,7 @@ class CourseIntakeTests(unittest.TestCase):
             top_stage="collecting_prior_knowledge",
             question_stage="collecting_prior_knowledge",
             decision_stage="collecting_prior_knowledge",
+            include_type=False,
         )
         result = asyncio.run(CourseIntakeAgent(gateway).start(topic="Python"))
         self.assertEqual(result.decision.next_stage, "collecting_background")
@@ -169,6 +170,29 @@ class CourseIntakeTests(unittest.TestCase):
         }, stage="collecting_goals")
         self.assertEqual(result.next_question.stage, "collecting_background")
         self.assertEqual(result.next_question.target, "priorKnowledgeLevels")
+
+    def test_effective_stage_normalizes_advance_and_follow_up_questions(self):
+        advanced = normalize_state_result({
+            "decision": {"type": "advance", "nextStage": "collecting_background"},
+            "nextQuestion": {"stage": "collecting_goals", "target": "learningGoals", "prompt": "基础？", "options": []},
+        }, stage="collecting_goals")
+        self.assertEqual(advanced.next_question.stage, "collecting_background")
+        self.assertEqual(advanced.next_question.target, "priorKnowledgeLevels")
+
+        follow_up = normalize_state_result({
+            "decision": {"type": "ask_follow_up", "nextStage": "collecting_background"},
+            "nextQuestion": {"stage": "collecting_background", "target": "priorKnowledgeLevels", "prompt": "目标？", "options": []},
+        }, stage="collecting_goals")
+        self.assertEqual(follow_up.decision.next_stage, "collecting_goals")
+        self.assertEqual(follow_up.next_question.stage, "collecting_goals")
+        self.assertEqual(follow_up.next_question.target, "learningGoals")
+
+    def test_unknown_question_target_is_rejected(self):
+        with self.assertRaises(CourseIntakeInvalidResult):
+            normalize_state_result({
+                "decision": {"type": "advance", "nextStage": "collecting_background"},
+                "nextQuestion": {"stage": "collecting_background", "target": "futureProfile", "prompt": "基础？", "options": []},
+            }, stage="collecting_goals")
 
     def test_missing_decision_type_uses_next_stage_transition(self):
         gateway = StageShapeGateway(

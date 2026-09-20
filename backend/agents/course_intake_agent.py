@@ -65,7 +65,9 @@ def _question_target(value: object, question_stage: str) -> str:
         return canonical
     raw = str(value).strip()
     alias = _QUESTION_TARGET_ALIASES.get(raw.lower())
-    return canonical if alias in {"learningGoals", "priorKnowledgeLevels"} else canonical
+    if alias is None:
+        raise CourseIntakeInvalidResult(f"问题 target 无法识别：{value}")
+    return canonical
 
 
 def normalize_state_result(raw: dict, *, stage: str) -> CourseIntakeStateResult:
@@ -98,6 +100,8 @@ def normalize_state_result(raw: dict, *, stage: str) -> CourseIntakeStateResult:
         decision["nextStage"] = _stage(decision.get("nextStage"), next_stage)
         if "type" not in decision:
             decision["type"] = "advance" if decision["nextStage"] != current_stage else "ask_follow_up"
+    if decision.get("type") == "ask_follow_up":
+        decision["nextStage"] = current_stage
     result["decision"] = decision
 
     raw_question = result.get("nextQuestion")
@@ -105,12 +109,16 @@ def normalize_state_result(raw: dict, *, stage: str) -> CourseIntakeStateResult:
         raw_question = result["question"]
     elif raw_question is None and isinstance(result.get("question"), str):
         raw_question = {"title": result["question"]}
-    target_stage = _stage(decision.get("nextStage"), current_stage)
+    effective_stage = current_stage if decision.get("type") == "ask_follow_up" else _stage(decision.get("nextStage"), current_stage)
     if raw_question is not None:
         if not isinstance(raw_question, dict):
             raise CourseIntakeInvalidResult("nextQuestion 不是对象")
         question = dict(raw_question)
-        question_stage = _stage(question.get("stage"), target_stage)
+        if question.get("stage"):
+            _stage(question.get("stage"), effective_stage)
+        # The server-owned transition is authoritative; models often echo the
+        # previous stage while advancing or copy a future nextStage on follow-up.
+        question_stage = effective_stage
         target = _question_target(question.get("target"), question_stage)
         title = question.get("title") or question.get("question") or question.get("prompt") or question.get("text")
         if not isinstance(title, str) or not title.strip():

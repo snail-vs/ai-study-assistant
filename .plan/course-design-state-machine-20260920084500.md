@@ -178,3 +178,4 @@
 - 目标阶段进入 `collecting_background` 时，Agent 协议必须包含非空 `learningOutcome`；基础阶段进入 `reviewing_brief` 时必须包含非空 `priorKnowledge`。
 - 首次结构化结果缺少阶段摘要时，CourseIntakeAgent 仅发起一次带原始 brief、用户回答和原响应的同 schema 修复请求；修复仍不完整则返回受控 invalid，不推进服务端状态或 revision。
 - Intake normalize 兼容旧阶段 `collecting_prior_knowledge` 及 `prior_knowledge_levels`/`learning_goals` 等已知问题目标别名，统一为服务端 canonical stage/target；未知值仍拒绝。
+- Intake 问题协议以 effective stage 为准：`ask_follow_up` 固定当前阶段，`advance` 使用合法 nextStage；问题 target 按该阶段推导，已知 stale target 可覆盖，未知 stage/target 仍拒绝。
