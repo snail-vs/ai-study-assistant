@@ -61,6 +61,31 @@ describe('learning store', () => {
     expect(store.editingFailedSpace).toBeNull()
   })
 
+  it('retries a failed space with its saved course plan instead of starting intake again', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ id: 'space-1', generationStatus: 'queued' } as never)
+      .mockResolvedValueOnce({ items: [{ id: 'space-1', title: 'Go', generationStatus: 'queued' }] } as never)
+      .mockResolvedValueOnce([] as never)
+    const store = useLearningStore()
+    const failedSpace = {
+      id: 'space-1', title: 'Go', learningGoal: '掌握 Go', courseBrief: { audience: '初学者' },
+      courseScale: 'compact', courseOutline: [{ title: '基础' }], generationStatus: 'failed',
+    }
+    store.history = [failedSpace]
+
+    await store.retryFailedSpace(failedSpace)
+
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, '/learning-spaces/space-1/generation', {
+      method: 'PUT',
+      body: JSON.stringify({
+        title: 'Go', learningGoal: '掌握 Go', courseBrief: { audience: '初学者' },
+        courseScale: 'compact', courseOutline: [{ title: '基础' }],
+      }),
+    })
+    expect(store.generationNotice).toContain('已重新提交')
+    expect(store.history[0].generationStatus).toBe('queued')
+  })
+
   it('persists runtime payload without making navigation fail on an API error', async () => {
     mockedRequest.mockRejectedValueOnce(new Error('offline'))
     const store = useLearningStore()

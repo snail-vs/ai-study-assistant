@@ -69,6 +69,23 @@ export const useLearningStore = defineStore('learning', () => {
     if (editingFailedSpace.value?.id === spaceItem.id) editingFailedSpace.value = null
   }
 
+  async function retryFailedSpace(spaceItem: LearningSpace) {
+    const retried = await request<LearningSpace>(`/learning-spaces/${spaceItem.id}/generation`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        title: spaceItem.title,
+        learningGoal: spaceItem.learningGoal,
+        courseBrief: spaceItem.courseBrief || null,
+        courseScale: spaceItem.courseScale || 'standard',
+        courseOutline: spaceItem.courseOutline || [],
+      }),
+    })
+    if (editingFailedSpace.value?.id === spaceItem.id) editingFailedSpace.value = null
+    generationNotice.value = `课程“${spaceItem.title}”已重新提交，正在后台生成…`
+    await loadHistory()
+    return retried
+  }
+
   async function persistRuntime(eventType = 'navigation') {
     if (!space.value || !card.value) return
     try {
@@ -142,7 +159,7 @@ export const useLearningStore = defineStore('learning', () => {
   return {
     history, historyCards, generationNotice, editingFailedSpace, space, card, rootCard,
     relatedCards, navigationStack, activeSection, section,
-    loadHistory, deleteFailedSpace, persistRuntime, loadRelatedCards, stopGenerationPolling, setSpace, setCard, resetNavigation,
+    loadHistory, deleteFailedSpace, retryFailedSpace, persistRuntime, loadRelatedCards, stopGenerationPolling, setSpace, setCard, resetNavigation,
     pushNavigation, popNavigation, clearWorkspace,
   }
 })

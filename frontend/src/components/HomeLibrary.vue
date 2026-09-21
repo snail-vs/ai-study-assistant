@@ -12,7 +12,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits([
-  'open-card', 'open-space', 'edit-failed', 'delete-failed', 'delete-card',
+  'open-card', 'open-space', 'retry-failed', 'delete-failed', 'delete-card',
 ])
 
 const homeViewMode = ref<ViewMode>(localStorage.getItem('studycenter.homeViewMode') === 'spaces' ? 'spaces' : 'cards')
@@ -62,7 +62,7 @@ function openSpace(item: LearningSpace) {
           <small>{{ generationStatusLabel(item.space) }} · {{ item.cardCount }} 张知识卡 · {{ new Date(item.space.createdAt).toLocaleDateString('zh-CN') }}</small>
         </button>
         <div class="history-actions">
-          <button v-if="item.space.generationStatus === 'failed'" class="history-delete retry-generation" @click.stop="emit('edit-failed', item.space)">重新编辑</button>
+          <button v-if="item.space.generationStatus === 'failed'" class="history-delete retry-generation" @click.stop="emit('retry-failed', item.space)">继续生成</button>
           <button v-if="item.space.generationStatus === 'failed'" class="history-delete" @click.stop="emit('delete-failed', item.space)">删除</button>
         </div>
       </div>
@@ -73,7 +73,7 @@ function openSpace(item: LearningSpace) {
           <span>{{ item.title }}</span>
           <small>{{ generationStatusLabel(item) }}</small>
         </div>
-        <button v-if="item.generationStatus === 'failed'" class="history-delete retry-generation" @click="emit('edit-failed', item)">重新编辑</button>
+        <button v-if="item.generationStatus === 'failed'" class="history-delete retry-generation" @click="emit('retry-failed', item)">继续生成</button>
         <button v-if="item.generationStatus === 'failed'" class="history-delete" @click="emit('delete-failed', item)">删除</button>
       </div>
       <div v-for="item in homeCards" :key="item.card.id" class="history-item">

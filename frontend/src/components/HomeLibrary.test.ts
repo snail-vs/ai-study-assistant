@@ -35,7 +35,7 @@ describe('HomeLibrary', () => {
     await wrapper.find('.space-history-item .history-delete:not(.retry-generation)').trigger('click')
 
     expect(wrapper.emitted('open-space')?.[0]).toEqual([history[0]])
-    expect(wrapper.emitted('edit-failed')?.[0]).toEqual([history[1]])
+    expect(wrapper.emitted('retry-failed')?.[0]).toEqual([history[1]])
     expect(wrapper.emitted('delete-failed')?.[0]).toEqual([history[1]])
   })
 })

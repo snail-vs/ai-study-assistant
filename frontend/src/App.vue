@@ -500,6 +500,15 @@ function editFailedGeneration(item) {
   generationNotice.value = `正在编辑“${item.title}”，修改学习目标后重新生成。`
 }
 
+async function retryFailedGeneration(item) {
+  error.value = ''
+  try {
+    await learningStore.retryFailedSpace(item)
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
 function cancelFailedGenerationEdit() {
   editingFailedSpace.value = null
   courseDesignStore.reset()
@@ -768,7 +777,7 @@ function nextSection() {
         :history-cards="historyCards"
         @open-card="openHomeCard"
         @open-space="openHistory"
-        @edit-failed="editFailedGeneration"
+        @retry-failed="retryFailedGeneration"
         @delete-failed="deleteFailedGeneration"
         @delete-card="deleteHomeCard"
       />
