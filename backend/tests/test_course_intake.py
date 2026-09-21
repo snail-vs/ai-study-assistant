@@ -349,6 +349,43 @@ class CourseIntakeTests(unittest.TestCase):
         self.assertIn("responseLanguage=zh-CN", gateway.messages[0]["content"])
         self.assertIn("responseLanguage=zh-CN", gateway.messages[1]["content"])
 
+    def test_outline_agent_repairs_empty_outline_once(self):
+        class EmptyThenValidOutlineGateway:
+            def __init__(self):
+                self.calls = 0
+                self.repair_messages = None
+
+            async def structured(self, messages, *, task, schema):
+                self.calls += 1
+                if self.calls == 1:
+                    return {"outline": []}
+                self.repair_messages = messages
+                return {"outline": [
+                    {"title": f"Go 阶段 {index}", "objective": f"掌握 Go 能力 {index}"}
+                    for index in range(1, 7)
+                ]}
+
+        gateway = EmptyThenValidOutlineGateway()
+        outline = asyncio.run(CourseOutlineAgent(gateway).generate({"topic": "学习 Go"}, "standard"))
+        self.assertEqual(len(outline), 6)
+        self.assertEqual(gateway.calls, 2)
+        self.assertIn("结构化修复请求", gateway.repair_messages[0]["content"])
+        self.assertIn('"expectedCount": 6', gateway.repair_messages[1]["content"])
+
+    def test_outline_agent_fails_only_after_invalid_repair(self):
+        class EmptyOutlineGateway:
+            def __init__(self):
+                self.calls = 0
+
+            async def structured(self, _messages, *, task, schema):
+                self.calls += 1
+                return {"outline": []}
+
+        gateway = EmptyOutlineGateway()
+        with self.assertRaisesRegex(ValueError, "模型修复后仍未生成有效大纲"):
+            asyncio.run(CourseOutlineAgent(gateway).generate({"topic": "学习 Go"}, "standard"))
+        self.assertEqual(gateway.calls, 2)
+
     def test_outline_revision_language_uses_topic_not_feedback(self):
         class OutlineCapture:
             def __init__(self):
