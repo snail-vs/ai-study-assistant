@@ -3,6 +3,9 @@ import unittest
 from pydantic import ValidationError
 
 from backend.agents.schemas import CourseOutlineDraft, CourseOutlineRevisionDraft
+from backend.ai.base import AIProviderError
+from backend.ai.capabilities import capabilities_for_route
+from backend.ai.model_routing import resolve_model_route
 from backend.ai.providers.openai_compatible import OpenAICompatibleProvider
 
 
@@ -28,6 +31,29 @@ class StructuredOutputTests(unittest.TestCase):
                 schema.model_validate(payload)
             with self.subTest(schema=schema.__name__), self.assertRaises(ValidationError):
                 schema.model_validate({**payload, "outline": []})
+
+    def test_deepseek_uses_responses_json_schema_without_openai_strict_flag(self):
+        route = resolve_model_route("deepseek", "https://api.deepseek.com", "deepseek-chat")
+        self.assertEqual(route.protocol, "openai_responses")
+        self.assertEqual(route.endpoint, "https://api.deepseek.com/responses")
+
+        provider = OpenAICompatibleProvider(
+            "https://api.deepseek.com", "key", "deepseek-chat", endpoint=route.endpoint,
+            protocol=route.protocol, route=route,
+            capabilities=capabilities_for_route(route, "deepseek"),
+        )
+        payload = provider._responses_payload(
+            [], task="section_content", schema=CourseOutlineDraft.model_json_schema()
+        )
+        text_format = payload["text"]["format"]
+        self.assertEqual(text_format["type"], "json_schema")
+        self.assertNotIn("strict", text_format)
+
+    def test_responses_content_rejects_incomplete_generation(self):
+        with self.assertRaisesRegex(AIProviderError, "max_output_tokens"):
+            OpenAICompatibleProvider._responses_content({
+                "status": "incomplete", "incomplete_details": {"reason": "max_output_tokens"},
+            })
 
 
 if __name__ == "__main__":

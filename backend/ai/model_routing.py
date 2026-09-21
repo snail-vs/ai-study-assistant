@@ -58,7 +58,7 @@ ACCESS_ROUTES = {
 }
 
 ACCESS_DEFAULTS = {
-    "deepseek": ("deepseek", "openai_chat_completions", "/chat/completions"),
+    "deepseek": ("deepseek", "openai_responses", "/responses"),
     "openrouter": (None, "openai_chat_completions", "/chat/completions"),
     "opencode": (None, None, None),
     "anthropic": ("anthropic", "anthropic_messages", "/v1/messages"),

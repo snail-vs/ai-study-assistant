@@ -25,7 +25,10 @@ def capabilities_for_route(route: ModelRoute, access_provider: str | None = None
             protocol=route.protocol,
             supports_json_schema=True,
             supports_json_object=True,
-            strict_json_schema=True,
+            # DeepSeek's Responses API documents JSON Schema output but not
+            # OpenAI's `strict` option. Keep its request portable while still
+            # using schema-constrained output.
+            strict_json_schema=access_provider != "deepseek",
         )
     if route.protocol == "openai_chat_completions":
         if access_provider == "deepseek":

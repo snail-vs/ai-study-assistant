@@ -194,6 +194,7 @@ class OpenAICompatibleProvider:
                 error = provider_error(response.status_code, response.text)
                 if error.category == "schema_incompatible" and self.capabilities.supports_json_object:
                     payload["text"]["format"] = {"type": "json_object"}
+                    payload["input"] = self._json_object_messages(messages, schema)
                     response = await client.post(self.endpoint, headers=self._headers(), json=payload)
                     if response.status_code >= 400 and provider_error(response.status_code, response.text).category == "schema_incompatible":
                         payload.pop("text", None)
@@ -202,35 +203,51 @@ class OpenAICompatibleProvider:
             raise provider_error(response.status_code, response.text)
         try:
             body = response.json()
-            content = body.get("output_text")
-            if not content:
-                for output in body.get("output", []):
-                    for item in output.get("content", []):
-                        if item.get("type") in ("output_text", "text") and item.get("text"):
-                            content = item["text"]
-                            break
-                    if content:
-                        break
-            if not isinstance(content, str):
-                raise AIProviderError("Provider returned no Responses output text")
-            return parse_json_text(content)
+            return parse_json_text(self._responses_content(body))
         except AIProviderError:
             raise
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             raise AIProviderError("Invalid structured Responses response") from exc
 
+    @staticmethod
+    def _responses_content(body: dict[str, Any]) -> str:
+        """Extract completed Responses text and reject incomplete generations."""
+        status = body.get("status")
+        if status in {"incomplete", "failed"}:
+            detail = body.get("incomplete_details") or body.get("error") or {}
+            if isinstance(detail, dict):
+                reason = detail.get("reason") or detail.get("message")
+            else:
+                reason = str(detail)
+            raise AIProviderError(
+                f"Responses generation {status}: {reason or 'no detail'}",
+                category="invalid_response",
+            )
+        content = body.get("output_text")
+        if not content:
+            for output in body.get("output", []):
+                for item in output.get("content", []):
+                    if item.get("type") in ("output_text", "text") and item.get("text"):
+                        content = item["text"]
+                        break
+                if content:
+                    break
+        if not isinstance(content, str):
+            raise AIProviderError("Provider returned no Responses output text")
+        return content
+
     def _responses_payload(
         self, messages: Sequence[dict[str, str]], *, task: str, schema: dict[str, Any]
     ) -> dict[str, Any]:
+        text_format: dict[str, Any] = {
+            "type": "json_schema",
+            "name": task,
+            "schema": strict_json_schema(schema),
+        }
+        if self.capabilities.strict_json_schema:
+            text_format["strict"] = True
         return {
             "model": self.model,
             "input": list(messages),
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": task,
-                    "schema": strict_json_schema(schema),
-                    "strict": True,
-                }
-            },
+            "text": {"format": text_format},
         }
