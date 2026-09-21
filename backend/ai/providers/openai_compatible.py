@@ -35,6 +35,29 @@ class OpenAICompatibleProvider:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
+    @staticmethod
+    def _json_object_messages(
+        messages: Sequence[dict[str, str]], schema: dict[str, Any]
+    ) -> list[dict[str, str]]:
+        """Expose the output contract when an endpoint only supports JSON mode.
+
+        JSON-object mode guarantees syntactically valid JSON, but it does not
+        communicate which fields the object must contain. Supplying the schema
+        in-band keeps such providers aligned with providers that enforce JSON
+        Schema server-side.
+        """
+        return [
+            *messages,
+            {
+                "role": "system",
+                "content": (
+                    "只返回一个 JSON 对象，不要 Markdown 或解释。输出必须符合以下 JSON Schema，"
+                    "包含所有 required 字段并满足数组长度等约束：\n"
+                    + json.dumps(schema, ensure_ascii=False)
+                ),
+            },
+        ]
+
     async def list_models(self) -> list[str]:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.get(f"{self.base_url}/models", headers=self._headers())
@@ -116,13 +139,14 @@ class OpenAICompatibleProvider:
     ) -> dict[str, Any]:
         if self.protocol == "openai_responses":
             return await self._structured_responses(messages, task=task, schema=schema)
+        json_mode_messages = self._json_object_messages(messages, schema)
         response_format = {"type": "json_object"} if not self.capabilities.supports_json_schema else {
             "type": "json_schema",
             "json_schema": {"name": task, "schema": strict_json_schema(schema)},
         }
         payload = {
             "model": self.model,
-            "messages": list(messages),
+            "messages": list(messages) if self.capabilities.supports_json_schema else json_mode_messages,
             "temperature": 0.2,
             "response_format": response_format,
         }
@@ -133,6 +157,7 @@ class OpenAICompatibleProvider:
             if response.status_code >= 400 and provider_error(response.status_code, response.text).category == "schema_incompatible":
                 # Many compatible endpoints support JSON mode but not JSON Schema mode.
                 payload["response_format"] = {"type": "json_object"}
+                payload["messages"] = json_mode_messages
                 response = await client.post(
                     self.endpoint, headers=self._headers(), json=payload
                 )
