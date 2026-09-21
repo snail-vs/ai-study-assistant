@@ -137,6 +137,115 @@ class CourseDesignStateMachineTests(unittest.TestCase):
                 payload={"answer": {"questionId": session.current_question.id, "selectedOptionIds": ["understand-core"]}},
             )))
 
+    def test_conflict_resolution_replaces_previous_selections(self):
+        class ConflictResolutionProvider:
+            def __init__(self):
+                self.answers = 0
+
+            async def structured(self, messages, *, task, schema):
+                if task != "course_intake_state":
+                    raise AssertionError(f"unexpected task: {task}")
+                if "start_intake" in messages[-1]["content"]:
+                    return {
+                        "briefPatch": {},
+                        "decision": {"type": "ask_follow_up", "nextStage": "collecting_goals"},
+                        "nextQuestion": {
+                            "id": "initial-goals", "stage": "collecting_goals", "target": "learningGoals",
+                            "title": "你希望获得哪些能力？",
+                            "options": [
+                                {"id": "zero", "label": "完全零基础"},
+                                {"id": "experienced", "label": "工作中用过 Go"},
+                            ],
+                        },
+                    }
+                if self.answers == 0:
+                    self.answers += 1
+                    return {
+                        "briefPatch": {},
+                        "decision": {"type": "ask_follow_up", "nextStage": "collecting_goals"},
+                        "nextQuestion": {
+                            "id": "resolve-go-level", "stage": "collecting_goals", "target": "learningGoals",
+                            "title": "你既勾了零基础也勾了有经验，请选一个最贴近的情况。",
+                            "options": [
+                                {"id": "zero", "label": "完全零基础"},
+                                {"id": "other-language", "label": "会其他语言，但没写过 Go"},
+                                {"id": "experienced", "label": "工作中用过 Go"},
+                            ],
+                        },
+                    }
+                return {
+                    "briefPatch": {"learningOutcome": "按合适起点学习 Go"},
+                    "decision": {"type": "advance", "nextStage": "collecting_background"},
+                    "nextQuestion": {
+                        "id": "background", "stage": "collecting_background", "target": "priorKnowledgeLevels",
+                        "title": "你目前有哪些相关基础？", "options": [],
+                    },
+                }
+
+        provider = ConflictResolutionProvider()
+        service = CourseDesignService(self.db, "user-1", provider)
+        session = asyncio.run(service.create("Go"))
+        session = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="contradictory", expectedRevision=session.revision, type="answer_question", payload={"answer": {
+                "questionId": session.current_question.id, "selectedOptionIds": ["zero", "experienced"],
+            }},
+        )))
+        self.assertEqual(session.state, "collecting_goals")
+        session = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="resolve", expectedRevision=session.revision, type="answer_question", payload={"answer": {
+                "questionId": session.current_question.id, "selectedOptionIds": ["other-language"],
+            }},
+        )))
+        self.assertEqual(session.brief.learning_goals, ["会其他语言，但没写过 Go"])
+
+    def test_scale_question_is_replaced_with_background_fallback(self):
+        class ScaleQuestionProvider:
+            def __init__(self):
+                self.calls = 0
+
+            async def structured(self, _messages, *, task, schema):
+                self.calls += 1
+                if self.calls == 1:
+                    return await MockTextProvider().structured(_messages, task=task, schema=schema)
+                return {
+                    "briefPatch": {"learningOutcome": "掌握 Go 基础"},
+                    "decision": {"type": "advance", "nextStage": "collecting_background"},
+                    "nextQuestion": {
+                        "id": "wrong-scale", "stage": "collecting_background", "target": "priorKnowledgeLevels",
+                        "title": "你希望以什么规模和节奏学习 Go？",
+                        "options": [{"id": "quick", "label": "快速了解：2-3 节"}],
+                    },
+                }
+
+        service = CourseDesignService(self.db, "user-1", ScaleQuestionProvider())
+        session = asyncio.run(service.create("Go"))
+        session = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="goals", expectedRevision=session.revision, type="answer_question", payload={"answer": {
+                "questionId": session.current_question.id, "selectedOptionIds": ["understand-core"],
+            }},
+        )))
+        self.assertEqual(session.state, "collecting_background")
+        self.assertEqual(session.current_question.id, "collecting-background-fallback")
+        self.assertEqual(session.current_question.target, "priorKnowledgeLevels")
+        self.assertNotIn("规模", session.current_question.title)
+
+    def test_get_repairs_a_persisted_scale_question(self):
+        session = asyncio.run(self.service.create("Go"))
+        persisted = self.service._owned(session.session_id)
+        persisted.state = "collecting_background"
+        persisted.current_question = {
+            "id": "wrong-scale", "stage": "collecting_background", "target": "priorKnowledgeLevels",
+            "type": "multi_select_with_text", "title": "你希望以什么规模和节奏学习 Go？",
+            "description": "", "options": [{"id": "quick", "label": "快速了解：2-3 节"}],
+            "allowCustom": True, "minimumSelections": 0,
+        }
+        persisted.questions = {"collecting_background": persisted.current_question}
+        self.db.commit()
+
+        repaired = self.service.get(session.session_id)
+        self.assertEqual(repaired.current_question.id, "collecting-background-fallback")
+        self.assertEqual(repaired.current_question.options[0].id, "no-programming")
+
     def test_agent_returned_topic_is_ignored_during_intake(self):
         class TopicEchoProvider(MockTextProvider):
             async def structured(self, messages, *, task, schema):

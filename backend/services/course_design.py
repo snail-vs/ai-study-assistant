@@ -45,6 +45,15 @@ GOAL_FIELDS = {"learningGoals", "learningGoalDetails", "learningOutcome"}
 BACKGROUND_FIELDS = {"priorKnowledgeLevels", "priorKnowledgeDetails", "priorKnowledge"}
 INTAKE_FIELDS = GOAL_FIELDS | BACKGROUND_FIELDS
 SCALE_VALUES = {"quick", "standard", "series"}
+_SCALE_QUESTION_MARKERS = (
+    "课程规模", "学习规模", "规模和节奏", "学习节奏", "学习时长", "时间与深度",
+    "快速了解", "系统入门", "项目掌握", "2-3 节", "5-8 节", "8-12 节",
+    "course scale", "learning pace", "duration", "quick overview", "standard course",
+)
+_CONFLICT_RESOLUTION_MARKERS = (
+    "矛盾", "冲突", "既勾", "请选一个", "选择一个", "最贴近", "只能选",
+    "conflict", "choose one", "closest match", "only choose",
+)
 
 
 def _initial_brief(topic: str, patch: dict) -> dict:
@@ -58,6 +67,41 @@ def _question(data: dict | None) -> CourseDesignQuestion | None:
     return CourseDesignQuestion.model_validate(data)
 
 
+def _is_scale_question(question: CourseDesignQuestion) -> bool:
+    text = " ".join([
+        question.title, question.description, *(option.label for option in question.options)
+    ]).lower()
+    return any(marker in text for marker in _SCALE_QUESTION_MARKERS)
+
+
+def _is_conflict_resolution_question(question: dict) -> bool:
+    text = " ".join(str(question.get(key, "")) for key in ("title", "description"))
+    return any(marker in text for marker in _CONFLICT_RESOLUTION_MARKERS)
+
+
+def _fallback_question(stage: str, topic: str) -> CourseDesignQuestion:
+    if stage == "collecting_goals":
+        return CourseDesignQuestion(
+            id="collecting-goals-fallback", stage=stage, target="learningGoals",
+            title=f"学习 {topic} 后，你最希望获得哪些能力？",
+            options=[
+                {"id": "understand-core", "label": "理解核心概念与工作原理"},
+                {"id": "hands-on", "label": "能完成一个实际练习或小项目"},
+                {"id": "apply-at-work", "label": "能在工作或真实场景中应用"},
+            ],
+        )
+    return CourseDesignQuestion(
+        id="collecting-background-fallback", stage=stage, target="priorKnowledgeLevels",
+        title=f"在学习 {topic} 前，你目前有哪些相关基础？",
+        options=[
+            {"id": "no-programming", "label": "还没有相关编程或技术基础"},
+            {"id": "other-language", "label": "会其他编程语言，但没系统学习过这个主题"},
+            {"id": "basic-experience", "label": "了解基础概念，做过一些简单练习"},
+            {"id": "practical-experience", "label": "有实际使用经验，想系统提升"},
+        ],
+    )
+
+
 class CourseDesignService:
     def __init__(self, db, user_id: str, gateway=None):
         self.db = db
@@ -69,6 +113,13 @@ class CourseDesignService:
             self.gateway = restore_active_provider(self.db, self.user_id)
         return self.gateway
 
+    @staticmethod
+    def _safe_intake_question(question: CourseDesignQuestion, stage: str, topic: str) -> CourseDesignQuestion:
+        """Keep scale selection out of the goals/background interview steps."""
+        if _is_scale_question(question):
+            return _fallback_question(stage, topic)
+        return question
+
     def _owned(self, session_id: str) -> CourseDesignSession:
         session = self.db.scalar(select(CourseDesignSession).where(
             CourseDesignSession.id == session_id,
@@ -77,6 +128,21 @@ class CourseDesignService:
         if not session:
             raise CourseDesignInvalid("课程设计会话不存在")
         return session
+
+    def _repair_unsafe_current_question(self, session: CourseDesignSession) -> None:
+        """Repair persisted questions created before semantic validation existed."""
+        if session.state not in {"collecting_goals", "collecting_background"}:
+            return
+        question = _question(session.current_question)
+        if not question or not _is_scale_question(question):
+            return
+        repaired = _fallback_question(session.state, session.topic)
+        session.current_question = repaired.model_dump(by_alias=True)
+        questions = session.questions
+        questions[session.state] = session.current_question
+        session.questions = questions
+        self.db.commit()
+        self.db.refresh(session)
 
     def _snapshot(self, session: CourseDesignSession) -> CourseDesignSessionResponse:
         return CourseDesignSessionResponse(
@@ -133,6 +199,7 @@ class CourseDesignService:
         question = result.next_question
         if not question or question.stage != "collecting_goals" or question.target != "learningGoals":
             raise CourseDesignInvalid("Intake Agent 返回了无效的目标问题")
+        question = self._safe_intake_question(question, "collecting_goals", topic)
         if set(result.brief_patch) - (GOAL_FIELDS | {"topic"}):
             raise CourseDesignInvalid("Intake Agent 返回了无效的目标字段")
         brief = _initial_brief(topic, result.brief_patch)
@@ -150,7 +217,9 @@ class CourseDesignService:
         return self._snapshot(session)
 
     def get(self, session_id: str) -> CourseDesignSessionResponse:
-        return self._snapshot(self._owned(session_id))
+        session = self._owned(session_id)
+        self._repair_unsafe_current_question(session)
+        return self._snapshot(session)
 
     def _ensure_action(self, session: CourseDesignSession, command: CourseDesignCommandRequest) -> None:
         if command.type not in ALLOWED_ACTIONS.get(session.state, []):
@@ -192,15 +261,16 @@ class CourseDesignService:
         if unknown:
             raise CourseDesignInvalid("Agent 返回了当前阶段禁止修改的字段")
         patch = {key: value for key, value in agent_result.brief_patch.items() if key in allowed}
+        replaces_previous = _is_conflict_resolution_question(current_question)
         if session.state == "collecting_goals":
             previous = session.brief.get("learningGoals", [])
-            patch["learningGoals"] = list(dict.fromkeys([*previous, *labels]))
+            patch["learningGoals"] = labels if replaces_previous else list(dict.fromkeys([*previous, *labels]))
             if custom:
                 prior = session.brief.get("learningGoalDetails", "")
                 patch["learningGoalDetails"] = "；".join(dict.fromkeys(filter(None, [prior, custom])))
         else:
             previous = session.brief.get("priorKnowledgeLevels", [])
-            patch["priorKnowledgeLevels"] = list(dict.fromkeys([*previous, *labels]))
+            patch["priorKnowledgeLevels"] = labels if replaces_previous else list(dict.fromkeys([*previous, *labels]))
             if custom:
                 prior = session.brief.get("priorKnowledgeDetails", "")
                 patch["priorKnowledgeDetails"] = "；".join(dict.fromkeys(filter(None, [prior, custom])))
@@ -231,6 +301,7 @@ class CourseDesignService:
                 raise CourseDesignInvalid("Agent 必须返回下一阶段问题")
             if next_question.stage != next_stage or next_question.target != expected_target:
                 raise CourseDesignInvalid("Agent 返回的问题目标字段与阶段不匹配")
+            next_question = self._safe_intake_question(next_question, next_stage, session.topic)
             session.current_question = next_question.model_dump(by_alias=True)
             questions = session.questions
             questions[next_stage] = session.current_question
@@ -262,7 +333,8 @@ class CourseDesignService:
                 if not result.next_question or result.next_question.stage != "collecting_background" or result.next_question.target != "priorKnowledgeLevels":
                     raise CourseDesignInvalid("Agent 必须返回有效的基础问题")
                 session.state = "collecting_background"
-                session.current_question = result.next_question.model_dump(by_alias=True)
+                question = self._safe_intake_question(result.next_question, "collecting_background", session.topic)
+                session.current_question = question.model_dump(by_alias=True)
                 questions = session.questions
                 questions["collecting_background"] = session.current_question
                 session.questions = questions
@@ -349,7 +421,8 @@ class CourseDesignService:
                 raise CourseDesignInvalid("Intake Agent 返回了无效的目标问题")
             session.state = "collecting_goals"
             session.brief = CourseBrief.model_validate(_initial_brief(session.topic, result.brief_patch)).model_dump(by_alias=True)
-            session.current_question = result.next_question.model_dump(by_alias=True)
+            question = self._safe_intake_question(result.next_question, "collecting_goals", session.topic)
+            session.current_question = question.model_dump(by_alias=True)
             session.questions = {"collecting_goals": session.current_question}
             session.selected_scale = None
             session.outline = []
