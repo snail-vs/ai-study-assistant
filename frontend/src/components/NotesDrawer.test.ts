@@ -80,4 +80,21 @@ describe('NotesDrawer', () => {
     expect(wrapper.find('.note-editor-actions .primary').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('正在保存')
   })
+
+  it('collapses the library so the editor can use the full drawer width', async () => {
+    const wrapper = mountDrawer({
+      editorMode: 'edit',
+      editingNote: notes[0],
+      editorContent: notes[0].content,
+      editorSource: source(notes[0]),
+    })
+    const toggle = wrapper.find('.notes-library-toggle')
+
+    expect(wrapper.find('.notes-drawer').classes()).not.toContain('library-collapsed')
+    await toggle.trigger('click')
+    expect(wrapper.find('.notes-drawer').classes()).toContain('library-collapsed')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    await toggle.trigger('click')
+    expect(wrapper.find('.notes-drawer').classes()).not.toContain('library-collapsed')
+  })
 })

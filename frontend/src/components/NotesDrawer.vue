@@ -28,6 +28,7 @@ const emit = defineEmits([
 
 const query = ref('')
 const cardFilter = ref('')
+const libraryCollapsed = ref(false)
 
 const filteredNotes = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase('zh-CN')
@@ -84,7 +85,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
 
 <template>
   <div class="notes-backdrop" @click.self="emit('close')">
-    <aside class="notes-drawer" :class="{ 'is-editing': isEditing }" aria-label="我的笔记">
+    <aside class="notes-drawer" :class="{ 'is-editing': isEditing, 'library-collapsed': libraryCollapsed }" aria-label="我的笔记">
       <header class="notes-drawer-head">
         <div class="notes-heading-copy">
           <span class="notes-kicker">LEARNING NOTES</span>
@@ -93,7 +94,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
             <span v-if="notesList.length" class="notes-count">{{ notesList.length }}</span>
           </div>
         </div>
-        <button class="notes-close" type="button" aria-label="关闭笔记" @click="emit('close')">×</button>
+        <div class="notes-head-actions">
+          <button
+            class="notes-library-toggle"
+            type="button"
+            :aria-expanded="!libraryCollapsed"
+            :aria-label="libraryCollapsed ? '展开笔记列表' : '收起笔记列表'"
+            @click="libraryCollapsed = !libraryCollapsed"
+          >
+            <span aria-hidden="true">{{ libraryCollapsed ? '→' : '←' }}</span>
+            <span class="notes-library-toggle-label">{{ libraryCollapsed ? '展开列表' : '收起列表' }}</span>
+          </button>
+          <button class="notes-close" type="button" aria-label="关闭笔记" @click="emit('close')">×</button>
+        </div>
       </header>
 
       <div v-if="errorMessage" class="notes-error" role="alert">
