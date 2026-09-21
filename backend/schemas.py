@@ -77,6 +77,9 @@ class DiscoverModelsRequest(ApiModel):
 
 class DiscoverModelsResponse(ApiModel):
     models: list[str]
+    source: Literal["provider_catalog", "conventional", "manual"] = "conventional"
+    warning: str | None = None
+    key_validated: bool = Field(default=False, alias="keyValidated")
 
 
 class ChatGptLoginRequest(ApiModel):

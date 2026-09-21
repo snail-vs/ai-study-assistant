@@ -59,12 +59,20 @@ class OpenAICompatibleProvider:
         ]
 
     async def list_models(self) -> list[str]:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(f"{self.base_url}/models", headers=self._headers())
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.get(f"{self.base_url}/models", headers=self._headers())
+        except httpx.HTTPError as exc:
+            raise AIProviderError(
+                f"Provider model list connection failed: {exc}", category="provider_unavailable"
+            ) from exc
         if response.status_code >= 400:
             raise provider_error(response.status_code, response.text)
         try:
-            return sorted(item["id"] for item in response.json()["data"] if item.get("id"))
+            models = sorted(item["id"] for item in response.json()["data"] if item.get("id"))
+            if not models:
+                raise AIProviderError("Provider returned an empty model list", category="invalid_response")
+            return models
         except (KeyError, TypeError, json.JSONDecodeError) as exc:
             raise AIProviderError("Invalid model list response from provider") from exc
 

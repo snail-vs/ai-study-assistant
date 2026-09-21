@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = defineProps({
   providerStatus: { type: Object, required: true },
@@ -7,6 +7,7 @@ const props = defineProps({
   apiKey: { type: String, default: '' },
   availableModels: { type: Array, default: () => [] },
   selectedModels: { type: Array, default: () => [] },
+  modelDiscovery: { type: Object, default: () => ({}) },
   selectedDefaultModel: { type: String, default: '' },
   taskRoutes: { type: Object, default: () => ({}) },
   showAdvancedRoutes: Boolean,
@@ -28,9 +29,18 @@ const emit = defineEmits([
   'update:selectedProvider', 'update:apiKey', 'update:selectedModels',
   'update:selectedDefaultModel', 'update:taskRoutes', 'update:showAdvancedRoutes', 'update:chatgptLogin',
   'update:editingKey',
+  'add-manual-model',
 ])
 
 const isChatGpt = computed(() => props.selectedProvider === 'chatgpt')
+const manualModel = ref('')
+
+function addManualModel() {
+  const value = manualModel.value.trim()
+  if (!value) return
+  emit('add-manual-model', value)
+  manualModel.value = ''
+}
 
 function updateTaskRoute(id, value) {
   const next = { ...props.taskRoutes }
@@ -68,7 +78,7 @@ function setRoleRoute(role, model) {
       <label>Provider<select
         :value="selectedProvider"
         @change="emit('update:selectedProvider', $event.target.value); emit('change-provider')"
-      ><option value="deepseek">DeepSeek</option><option value="google">Google Gemini</option><option value="opencode">OpenCode Zen</option><option value="openrouter">OpenRouter</option><option value="anthropic">Anthropic</option><option value="chatgpt">ChatGPT (Plus/Pro)</option></select></label>
+      ><option value="deepseek">DeepSeek</option><option value="google">Google Gemini</option><option value="opencode">OpenCode Zen</option><option value="openrouter">OpenRouter</option><option value="anthropic">Anthropic</option><option value="glm">智谱 GLM（中国大陆）</option><option value="zai">Z.AI GLM（海外）</option><option value="chatgpt">ChatGPT (Plus/Pro)</option></select></label>
       <div
         v-if="isChatGpt"
         class="chatgpt-login"
@@ -179,6 +189,22 @@ function setRoleRoute(role, model) {
         :disabled="fetchingModels || (!apiKey && !keyConfigured)"
         @click="emit('fetch-models')"
       >{{ fetchingModels ? '获取中…' : '获取模型' }}</button></div></label>
+      <p
+        v-if="!isChatGpt && modelDiscovery.warning"
+        class="provider-hint"
+      >
+        {{ modelDiscovery.warning }}
+      </p>
+      <label v-if="!isChatGpt">手动模型名称<div class="key-row"><input
+        v-model="manualModel"
+        placeholder="例如 glm-5.2"
+        @keydown.enter.prevent="addManualModel"
+      ><button
+        :disabled="!manualModel.trim()"
+        @click="addManualModel"
+      >添加模型</button></div><p class="provider-hint">
+        手动输入的模型会优先用于请求；专用模型目录和通用目录仅用于补充候选项。
+      </p></label>
       <div
         v-if="availableModels.length"
         class="model-catalog"

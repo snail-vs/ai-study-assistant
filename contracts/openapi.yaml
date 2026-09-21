@@ -63,7 +63,7 @@ paths:
       - name: providerName
         in: path
         required: true
-        schema: { type: string, enum: [deepseek, google, opencode, openrouter, chatgpt] }
+        schema: { type: string, enum: [deepseek, google, opencode, openrouter, anthropic, glm, zai, chatgpt] }
     put:
       operationId: configureProvider
       requestBody:
@@ -93,7 +93,7 @@ paths:
       - name: providerName
         in: path
         required: true
-        schema: { type: string, enum: [deepseek, google, opencode, openrouter, chatgpt] }
+        schema: { type: string, enum: [deepseek, google, opencode, openrouter, anthropic, glm, zai, chatgpt] }
     post:
       operationId: discoverProviderModels
       requestBody:
@@ -926,7 +926,7 @@ components:
           type: array
           minItems: 1
           items: { type: string }
-        defaultModel: { type: string, minLength: 1, nullable: true, deprecated: true }
+        defaultModel: { type: string, minLength: 1, nullable: true }
         taskRoutes:
           type: object
           description: Values use provider:model, for example deepseek:deepseek-chat.
@@ -942,6 +942,9 @@ components:
         models:
           type: array
           items: { type: string }
+        source: { type: string, enum: [provider_catalog, conventional, manual] }
+        warning: { type: string, nullable: true }
+        keyValidated: { type: boolean }
     ChatGptLogin:
       type: object
       required: [sessionId, method]

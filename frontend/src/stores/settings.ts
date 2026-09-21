@@ -10,8 +10,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const status = ref<any>({ activeProvider: null, providers: {} })
   const selectedProvider = ref('deepseek')
   const apiKey = ref('')
-  const availableModels = ref([])
-  const selectedModels = ref([])
+  const availableModels = ref<string[]>([])
+  const selectedModels = ref<string[]>([])
+  const modelDiscovery = ref({ source: '', warning: '', keyValidated: false })
   const selectedDefaultModel = ref('')
   const taskRoutes = ref({})
   const showAdvancedRoutes = ref(false)
@@ -33,13 +34,14 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function open() {
     await load()
-    selectedProvider.value = ['deepseek', 'google', 'opencode', 'openrouter', 'anthropic', 'chatgpt'].includes(status.value.activeProvider)
+    selectedProvider.value = ['deepseek', 'google', 'opencode', 'openrouter', 'anthropic', 'glm', 'zai', 'chatgpt'].includes(status.value.activeProvider)
       ? status.value.activeProvider : 'deepseek'
     selectedModels.value = [...(status.value.models?.[selectedProvider.value] || [])]
     selectedDefaultModel.value = status.value.activeModel
       ? `${status.value.activeProvider}:${status.value.activeModel}` : ''
     taskRoutes.value = { ...(status.value.taskRoutes || {}) }
     availableModels.value = [...selectedModels.value]
+    modelDiscovery.value = { source: '', warning: '', keyValidated: false }
     apiKey.value = ''
     editingKey.value = false
     showAdvancedRoutes.value = false
@@ -48,6 +50,7 @@ export const useSettingsStore = defineStore('settings', () => {
   function changeProvider() {
     availableModels.value = [...(status.value.models?.[selectedProvider.value] || [])]
     selectedModels.value = [...availableModels.value]
+    modelDiscovery.value = { source: '', warning: '', keyValidated: false }
     apiKey.value = ''
     editingKey.value = false
     stopChatgptPolling()
@@ -124,16 +127,32 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       const body = apiKey.value.trim() ? { apiKey: apiKey.value.trim() } : {}
       const result = await request<any>(`/settings/providers/${selectedProvider.value}/models`, { method: 'POST', body: JSON.stringify(body) })
-      availableModels.value = result.models || []
-      selectedModels.value = selectedModels.value.filter((model) => availableModels.value.includes(model))
+      availableModels.value = [...new Set([...availableModels.value, ...(result.models || [])])]
+      modelDiscovery.value = {
+        source: result.source || 'conventional',
+        warning: result.warning || '',
+        keyValidated: Boolean(result.keyValidated),
+      }
     } finally { fetchingModels.value = false }
+  }
+
+  function addManualModel(model: string) {
+    const value = model.trim()
+    if (!value) return false
+    if (!availableModels.value.includes(value)) availableModels.value = [...availableModels.value, value]
+    if (!selectedModels.value.includes(value)) selectedModels.value = [...selectedModels.value, value]
+    selectedDefaultModel.value = `${selectedProvider.value}:${value}`
+    modelDiscovery.value = { ...modelDiscovery.value, source: 'manual' }
+    return true
   }
 
   async function saveProvider() {
     if ((!apiKey.value.trim() && !status.value.providers?.[selectedProvider.value]) || !selectedModels.value.length) return
     saving.value = true
     try {
-      status.value = await request<any>(`/settings/providers/${selectedProvider.value}`, { method: 'PUT', body: JSON.stringify({ ...(apiKey.value.trim() ? { apiKey: apiKey.value.trim() } : {}), models: selectedModels.value }) })
+      const defaultModel = selectedDefaultModel.value.startsWith(`${selectedProvider.value}:`)
+        ? selectedDefaultModel.value.slice(selectedProvider.value.length + 1) : undefined
+      status.value = await request<any>(`/settings/providers/${selectedProvider.value}`, { method: 'PUT', body: JSON.stringify({ ...(apiKey.value.trim() ? { apiKey: apiKey.value.trim() } : {}), models: selectedModels.value, ...(defaultModel ? { defaultModel } : {}) }) })
       apiKey.value = ''
       editingKey.value = false
     } finally { saving.value = false }
@@ -150,5 +169,5 @@ export const useSettingsStore = defineStore('settings', () => {
     } finally { savingModelAssignments.value = false }
   }
 
-  return { status, selectedProvider, apiKey, availableModels, selectedModels, selectedDefaultModel, taskRoutes, showAdvancedRoutes, saving, fetchingModels, editingKey, savingModelAssignments, chatgptLogin, load, open, changeProvider, resetChatgptLogin, stopChatgptPolling, startChatgptLogin, completeChatgptLogin, pollChatgptLogin, logoutChatgpt, fetchModels, saveProvider, saveModelAssignments }
+  return { status, selectedProvider, apiKey, availableModels, selectedModels, modelDiscovery, selectedDefaultModel, taskRoutes, showAdvancedRoutes, saving, fetchingModels, editingKey, savingModelAssignments, chatgptLogin, load, open, changeProvider, resetChatgptLogin, stopChatgptPolling, startChatgptLogin, completeChatgptLogin, pollChatgptLogin, logoutChatgpt, fetchModels, addManualModel, saveProvider, saveModelAssignments }
 })

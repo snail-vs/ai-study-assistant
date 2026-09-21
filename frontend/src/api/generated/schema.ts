@@ -89,7 +89,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "chatgpt";
+                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "anthropic" | "glm" | "zai" | "chatgpt";
             };
             cookie?: never;
         };
@@ -107,7 +107,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "chatgpt";
+                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "anthropic" | "glm" | "zai" | "chatgpt";
             };
             cookie?: never;
         };
@@ -801,7 +801,6 @@ export interface components {
         ConfigureProviderRequest: {
             apiKey?: string | null;
             models: string[];
-            /** @deprecated */
             defaultModel?: string | null;
             /** @description Values use provider:model, for example deepseek:deepseek-chat. */
             taskRoutes?: {
@@ -813,6 +812,10 @@ export interface components {
         };
         DiscoverModelsResponse: {
             models: string[];
+            /** @enum {string} */
+            source?: "provider_catalog" | "conventional" | "manual";
+            warning?: string | null;
+            keyValidated?: boolean;
         };
         ChatGptLogin: {
             sessionId: string;
@@ -1432,7 +1435,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "chatgpt";
+                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "anthropic" | "glm" | "zai" | "chatgpt";
             };
             cookie?: never;
         };
@@ -1458,7 +1461,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "chatgpt";
+                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "anthropic" | "glm" | "zai" | "chatgpt";
             };
             cookie?: never;
         };
@@ -1480,7 +1483,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "chatgpt";
+                providerName: "deepseek" | "google" | "opencode" | "openrouter" | "anthropic" | "glm" | "zai" | "chatgpt";
             };
             cookie?: never;
         };

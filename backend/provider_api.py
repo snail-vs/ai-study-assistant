@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .ai.base import AIProviderError
 from .ai.oauth_chatgpt import (
     create_browser_authorization,
     exchange_authorization_code,
@@ -36,6 +37,7 @@ from .security.encryption import EncryptionError, decrypt_secret, encrypt_secret
 from .services.provider_settings import (
     SUPPORTED_PROVIDER_NAMES,
     chatgpt_credential,
+    discover_provider_models,
     persist_chatgpt_token,
     provider_settings,
     restore_active_provider,
@@ -89,7 +91,7 @@ async def discover_models(
             models = await provider.list_models()
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=502, detail=str(exc)) from exc
-        return {"models": models}
+        return {"models": models, "source": "provider_catalog", "keyValidated": True}
     api_key = payload.api_key
     if not api_key:
         credential = db.get(ProviderCredential, (current_user_id(), provider_name))
@@ -100,13 +102,11 @@ async def discover_models(
         except EncryptionError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
     try:
-        provider = create_named_text_provider(provider_name, api_key)
-        models = await provider.list_models()
+        return await discover_provider_models(provider_name, api_key)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if not models:
-        raise HTTPException(status_code=502, detail="Provider returned an empty model list")
-    return {"models": models}
+    except AIProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.put("/settings/providers/{provider_name}", response_model=ProviderSettingsResponse)
@@ -158,7 +158,9 @@ def configure_provider(
         credential.api_key_ciphertext = ciphertext
         credential.api_key_nonce = nonce or ""
     credential.models_json = json.dumps(models)
-    if credential.active_model is None and models:
+    if payload.default_model is not None:
+        credential.active_model = payload.default_model
+    elif credential.active_model is None and models:
         credential.active_model = models[0]
     if payload.task_routes is not None:
         db.flush()

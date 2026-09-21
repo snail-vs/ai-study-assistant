@@ -7,9 +7,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..ai.gateway import AIGateway
+from ..ai.base import AIProviderError
+from ..ai.model_catalog import can_fall_back_to_manual, fetch_catalog
 from ..ai.oauth_chatgpt import ChatGptCredential
 from ..ai.providers.mock import MockTextProvider
-from ..ai.registry import CHATGPT_PROVIDER, create_named_text_provider
+from ..ai.registry import (
+    CHATGPT_PROVIDER,
+    PROVIDER_DEFINITIONS,
+    create_named_text_provider,
+)
 from ..ai.tasks import TASK_BY_ID
 from ..db import SessionLocal
 from ..models import DefaultModelPreference, ProviderCredential, TaskModelRoute
@@ -22,8 +28,48 @@ SUPPORTED_PROVIDER_NAMES = (
     "opencode",
     "openrouter",
     "anthropic",
+    "glm",
+    "zai",
     CHATGPT_PROVIDER,
 )
+
+
+async def discover_provider_models(provider_name: str, api_key: str) -> dict:
+    """Resolve model candidates: dedicated URL, conventional URL, then manual entry."""
+    definition = PROVIDER_DEFINITIONS.get(provider_name)
+    if definition is None or provider_name == CHATGPT_PROVIDER:
+        raise ValueError(f"Unsupported provider: {provider_name}")
+
+    catalog_warning: str | None = None
+    if definition.model_catalog is not None:
+        try:
+            return {
+                "models": await fetch_catalog(definition.model_catalog, api_key),
+                "source": "provider_catalog",
+                "keyValidated": True,
+            }
+        except AIProviderError as exc:
+            if not can_fall_back_to_manual(exc):
+                raise
+            catalog_warning = "Provider 专用模型目录不可用，已尝试通用模型目录。"
+
+    try:
+        provider = create_named_text_provider(provider_name, api_key)
+        return {
+            "models": await provider.list_models(),
+            "source": "conventional",
+            "warning": catalog_warning,
+            "keyValidated": True,
+        }
+    except AIProviderError as exc:
+        if not can_fall_back_to_manual(exc):
+            raise
+        return {
+            "models": [],
+            "source": "manual",
+            "warning": "Provider 未提供可用的模型目录，请手动输入模型名称。",
+            "keyValidated": False,
+        }
 
 
 def apply_chatgpt_credential(row: ProviderCredential, credential: ChatGptCredential) -> None:

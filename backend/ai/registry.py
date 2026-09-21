@@ -9,19 +9,45 @@ from .providers.openai import OpenAIProvider
 from .model_routing import resolve_model_route
 from .base import AICompatibilityError
 from .capabilities import capabilities_for_route
+from .model_catalog import ModelCatalogSpec
 
 CHATGPT_PROVIDER = "chatgpt"
 
-PROVIDER_DEFAULTS = {
-    "deepseek": ("https://api.deepseek.com", "deepseek-chat"),
+class ProviderDefinition:
+    def __init__(
+        self,
+        base_url: str,
+        default_model: str,
+        *,
+        model_catalog: ModelCatalogSpec | None = None,
+    ) -> None:
+        self.base_url = base_url
+        self.default_model = default_model
+        self.model_catalog = model_catalog
+
+
+PROVIDER_DEFINITIONS = {
+    "deepseek": ProviderDefinition("https://api.deepseek.com", "deepseek-chat"),
     # Gemini exposes an OpenAI-compatible endpoint.
-    "google": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash"),
-    "openrouter": ("https://openrouter.ai/api/v1", "openrouter/auto"),
-    "opencode": ("https://opencode.ai/zen/v1", "deepseek-v4-pro"),
+    "google": ProviderDefinition(
+        "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash"
+    ),
+    "openrouter": ProviderDefinition("https://openrouter.ai/api/v1", "openrouter/auto"),
+    "opencode": ProviderDefinition("https://opencode.ai/zen/v1", "deepseek-v4-pro"),
     # Anthropic Messages protocol (official API or compatible gateways).
-    "anthropic": ("https://api.anthropic.com", "claude-sonnet-5"),
+    "anthropic": ProviderDefinition("https://api.anthropic.com", "claude-sonnet-5"),
+    # Zhipu mainland and overseas accounts/keys are separate. Both expose the
+    # OpenAI-compatible chat endpoint; no separate model catalog URL is assumed.
+    "glm": ProviderDefinition("https://open.bigmodel.cn/api/paas/v4", "glm-5.2"),
+    "zai": ProviderDefinition("https://api.z.ai/api/paas/v4", "glm-5.2"),
     # Subscription login: credentials come from the device-code OAuth flow.
-    "chatgpt": ("https://chatgpt.com/backend-api", DEFAULT_CODEX_MODEL),
+    "chatgpt": ProviderDefinition("https://chatgpt.com/backend-api", DEFAULT_CODEX_MODEL),
+}
+
+# Kept as a small compatibility projection for callers that only need defaults.
+PROVIDER_DEFAULTS = {
+    name: (definition.base_url, definition.default_model)
+    for name, definition in PROVIDER_DEFINITIONS.items()
 }
 
 SUPPORTED_PROTOCOLS = {"openai_chat_completions", "openai_responses", "anthropic_messages"}
@@ -46,8 +72,9 @@ def create_named_text_provider(
         return ChatGptCodexProvider(model, oauth, on_token_refresh=on_token_refresh)
     if name not in PROVIDER_DEFAULTS:
         raise ValueError(f"Unsupported provider: {name}")
-    base_url, default_model = PROVIDER_DEFAULTS[name]
-    selected_model = model or default_model
+    definition = PROVIDER_DEFINITIONS[name]
+    base_url = definition.base_url
+    selected_model = model or definition.default_model
     try:
         route = resolve_model_route(name, base_url, selected_model)
     except ValueError as exc:

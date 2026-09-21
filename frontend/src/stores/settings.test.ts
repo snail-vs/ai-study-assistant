@@ -58,4 +58,42 @@ describe('settings store', () => {
     expect(store.saving).toBe(false)
     expect(store.savingModelAssignments).toBe(false)
   })
+
+  it('keeps manual models ahead of catalog discovery and persists them as the default', async () => {
+    const store = useSettingsStore()
+    store.selectedProvider = 'glm'
+    store.apiKey = 'secret'
+
+    expect(store.addManualModel('glm-custom')).toBe(true)
+    expect(store.selectedModels).toEqual(['glm-custom'])
+    expect(store.selectedDefaultModel).toBe('glm:glm-custom')
+
+    mockedRequest.mockResolvedValueOnce({
+      models: ['glm-5.2'], source: 'conventional', keyValidated: true,
+    } as never).mockResolvedValueOnce({
+      activeProvider: 'glm', activeModel: 'glm-custom', providers: { glm: true }, models: { glm: ['glm-custom'] }, taskRoutes: {},
+    } as never)
+
+    await store.fetchModels()
+    await store.saveProvider()
+
+    expect(store.availableModels).toEqual(['glm-custom', 'glm-5.2'])
+    expect(mockedRequest).toHaveBeenLastCalledWith('/settings/providers/glm', expect.objectContaining({
+      method: 'PUT', body: expect.stringContaining('"defaultModel":"glm-custom"'),
+    }))
+  })
+
+  it('exposes manual-entry discovery when conventional model listing is unsupported', async () => {
+    mockedRequest.mockResolvedValue({
+      models: [], source: 'manual', warning: '请手动输入模型名称。', keyValidated: false,
+    } as never)
+    const store = useSettingsStore()
+    store.selectedProvider = 'zai'
+    store.apiKey = 'secret'
+
+    await store.fetchModels()
+
+    expect(store.modelDiscovery).toMatchObject({ source: 'manual', keyValidated: false })
+    expect(store.modelDiscovery.warning).toContain('手动')
+  })
 })
