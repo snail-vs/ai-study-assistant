@@ -187,9 +187,9 @@ class CourseOutlineItemDraft(BaseModel):
 
 
 class CourseOutlineDraft(BaseModel):
-    outline: list[CourseOutlineItemDraft] = Field(default_factory=list)
+    outline: list[CourseOutlineItemDraft] = Field(min_length=1)
 
 
 class CourseOutlineRevisionDraft(BaseModel):
-    outline: list[CourseOutlineItemDraft] = Field(default_factory=list)
+    outline: list[CourseOutlineItemDraft] = Field(min_length=1)
     assistant_message: str = Field(min_length=1)
