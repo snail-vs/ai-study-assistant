@@ -81,8 +81,14 @@ function handleKeydown(event) {
   }
 }
 
-onMounted(() => window.addEventListener('keydown', handleKeydown))
-onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown)
+  document.body.classList.add('notes-open')
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeydown)
+  document.body.classList.remove('notes-open')
+})
 </script>
 
 <template>
