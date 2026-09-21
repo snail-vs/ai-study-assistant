@@ -34,6 +34,16 @@ class MainAgent:
         scale: str = "standard",
         approved_outline: list[dict] | None = None,
     ) -> KnowledgeCardDraft:
+        # API callers may provide Pydantic models while resumed jobs load plain
+        # dictionaries from the database. Normalize both forms before prompt
+        # construction so JSON serialization never receives a CourseBrief.
+        if hasattr(brief, "model_dump"):
+            brief = brief.model_dump(by_alias=True)
+        if approved_outline:
+            approved_outline = [
+                item.model_dump(by_alias=True) if hasattr(item, "model_dump") else item
+                for item in approved_outline
+            ]
         constraints = {"quick": (2, 3, "300～500"), "standard": (5, 8, "500～900"), "series": (8, 12, "350～700")}.get(scale, (5, 8, "500～900"))
         brief_text = json.dumps(brief or {}, ensure_ascii=False)
         language = infer_response_language((brief or {}).get("topic") or goal)

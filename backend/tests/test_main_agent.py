@@ -2,6 +2,7 @@ import asyncio
 import unittest
 
 from backend.agents.main_agent import MainAgent
+from backend.schemas import CourseBrief, CourseOutlineItem
 
 
 class PlanRepairGateway:
@@ -49,6 +50,18 @@ class MainAgentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "模型修复后仍未生成有效课程规划"):
             asyncio.run(MainAgent(gateway).create_card("学习 Go", scale="quick"))
         self.assertEqual(gateway.plan_calls, 2)
+
+    def test_accepts_pydantic_brief_and_outline_from_retry_request(self):
+        gateway = PlanRepairGateway(repair_succeeds=True)
+
+        result = asyncio.run(MainAgent(gateway).create_card(
+            "学习 Go",
+            CourseBrief(topic="Go", learning_outcome="完成服务"),
+            "quick",
+            [CourseOutlineItem(title="基础", objective="理解语法"), CourseOutlineItem(title="实战", objective="完成服务")],
+        ))
+
+        self.assertEqual(len(result.sections), 2)
 
 
 if __name__ == "__main__":
