@@ -1,10 +1,14 @@
 """Provider-neutral structured-output schema and error helpers."""
 
 import json
+import logging
 from copy import deepcopy
 from typing import Any
 
 from .base import AIProviderError
+
+
+logger = logging.getLogger("studycenter.ai.structured")
 
 
 def strict_json_schema(schema: dict[str, Any]) -> dict[str, Any]:
@@ -77,7 +81,21 @@ def parse_json_text(content: Any) -> dict[str, Any]:
     try:
         value = json.loads(content)
     except json.JSONDecodeError as exc:
-        raise AIProviderError("Invalid structured response from provider", category="invalid_response") from exc
+        if exc.msg != "Extra data":
+            raise AIProviderError("Invalid structured response from provider", category="invalid_response") from exc
+        try:
+            value, end = json.JSONDecoder().raw_decode(content)
+        except json.JSONDecodeError as recovery_exc:
+            raise AIProviderError(
+                "Invalid structured response from provider", category="invalid_response"
+            ) from recovery_exc
+        trailing = content[end:].strip()
+        if not trailing:
+            raise AIProviderError("Invalid structured response from provider", category="invalid_response") from exc
+        logger.warning(
+            "provider structured output contained trailing data; using first JSON object: trailing_chars=%s",
+            len(trailing),
+        )
     if not isinstance(value, dict):
         raise AIProviderError("Provider structured output must be an object", category="invalid_response")
     return value

@@ -28,6 +28,7 @@ class OpenAICompatibleProvider:
         self.model = model
         self.protocol = protocol
         self.endpoint = endpoint or f"{self.base_url}/chat/completions"
+        self.access_provider = route.access_provider if route else None
         self.capabilities = capabilities or capabilities_for_route(
             route or ModelRoute("unknown", "unknown", protocol, self.endpoint)
         )
@@ -254,8 +255,14 @@ class OpenAICompatibleProvider:
         }
         if self.capabilities.strict_json_schema:
             text_format["strict"] = True
-        return {
+        payload = {
             "model": self.model,
             "input": list(messages),
             "text": {"format": text_format},
         }
+        # DeepSeek Responses enables thinking by default. For schema-bound
+        # output this can leak a second JSON object into output_text, which is
+        # not parseable as one structured response.
+        if self.access_provider == "deepseek":
+            payload["reasoning"] = {"effort": "none"}
+        return payload

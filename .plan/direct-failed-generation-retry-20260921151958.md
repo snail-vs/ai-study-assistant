@@ -4,3 +4,4 @@
 2. Change failed-space actions to emit a direct retry event and show queued-generation feedback instead of reopening course intake.
 3. Add store/component regression coverage and run the affected frontend tests.
 4. Restrict the DeepSeek Responses route and default model to the currently supported `deepseek-flash` and `deepseek-v4-pro` models.
+5. Disable DeepSeek thinking for schema-bound calls and recover a valid leading JSON object when a provider appends extra output.

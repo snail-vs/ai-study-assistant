@@ -7,6 +7,7 @@ from backend.ai.base import AIProviderError
 from backend.ai.capabilities import capabilities_for_route
 from backend.ai.model_routing import resolve_model_route
 from backend.ai.providers.openai_compatible import OpenAICompatibleProvider
+from backend.ai.structured import parse_json_text
 
 
 class StructuredOutputTests(unittest.TestCase):
@@ -48,6 +49,12 @@ class StructuredOutputTests(unittest.TestCase):
         text_format = payload["text"]["format"]
         self.assertEqual(text_format["type"], "json_schema")
         self.assertNotIn("strict", text_format)
+        self.assertEqual(payload["reasoning"], {"effort": "none"})
+
+    def test_parser_recovers_first_object_from_trailing_provider_output(self):
+        result = parse_json_text('{"content_markdown":"正文"}{"content_markdown":"重复正文"}')
+
+        self.assertEqual(result, {"content_markdown": "正文"})
 
     def test_responses_content_rejects_incomplete_generation(self):
         with self.assertRaisesRegex(AIProviderError, "max_output_tokens"):
