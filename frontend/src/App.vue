@@ -59,6 +59,8 @@ const {
   editorTitle: noteEditorTitle, editorContent: noteEditorContent,
   targetCardId: noteTargetCardId,
   targetSectionId: noteTargetSectionId, editorDirty: noteEditorDirty,
+  loading: notesLoading, saving: noteSaving, deletingNoteId,
+  operationError: notesError,
 } = storeToRefs(notesStore)
 const { error, learningView } = storeToRefs(workspaceStore)
 
@@ -786,7 +788,7 @@ function nextSection() {
 
     <SettingsDialog v-if="showSettings" v-model:selected-provider="selectedProvider" v-model:api-key="apiKey" v-model:selected-models="selectedModels" v-model:selected-default-model="selectedDefaultModel" v-model:task-routes="taskRoutes" v-model:show-advanced-routes="showAdvancedRoutes" v-model:editing-key="editingKey" v-model:chatgpt-login="chatgptLogin" :provider-status="providerStatus" :available-models="availableModels" :model-discovery="modelDiscovery" :saving-settings="savingSettings" :fetching-models="fetchingModels" :saving-model-assignments="savingModelAssignments" :all-model-options="allModelOptions" :key-configured="keyConfigured" :task-definitions="taskDefinitions" :model-role-definitions="modelRoleDefinitions" :role-route-value="roleRouteValue" @close="showSettings = false" @change-provider="changeProvider" @fetch-models="fetchModels" @add-manual-model="settingsStore.addManualModel" @save-provider="saveProvider" @save-model-assignments="saveModelAssignments" @start-chatgpt-login="startChatgptLogin" @complete-chatgpt-login="completeChatgptLogin" @logout-chatgpt="logoutChatgpt" />
 
-    <NotesDrawer v-if="showNotes" v-model:editor-title="noteEditorTitle" v-model:editor-content="noteEditorContent" v-model:target-card-id="noteTargetCardId" v-model:target-section-id="noteTargetSectionId" :editor-mode="noteEditorMode" :notes-list="notesList" :editing-note="editingNote" :editor-source="noteEditorSource" :card-options="noteCardOptions" :target-sections="noteTargetSections" :note-source="noteSource" @close="closeNotes" @close-editor="closeNoteEditor" @start="startNote" @edit="editNote" @remove="removeNote" @create="createNote" @update="updateNote" />
+    <NotesDrawer v-if="showNotes" v-model:editor-title="noteEditorTitle" v-model:editor-content="noteEditorContent" v-model:target-card-id="noteTargetCardId" v-model:target-section-id="noteTargetSectionId" :editor-mode="noteEditorMode" :notes-list="notesList" :editing-note="editingNote" :editor-source="noteEditorSource" :card-options="noteCardOptions" :target-sections="noteTargetSections" :note-source="noteSource" :loading="notesLoading" :saving="noteSaving" :deleting-note-id="deletingNoteId" :dirty="noteEditorDirty" :error-message="notesError" @close="closeNotes" @close-editor="closeNoteEditor" @start="startNote" @edit="editNote" @remove="removeNote" @create="createNote" @update="updateNote" />
 
     <div v-if="selectedRecommendation" class="recommendation-backdrop" @click.self="studyAssistStore.setSelectedRecommendation(null)">
       <section class="recommendation-modal">

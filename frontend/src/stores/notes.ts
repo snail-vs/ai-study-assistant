@@ -18,6 +18,9 @@ export const useNotesStore = defineStore('notes', () => {
   const targetCardId = ref('')
   const targetSectionId = ref('')
   const loading = ref(false)
+  const saving = ref(false)
+  const deletingNoteId = ref('')
+  const operationError = ref('')
 
   const editorDirty = computed(() => editorMode.value !== 'list' && (
     editorTitle.value !== editorInitial.value.title
@@ -33,10 +36,11 @@ export const useNotesStore = defineStore('notes', () => {
 
   async function loadNotes() {
     loading.value = true
+    operationError.value = ''
     try {
       notesList.value = await request<Note[]>('/notes')
-    } catch (_) {
-      // Notes remain optional if the API is temporarily unavailable.
+    } catch (error) {
+      operationError.value = error instanceof Error ? error.message : '笔记加载失败，请稍后重试。'
     } finally {
       loading.value = false
     }
@@ -54,9 +58,9 @@ export const useNotesStore = defineStore('notes', () => {
   }
 
   async function openNotes() {
-    await loadNotes()
     resetEditor()
     showNotes.value = true
+    await loadNotes()
   }
 
   function startNote(card: Card | null, section: Section | null) {
@@ -81,39 +85,67 @@ export const useNotesStore = defineStore('notes', () => {
   }
 
   async function createNote() {
-    if (!targetCardId.value || !editorContent.value.trim()) return null
-    const created = await request<Note>(`/cards/${targetCardId.value}/notes`, {
-      method: 'POST',
-      body: JSON.stringify({
-        title: editorTitle.value.trim() || null,
-        sectionId: targetSectionId.value || null,
-        content: editorContent.value.trim(),
-        sourceType: 'manual',
-      }),
-    })
-    await loadNotes()
-    resetEditor()
-    return created
+    if (!targetCardId.value || !editorContent.value.trim() || saving.value) return null
+    saving.value = true
+    operationError.value = ''
+    try {
+      const created = await request<Note>(`/cards/${targetCardId.value}/notes`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: editorTitle.value.trim() || null,
+          sectionId: targetSectionId.value || null,
+          content: editorContent.value.trim(),
+          sourceType: 'manual',
+        }),
+      })
+      await loadNotes()
+      resetEditor()
+      return created
+    } catch (error) {
+      operationError.value = error instanceof Error ? error.message : '笔记保存失败，请稍后重试。'
+      throw error
+    } finally {
+      saving.value = false
+    }
   }
 
   async function updateNote() {
-    if (!editingNote.value || !editorContent.value.trim()) return null
-    const updated = await request<Note>(`/notes/${editingNote.value.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        title: editorTitle.value.trim() || '未命名笔记',
-        content: editorContent.value.trim(),
-      }),
-    })
-    notesList.value = notesList.value.map((item) => item.id === updated.id ? updated : item)
-    resetEditor()
-    return updated
+    if (!editingNote.value || !editorContent.value.trim() || saving.value) return null
+    saving.value = true
+    operationError.value = ''
+    try {
+      const updated = await request<Note>(`/notes/${editingNote.value.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          title: editorTitle.value.trim() || '未命名笔记',
+          content: editorContent.value.trim(),
+        }),
+      })
+      notesList.value = notesList.value.map((item) => item.id === updated.id ? updated : item)
+      resetEditor()
+      return updated
+    } catch (error) {
+      operationError.value = error instanceof Error ? error.message : '笔记保存失败，请稍后重试。'
+      throw error
+    } finally {
+      saving.value = false
+    }
   }
 
   async function removeNote(item: Note) {
-    await request(`/notes/${item.id}`, { method: 'DELETE' })
-    notesList.value = notesList.value.filter((entry) => entry.id !== item.id)
-    if (editingNote.value?.id === item.id) resetEditor()
+    if (deletingNoteId.value) return
+    deletingNoteId.value = item.id
+    operationError.value = ''
+    try {
+      await request(`/notes/${item.id}`, { method: 'DELETE' })
+      notesList.value = notesList.value.filter((entry) => entry.id !== item.id)
+      if (editingNote.value?.id === item.id) resetEditor()
+    } catch (error) {
+      operationError.value = error instanceof Error ? error.message : '笔记删除失败，请稍后重试。'
+      throw error
+    } finally {
+      deletingNoteId.value = ''
+    }
   }
 
   function closeNotes() {
@@ -123,7 +155,8 @@ export const useNotesStore = defineStore('notes', () => {
 
   return {
     notesList, showNotes, editingNote, editorMode, editorTitle, editorContent,
-    editorInitial, targetCardId, targetSectionId, loading, editorDirty,
+    editorInitial, targetCardId, targetSectionId, loading, saving, deletingNoteId,
+    operationError, editorDirty,
     loadNotes, openNotes, startNote, editNote, resetEditor, createNote,
     updateNote, removeNote, closeNotes, noteSource,
   }

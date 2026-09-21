@@ -30,6 +30,7 @@ describe('notes store', () => {
     mockedRequest.mockRejectedValueOnce(new Error('temporarily unavailable'))
     await expect(store.loadNotes()).resolves.toEqual(store.notesList)
     expect(store.loading).toBe(false)
+    expect(store.operationError).toBe('temporarily unavailable')
   })
 
   it('starts and edits a note while preserving the initial snapshot for dirty state', () => {
@@ -84,6 +85,20 @@ describe('notes store', () => {
     expect(mockedRequest).toHaveBeenCalledWith('/notes/note-1', { method: 'DELETE' })
     expect(store.notesList).toEqual([])
     expect(store.editorMode).toBe('list')
+  })
+
+  it('exposes a save error and always releases the saving state', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('保存服务不可用'))
+    const store = useNotesStore()
+    store.startNote(card, card.sections[0])
+    store.editorContent = '不能丢失的内容'
+
+    await expect(store.createNote()).rejects.toThrow('保存服务不可用')
+
+    expect(store.saving).toBe(false)
+    expect(store.operationError).toBe('保存服务不可用')
+    expect(store.editorContent).toBe('不能丢失的内容')
+    expect(store.editorDirty).toBe(true)
   })
 
   it('resets note context when opening a new notes drawer', async () => {
