@@ -31,6 +31,9 @@ const { loading } = useEditor((root) => {
       [Crepe.Feature.AI]: false,
     },
     featureConfigs: {
+      [Crepe.Feature.Cursor]: {
+        virtual: false,
+      },
       [Crepe.Feature.Placeholder]: {
         text: props.placeholder || '写下你的理解、疑问或灵感…',
         mode: 'block',
