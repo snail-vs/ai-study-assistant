@@ -64,6 +64,8 @@ ACCESS_DEFAULTS = {
     "anthropic": ("anthropic", "anthropic_messages", "/v1/messages"),
 }
 
+DEEPSEEK_RESPONSES_MODELS = frozenset({"deepseek-flash", "deepseek-v4-pro"})
+
 
 def resolve_origin_provider(access_provider: str, model_id: str) -> str | None:
     """Resolve an origin provider from a namespace or stable model prefix."""
@@ -79,6 +81,10 @@ def resolve_origin_provider(access_provider: str, model_id: str) -> str | None:
 
 
 def resolve_model_route(access_provider: str, base_url: str, model_id: str) -> ModelRoute:
+    if access_provider == "deepseek" and model_id not in DEEPSEEK_RESPONSES_MODELS:
+        raise ValueError(
+            f"Unsupported DeepSeek model: {model_id}; use deepseek-flash or deepseek-v4-pro"
+        )
     origin = resolve_origin_provider(access_provider, model_id)
     if origin is None:
         _, default_protocol, _ = ACCESS_DEFAULTS.get(access_provider, (None, None, None))

@@ -33,12 +33,12 @@ class StructuredOutputTests(unittest.TestCase):
                 schema.model_validate({**payload, "outline": []})
 
     def test_deepseek_uses_responses_json_schema_without_openai_strict_flag(self):
-        route = resolve_model_route("deepseek", "https://api.deepseek.com", "deepseek-chat")
+        route = resolve_model_route("deepseek", "https://api.deepseek.com", "deepseek-v4-pro")
         self.assertEqual(route.protocol, "openai_responses")
         self.assertEqual(route.endpoint, "https://api.deepseek.com/responses")
 
         provider = OpenAICompatibleProvider(
-            "https://api.deepseek.com", "key", "deepseek-chat", endpoint=route.endpoint,
+            "https://api.deepseek.com", "key", "deepseek-v4-pro", endpoint=route.endpoint,
             protocol=route.protocol, route=route,
             capabilities=capabilities_for_route(route, "deepseek"),
         )

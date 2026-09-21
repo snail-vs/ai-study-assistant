@@ -27,7 +27,9 @@ class ProviderDefinition:
 
 
 PROVIDER_DEFINITIONS = {
-    "deepseek": ProviderDefinition("https://api.deepseek.com", "deepseek-chat"),
+    # DeepSeek's current Responses API models. Keep the default aligned with
+    # the provider catalog; legacy chat/reasoner IDs are no longer supported.
+    "deepseek": ProviderDefinition("https://api.deepseek.com", "deepseek-flash"),
     # Gemini exposes an OpenAI-compatible endpoint.
     "google": ProviderDefinition(
         "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash"
