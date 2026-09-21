@@ -47,6 +47,11 @@ INTAKE_FIELDS = GOAL_FIELDS | BACKGROUND_FIELDS
 SCALE_VALUES = {"quick", "standard", "series"}
 
 
+def _initial_brief(topic: str, patch: dict) -> dict:
+    """Build an intake brief without granting the provider ownership of topic."""
+    return {"topic": topic, **{key: value for key, value in patch.items() if key in GOAL_FIELDS}}
+
+
 def _question(data: dict | None) -> CourseDesignQuestion | None:
     if not data:
         return None
@@ -128,9 +133,9 @@ class CourseDesignService:
         question = result.next_question
         if not question or question.stage != "collecting_goals" or question.target != "learningGoals":
             raise CourseDesignInvalid("Intake Agent 返回了无效的目标问题")
-        if set(result.brief_patch) - (GOAL_FIELDS | {"topic"}) or result.brief_patch.get("topic") not in (None, topic):
-            raise CourseDesignInvalid("Intake Agent 不得修改课程主题")
-        brief = {"topic": topic, **result.brief_patch}
+        if set(result.brief_patch) - (GOAL_FIELDS | {"topic"}):
+            raise CourseDesignInvalid("Intake Agent 返回了无效的目标字段")
+        brief = _initial_brief(topic, result.brief_patch)
         session = CourseDesignSession(
             user_id=self.user_id, topic=topic, state="collecting_goals",
             source_learning_space_id=source_learning_space_id,
@@ -183,7 +188,7 @@ class CourseDesignService:
         except ValueError as exc:
             raise CourseDesignInvalid(f"AI 返回的课程需求格式无效：{exc}") from exc
         allowed = GOAL_FIELDS if session.state == "collecting_goals" else BACKGROUND_FIELDS
-        unknown = set(agent_result.brief_patch) - INTAKE_FIELDS
+        unknown = set(agent_result.brief_patch) - (INTAKE_FIELDS | {"topic"})
         if unknown:
             raise CourseDesignInvalid("Agent 返回了当前阶段禁止修改的字段")
         patch = {key: value for key, value in agent_result.brief_patch.items() if key in allowed}
@@ -245,7 +250,7 @@ class CourseDesignService:
             except ValueError as exc:
                 raise CourseDesignInvalid(f"AI 返回的课程需求格式无效：{exc}") from exc
             allowed = GOAL_FIELDS if session.state == "collecting_goals" else BACKGROUND_FIELDS
-            if set(result.brief_patch) - INTAKE_FIELDS:
+            if set(result.brief_patch) - (INTAKE_FIELDS | {"topic"}):
                 raise CourseDesignInvalid("Agent 返回了当前阶段禁止修改的字段")
             patch = {key: value for key, value in result.brief_patch.items() if key in allowed}
             session.brief = CourseBrief.model_validate({**session.brief, **patch}).model_dump(by_alias=True)
@@ -338,13 +343,12 @@ class CourseDesignService:
             except ValueError as exc:
                 raise CourseDesignInvalid(f"AI 返回的课程需求格式无效：{exc}") from exc
             if (set(result.brief_patch) - (GOAL_FIELDS | {"topic"})
-                    or result.brief_patch.get("topic") not in (None, session.topic)
                     or not result.next_question
                     or result.next_question.stage != "collecting_goals"
                     or result.next_question.target != "learningGoals"):
                 raise CourseDesignInvalid("Intake Agent 返回了无效的目标问题")
             session.state = "collecting_goals"
-            session.brief = CourseBrief.model_validate({"topic": session.topic, **result.brief_patch}).model_dump(by_alias=True)
+            session.brief = CourseBrief.model_validate(_initial_brief(session.topic, result.brief_patch)).model_dump(by_alias=True)
             session.current_question = result.next_question.model_dump(by_alias=True)
             session.questions = {"collecting_goals": session.current_question}
             session.selected_scale = None

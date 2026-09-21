@@ -125,6 +125,7 @@ class CourseDesignStateMachineTests(unittest.TestCase):
                 result = await super().structured(messages, task=task, schema=schema)
                 if task == "course_intake_state" and "evaluate_intake_answer" in messages[-1]["content"]:
                     result["briefPatch"]["topic"] = "另一个主题"
+                    result["briefPatch"]["useCase"] = "不应接受"
                     result["nextQuestion"]["target"] = "learningGoals"
                 return result
 
@@ -135,6 +136,24 @@ class CourseDesignStateMachineTests(unittest.TestCase):
                 commandId="malformed", expectedRevision=session.revision, type="answer_question",
                 payload={"answer": {"questionId": session.current_question.id, "selectedOptionIds": ["understand-core"]}},
             )))
+
+    def test_agent_returned_topic_is_ignored_during_intake(self):
+        class TopicEchoProvider(MockTextProvider):
+            async def structured(self, messages, *, task, schema):
+                result = await super().structured(messages, task=task, schema=schema)
+                if task == "course_intake_state":
+                    result["briefPatch"]["topic"] = "另一个主题"
+                return result
+
+        service = CourseDesignService(self.db, "user-1", TopicEchoProvider())
+        session = asyncio.run(service.create("Python"))
+        session = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="goals", expectedRevision=session.revision, type="complete_with_ai", payload={},
+        )))
+        session = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="background", expectedRevision=session.revision, type="complete_with_ai", payload={},
+        )))
+        self.assertEqual(session.brief.topic, "Python")
 
     def test_background_answer_ignores_known_goal_fields(self):
         class CrossStageProvider(MockTextProvider):
@@ -236,7 +255,7 @@ class CourseDesignStateMachineTests(unittest.TestCase):
         self.assertEqual(session.current_question.options[0].id, "understand")
         self.assertEqual(session.current_question.title, "你想获得哪些能力？")
 
-    def test_legacy_changed_topic_is_rejected(self):
+    def test_agent_returned_topic_is_ignored_on_create_and_restart(self):
         class ChangedTopicGateway:
             async def structured(self, _messages, *, task, schema):
                 return {
@@ -245,8 +264,12 @@ class CourseDesignStateMachineTests(unittest.TestCase):
                     "nextQuestion": {"prompt": "问题", "target": "learningGoals", "options": []},
                 }
 
-        with self.assertRaises(CourseDesignInvalid):
-            asyncio.run(CourseDesignService(self.db, "user-1", ChangedTopicGateway()).create("Python"))
+        service = CourseDesignService(self.db, "user-1", ChangedTopicGateway())
+        session = asyncio.run(service.create("Python"))
+        self.assertEqual(session.brief.topic, "Python")
+
+        restarted = self.command(session, "restart", "restart")
+        self.assertEqual(restarted.brief.topic, "Python")
 
     def test_malformed_answer_and_complete_are_controlled(self):
         class MalformedAfterStart:

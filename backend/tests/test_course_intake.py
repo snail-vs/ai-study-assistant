@@ -106,6 +106,16 @@ class CourseIntakeTests(unittest.TestCase):
         self.assertEqual(result.brief["learningGoalDetails"], "需要一个真实项目")
         self.assertEqual(result.brief["priorKnowledgeDetails"], "用过 Linux")
 
+    def test_agent_turn_keeps_existing_topic_when_provider_rewrites_it(self):
+        class TopicGateway(FakeGateway):
+            async def structured(self, messages, *, task, schema):
+                result = await super().structured(messages, task=task, schema=schema)
+                result["brief"]["topic"] = "OpenStack"
+                return result
+
+        result = asyncio.run(CourseIntakeAgent(TopicGateway()).turn([], {"topic": "Python"}))
+        self.assertEqual(result.brief["topic"], "Python")
+
     def test_mock_provider_returns_a_valid_intake_result(self):
         result = asyncio.run(CourseIntakeAgent(MockTextProvider()).turn([], {"topic": "Python"}))
         self.assertEqual(result.brief["topic"], "Python")

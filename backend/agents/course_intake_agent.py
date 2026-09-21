@@ -274,6 +274,10 @@ class CourseIntakeAgent:
         for key, value in parsed.brief.items():
             if value not in (None, "", [], {}):
                 merged[key] = value
+        # The caller owns the original topic. Providers may translate or
+        # otherwise restate it while filling the brief, but must not replace it.
+        if current.get("topic"):
+            merged["topic"] = current["topic"]
         parsed.brief = merged
         return parsed
 
