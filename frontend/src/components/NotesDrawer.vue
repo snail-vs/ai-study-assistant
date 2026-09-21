@@ -1,5 +1,7 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+
+const MarkdownEditor = defineAsyncComponent(() => import('./markdown-editor/MarkdownEditor.vue'))
 
 const props = defineProps({
   editorMode: { type: String, required: true },
@@ -208,13 +210,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
               aria-label="笔记标题"
               @input="emit('update:editorTitle', $event.target.value)"
             >
-            <textarea
+            <MarkdownEditor
               class="note-content-input"
-              :value="editorContent"
-              placeholder="写下你的理解、疑问或灵感…\n\n不必追求完整，先把此刻最重要的想法记下来。"
-              autofocus
+              :model-value="editorContent"
+              placeholder="写下你的理解、疑问或灵感…"
               aria-label="笔记正文"
-              @input="emit('update:editorContent', $event.target.value)"
+              @update:model-value="emit('update:editorContent', $event)"
             />
           </div>
 
