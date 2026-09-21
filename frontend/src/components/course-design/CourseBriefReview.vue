@@ -13,6 +13,7 @@ const loadingLabel = computed(() => ({
   select_scale: '正在保存课程规模…',
   generate_outline: '正在生成课程大纲…',
 }[props.activeCommand || ''] || ''))
+const generatingOutline = computed(() => props.busy && ['update_brief', 'generate_outline'].includes(props.activeCommand || ''))
 </script>
 
 <template>
@@ -103,9 +104,11 @@ const loadingLabel = computed(() => ({
         type="button"
         class="primary"
         :disabled="busy || !session.selectedScale || !outcome.trim() || !prior.trim()"
+        :aria-busy="generatingOutline"
         @click="emit('generate', outcome, prior)"
       >
-        生成课程大纲
+        <template v-if="generatingOutline"><i class="status-spinner" />正在生成课程大纲…</template>
+        <template v-else>生成课程大纲</template>
       </button>
     </div>
   </section>

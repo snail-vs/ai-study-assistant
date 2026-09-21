@@ -14,4 +14,21 @@ describe('CourseBriefReview', () => {
     expect(wrapper.emitted('scale')).toEqual([['standard']])
     expect(wrapper.emitted('generate')).toBeUndefined()
   })
+
+  it('shows loading state in the generate button while producing the outline', () => {
+    const wrapper = mount(CourseBriefReview, {
+      props: {
+        session: { ...session, selectedScale: 'standard' },
+        brief: session.brief,
+        scales,
+        busy: true,
+        activeCommand: 'generate_outline',
+      },
+    })
+
+    const generateButton = wrapper.find('.course-design-actions .primary')
+    expect(generateButton.attributes('aria-busy')).toBe('true')
+    expect(generateButton.find('.status-spinner').exists()).toBe(true)
+    expect(generateButton.text()).toContain('正在生成课程大纲…')
+  })
 })

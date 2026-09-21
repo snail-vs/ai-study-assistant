@@ -132,6 +132,8 @@ button { cursor: pointer; }
 .course-design-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
 .course-design-actions button { border-radius: 8px; padding: 9px 14px; }
 .course-design-actions .primary { border: 0; background: var(--course-accent); color: var(--course-canvas); font-weight: 700; }
+.course-design-actions .primary[aria-busy="true"] { display: inline-flex; align-items: center; gap: 7px; cursor: wait; }
+.course-design-actions .primary .status-spinner { border-color: color-mix(in srgb, var(--course-canvas) 45%, transparent); border-top-color: var(--course-canvas); }
 .course-design-actions .secondary { border: 1px solid var(--course-border); background: transparent; color: var(--course-muted); }
 .course-brief-block, .course-scale-section { display: grid; gap: 10px; }
 .course-topic-summary { display: grid; gap: 5px; padding-bottom: 4px; border-bottom: 1px solid var(--course-border); }
