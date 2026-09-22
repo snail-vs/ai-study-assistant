@@ -59,9 +59,12 @@ describe('SettingsDialog', () => {
 
   it('keeps manual model entry and provider saving in the model-service tab', async () => {
     const wrapper = mount(SettingsDialog, { props: baseProps })
+    expect(wrapper.find('.key-row > .settings-primary-button').text()).toBe('刷新模型')
+    expect(wrapper.find('.manual-model-entry .settings-primary-button').text()).toBe('添加')
+    expect(wrapper.find('.settings-pane-actions .settings-primary-button').text()).toBe('保存服务配置')
     await wrapper.find('.manual-model-entry input').setValue('deepseek-custom')
     await wrapper.find('.manual-model-entry button').trigger('click')
-    await wrapper.find('.settings-pane-actions .primary').trigger('click')
+    await wrapper.find('.settings-pane-actions .settings-primary-button').trigger('click')
 
     expect(wrapper.emitted('add-manual-model')).toEqual([['deepseek-custom']])
     expect(wrapper.emitted('save-provider')).toHaveLength(1)

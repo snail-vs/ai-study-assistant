@@ -311,6 +311,7 @@ function selectAiTab(tab) {
                     更换
                   </button>
                   <button
+                    class="settings-primary-button"
                     :disabled="fetchingModels || (!apiKey && !keyConfigured)"
                     @click="emit('fetch-models')"
                   >
@@ -337,6 +338,7 @@ function selectAiTab(tab) {
                     @keydown.enter.prevent="addManualModel"
                   >
                   <button
+                    class="settings-primary-button"
                     :disabled="!manualModel.trim()"
                     @click="addManualModel"
                   >
@@ -373,7 +375,7 @@ function selectAiTab(tab) {
             </div>
             <div class="settings-pane-actions">
               <button
-                class="primary"
+                class="settings-primary-button"
                 :disabled="savingSettings || ((!apiKey && !keyConfigured && !isChatGpt) || !selectedModels.length)"
                 @click="emit('save-provider')"
               >
@@ -420,7 +422,7 @@ function selectAiTab(tab) {
             </div>
             <div class="settings-pane-actions">
               <button
-                class="primary"
+                class="settings-primary-button"
                 :disabled="savingModelAssignments || !selectedDefaultModel"
                 @click="emit('save-model-assignments')"
               >
@@ -472,7 +474,7 @@ function selectAiTab(tab) {
             </div>
             <div class="settings-pane-actions">
               <button
-                class="primary"
+                class="settings-primary-button"
                 :disabled="savingModelAssignments || !selectedDefaultModel"
                 @click="emit('save-model-assignments')"
               >
@@ -530,7 +532,7 @@ function selectAiTab(tab) {
             </div>
             <div class="settings-pane-actions">
               <button
-                class="primary"
+                class="settings-primary-button"
                 :disabled="savingModelAssignments || !selectedDefaultModel"
                 @click="emit('save-model-assignments')"
               >
