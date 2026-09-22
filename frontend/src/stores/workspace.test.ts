@@ -67,6 +67,41 @@ describe('workspace store', () => {
     }))
   })
 
+  it('does not switch to an unfinished section', async () => {
+    const workspace = useWorkspaceStore()
+    const learning = useLearningStore()
+    learning.setSpace({ id: 'space-1' })
+    learning.setCard({
+      id: 'card-1',
+      sections: [
+        { id: 's1', generationStatus: 'completed' },
+        { id: 's2', generationStatus: 'generating' },
+      ],
+    })
+
+    const switched = await workspace.selectSection(1)
+
+    expect(switched).toBe(false)
+    expect(learning.activeSection).toBe(0)
+    expect(mockedRequest).not.toHaveBeenCalled()
+  })
+
+  it('opens a card on its first available section', async () => {
+    const workspace = useWorkspaceStore()
+    const learning = useLearningStore()
+    learning.setSpace({ id: 'space-1' })
+
+    await workspace.openCard({
+      id: 'card-1',
+      sections: [
+        { id: 's1', generationStatus: 'generating' },
+        { id: 's2', generationStatus: 'completed' },
+      ],
+    })
+
+    expect(learning.activeSection).toBe(1)
+  })
+
   it('resets an invalid study URL to home', async () => {
     routerMock.currentRoute.value = {
       name: 'study', path: '/study/missing/card/card-1',

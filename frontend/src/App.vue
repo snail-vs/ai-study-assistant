@@ -19,6 +19,7 @@ import NotesDrawer from './components/NotesDrawer.vue'
 import KnowledgeSidebar from './components/KnowledgeSidebar.vue'
 import ActivityPanel from './components/ActivityPanel.vue'
 import { router } from './router'
+import { findAvailableSectionIndex } from './section-status'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
@@ -208,6 +209,16 @@ function stripRepeatedSectionTitle(content, title) {
 
 const renderedContent = computed(() => md.render(
   stripRepeatedSectionTitle(section.value?.contentMarkdown || '本节内容正在生成。', section.value?.title),
+))
+const previousAvailableSection = computed(() => findAvailableSectionIndex(
+  card.value?.sections,
+  activeSection.value - 1,
+  -1,
+))
+const nextAvailableSection = computed(() => findAvailableSectionIndex(
+  card.value?.sections,
+  activeSection.value + 1,
+  1,
 ))
 function renderMessage(content) {
   const source = String(content || '').replace(/\r\n?/g, '\n')
@@ -743,13 +754,11 @@ async function selectSection(index) {
 }
 
 function previousSection() {
-  if (activeSection.value > 0) selectSection(activeSection.value - 1)
+  if (previousAvailableSection.value >= 0) selectSection(previousAvailableSection.value)
 }
 
 function nextSection() {
-  if (card.value?.sections && activeSection.value < card.value.sections.length - 1) {
-    selectSection(activeSection.value + 1)
-  }
+  if (nextAvailableSection.value >= 0) selectSection(nextAvailableSection.value)
 }
 
 </script>
@@ -833,9 +842,9 @@ function nextSection() {
           </article>
         </div>
         <nav class="section-navigation" aria-label="章节导航">
-          <button :disabled="activeSection === 0" @click="previousSection">← 上一节</button>
+          <button :disabled="previousAvailableSection < 0" @click="previousSection">← 上一节</button>
           <span>第 {{ activeSection + 1 }} / {{ card.sections.length }} 节</span>
-          <button :disabled="activeSection === card.sections.length - 1" @click="nextSection">下一节 →</button>
+          <button :disabled="nextAvailableSection < 0" @click="nextSection">下一节 →</button>
         </nav>
         <section class="teacher-guidance" :class="{ collapsed: !showTeacherGuidance }">
           <div class="teacher-guidance-head">

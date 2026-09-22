@@ -7,6 +7,7 @@ import { useLearningStore } from './learning'
 import { useNotesStore } from './notes'
 import { useStudyAssistStore } from './study-assist'
 import { router } from '../router'
+import { findAvailableSectionIndex, isSectionAvailable } from '../section-status'
 
 type LearningSpace = Record<string, any>
 type LearningCard = Record<string, any>
@@ -97,7 +98,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     activityStore.resetActive()
     conversationStore.showConversationList = false
     studyAssistStore.clearProposal()
-    learningStore.activeSection = 0
+    const firstAvailableSection = findAvailableSectionIndex(target.sections)
+    learningStore.activeSection = firstAvailableSection >= 0 ? firstAvailableSection : 0
     await loadAssistAndSection(version)
     if (!isCurrent(version)) return false
     syncStudyUrl({ replace: router.currentRoute.value.name === 'study' })
@@ -173,6 +175,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function selectSection(index: number) {
+    if (!isSectionAvailable(learningStore.card?.sections?.[index])) return false
     const version = ++workflowVersion
     learningStore.activeSection = index
     learningView.value = 'content'
@@ -185,8 +188,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       if (!isCurrent(version)) return
       syncStudyUrl({ replace: true })
       await learningStore.persistRuntime('section_changed')
+      return true
     } catch (cause) {
       if (isCurrent(version)) error.value = cause instanceof Error ? cause.message : String(cause)
+      return false
     }
   }
 
@@ -228,9 +233,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       }
       const requestedSection = Number(queryValue('section'))
       if (Number.isInteger(requestedSection) && requestedSection >= 0
-        && requestedSection < (learningStore.card?.sections?.length || 0)) {
+        && requestedSection < (learningStore.card?.sections?.length || 0)
+        && isSectionAvailable(learningStore.card?.sections?.[requestedSection])) {
         learningStore.activeSection = requestedSection
-      await loadAssistAndSection(version)
+        await loadAssistAndSection(version)
       }
       const conversation = conversationStore.conversations.find((item) => item.id === queryValue('conversation'))
       if (conversation && conversationStore.activeConversation?.id !== conversation.id) {

@@ -1,4 +1,6 @@
 <script setup>
+import { isSectionAvailable, sectionGenerationLabel } from '../section-status'
+
 defineProps({ card: { type: Object, required: true }, activeSection: { type: Number, required: true }, learningView: { type: String, required: true }, relatedCards: { type: Array, default: () => [] }, recommendations: { type: Array, default: () => [] }, recommendationGroupLabel: { type: String, default: '' }, quizStatusLabel: { type: String, default: '理解检查' }, relationLabel: { type: Function, required: true } })
 const emit = defineEmits(['toggle', 'select-section', 'open-quiz', 'open-related-card', 'select-recommendation'])
 </script>
@@ -20,10 +22,15 @@ const emit = defineEmits(['toggle', 'select-section', 'open-quiz', 'open-related
       v-for="(item, index) in card.sections"
       :key="item.id"
       class="tree-item"
-      :class="{ active: index === activeSection }"
+      :class="{ active: index === activeSection, unavailable: !isSectionAvailable(item) }"
+      :disabled="!isSectionAvailable(item)"
+      :title="isSectionAvailable(item) ? item.title : `${item.title}（${sectionGenerationLabel(item)}）`"
       @click="emit('select-section', index)"
     >
-      <span>{{ String(index + 1).padStart(2, '0') }}</span>{{ item.title }}
+      <span class="tree-index">{{ String(index + 1).padStart(2, '0') }}</span><span class="tree-title">{{ item.title }}</span><small
+        v-if="!isSectionAvailable(item)"
+        class="tree-status"
+      >{{ sectionGenerationLabel(item) }}</small>
     </button><button
       class="activity-nav-item"
       :class="{ active: learningView === 'activity' }"
