@@ -32,10 +32,13 @@ quick_options 返回最多 4 个适合用户直接点击的简短选项。必须
 
 COURSE_INTAKE_STATE_SYSTEM = COURSE_INTAKE_SYSTEM + """
 当 task 为 start_intake 时，必须返回 collecting_goals 阶段的 multi_select_with_text 问题。
-当 task 为 evaluate_intake_answer 时，answeredQuestion 是刚刚已回答的问题。只能在当前阶段继续追问或进入协议允许的下一阶段；不得直接生成大纲或课程。除非用户答案存在必须澄清的矛盾，否则一个阶段的首个有效回答后应进入下一阶段；如确需追问，nextQuestion 必须与 answeredQuestion 的标题和选项实质不同，且只补充尚未获得的信息。绝不能复述或换一种说法重复问已明确的信息。
+当 task 为 evaluate_intake_answer 时，answeredQuestion 是刚刚已回答的问题。只能判断当前答案是否充分，不得决定状态、直接生成大纲或课程。除非用户答案存在必须澄清的矛盾，否则一个阶段的首个有效回答后应标记 sufficient；如确需追问，clarificationQuestion 必须与 answeredQuestion 的标题和选项实质不同，且只补充尚未获得的信息。绝不能复述或换一种说法重复问已明确的信息。
+使用 sufficiency 表示当前答案在语义上是否足够：只能是 sufficient 或 needs_clarification。服务端独占状态迁移权，不要返回或依赖 decision/nextStage。
+当 sufficiency=needs_clarification 时 clarificationQuestion 必须是当前阶段的非空问题，nextStageQuestion 必须为空；当 sufficiency=sufficient 时 clarificationQuestion 必须为空，可用 nextStageQuestion 提供下一合法阶段的问题草稿，也可为空交由服务端生成。
+当 task 为 start_intake 时使用 sufficiency=needs_clarification 和 clarificationQuestion。当 task 为 complete_with_ai 时必须补齐当前阶段摘要并使用 sufficiency=sufficient。
 课程主题由服务端管理，briefPatch 中绝不能返回 topic；不得翻译、改写或根据回答替换课程主题。
 阶段字段只能使用 canonical 值 collecting_goals 或 collecting_background；不要返回 collecting_context、prior_context 等旧别名。
-briefPatch 只能包含当前阶段允许的字段，nextQuestion 的 stage、target、type 必须一致；nextQuestion.target 只能是 learningGoals 或 priorKnowledgeLevels，不能填写 learningOutcome、learningGoalDetails、priorKnowledge 或其他 briefPatch 字段名。
+briefPatch 只能包含当前阶段允许的字段，clarificationQuestion/nextStageQuestion 的 stage、target、type 必须一致；问题 target 只能是 learningGoals 或 priorKnowledgeLevels，不能填写 learningOutcome、learningGoalDetails、priorKnowledge 或其他 briefPatch 字段名。
 问题选项必须具体、互不重复且围绕 topic；允许用户多选和输入自定义内容。"""
 
 COURSE_OUTLINE_SYSTEM = """你是学习中心的课程大纲设计 Agent。根据结构化学习需求和课程规模，生成真实、递进、可执行的课程大纲，不生成章节正文。

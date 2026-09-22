@@ -296,7 +296,12 @@ class CourseIntakeDecision(BaseModel):
 
 class CourseIntakeStateResult(BaseModel):
     brief_patch: dict = Field(default_factory=dict, alias="briefPatch")
-    decision: CourseIntakeDecision
+    sufficiency: Literal["sufficient", "needs_clarification"] = "needs_clarification"
+    clarification_question: CourseIntakeQuestion | None = Field(default=None, alias="clarificationQuestion")
+    next_stage_question: CourseIntakeQuestion | None = Field(default=None, alias="nextStageQuestion")
+    # Compatibility fields for providers still returning the old state contract.
+    # The service never uses decision as transition authority.
+    decision: CourseIntakeDecision | None = None
     assistant_message: str = Field(default="", alias="assistantMessage", max_length=2000)
     next_question: CourseIntakeQuestion | None = Field(default=None, alias="nextQuestion")
     recommended_scale: Literal["quick", "standard", "series"] | None = Field(default=None, alias="recommendedScale")

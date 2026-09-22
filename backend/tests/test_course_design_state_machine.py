@@ -127,7 +127,7 @@ class CourseDesignStateMachineTests(unittest.TestCase):
                 if task == "course_intake_state" and "evaluate_intake_answer" in messages[-1]["content"]:
                     result["briefPatch"]["topic"] = "另一个主题"
                     result["briefPatch"]["useCase"] = "不应接受"
-                    result["nextQuestion"]["target"] = "learningGoals"
+                    result["nextStageQuestion"]["target"] = "learningGoals"
                 return result
 
         service = CourseDesignService(self.db, "user-1", MalformedAgent())
@@ -377,15 +377,109 @@ class CourseDesignStateMachineTests(unittest.TestCase):
 
         service = CourseDesignService(self.db, "user-1", MissingSummaryProvider())
         session = asyncio.run(service.create("Python"))
-        revision = session.revision
-        with self.assertRaises(CourseDesignInvalid):
-            asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
-                commandId="missing-summary", expectedRevision=session.revision, type="answer_question",
-                payload={"answer": {"questionId": session.current_question.id, "selectedOptionIds": ["understand-core"]}},
-            )))
+        session = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="missing-summary", expectedRevision=session.revision, type="answer_question",
+            payload={"answer": {"questionId": session.current_question.id, "selectedOptionIds": ["understand-core"]}},
+        )))
         persisted = service.get(session.session_id)
-        self.assertEqual(persisted.revision, revision)
         self.assertEqual(persisted.state, "collecting_goals")
+        self.assertEqual(persisted.current_question.id, "collecting-goals-fallback")
+
+    def test_missing_clarification_question_repairs_then_falls_back_without_422(self):
+        class MissingQuestionProvider(MockTextProvider):
+            async def structured(self, messages, *, task, schema):
+                payload = json.loads(messages[-1]["content"])
+                if payload.get("task") in {"evaluate_intake_answer", "repair_intake_state"}:
+                    return {
+                        "briefPatch": {},
+                        "sufficiency": "needs_clarification",
+                        "clarificationQuestion": None,
+                        "nextStageQuestion": None,
+                    }
+                return await super().structured(messages, task=task, schema=schema)
+
+        service = CourseDesignService(self.db, "user-1", MissingQuestionProvider())
+        session = asyncio.run(service.create("Python"))
+        result = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="missing-question", expectedRevision=session.revision, type="answer_question",
+            payload={"answer": {
+                "questionId": session.current_question.id,
+                "selectedOptionIds": ["understand-core"],
+            }},
+        )))
+        self.assertEqual(result.state, "collecting_goals")
+        self.assertEqual(result.current_question.id, "collecting-goals-fallback")
+
+    def test_new_protocol_sufficient_advances_without_model_transition(self):
+        class ServerOwnedProvider(MockTextProvider):
+            async def structured(self, messages, *, task, schema):
+                payload = json.loads(messages[-1]["content"])
+                if payload.get("task") == "evaluate_intake_answer":
+                    return {
+                        "briefPatch": {"learningOutcome": "能独立完成一个 Python 项目"},
+                        "sufficiency": "sufficient",
+                        "clarificationQuestion": None,
+                        "nextStageQuestion": None,
+                        # Deliberately contradictory legacy advice: the server must ignore it.
+                        "decision": {"type": "ask_follow_up", "nextStage": "collecting_goals"},
+                    }
+                return await super().structured(messages, task=task, schema=schema)
+
+        service = CourseDesignService(self.db, "user-1", ServerOwnedProvider())
+        session = asyncio.run(service.create("Python"))
+        result = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="server-owned", expectedRevision=session.revision, type="answer_question",
+            payload={"answer": {
+                "questionId": session.current_question.id,
+                "selectedOptionIds": ["understand-core"],
+            }},
+        )))
+        self.assertEqual(result.state, "collecting_background")
+        self.assertEqual(result.current_question.id, "collecting-background-fallback")
+
+    def test_second_consecutive_follow_up_uses_completion_before_advancing(self):
+        class TwoFollowUpsProvider(MockTextProvider):
+            def __init__(self):
+                self.answers = 0
+                self.completed = 0
+
+            async def structured(self, messages, *, task, schema):
+                payload = json.loads(messages[-1]["content"])
+                if payload.get("task") == "evaluate_intake_answer":
+                    self.answers += 1
+                    return {
+                        "briefPatch": {},
+                        "sufficiency": "needs_clarification",
+                        "clarificationQuestion": {
+                            "title": f"请补充第 {self.answers} 个目标细节", "options": [],
+                        },
+                    }
+                if payload.get("task") == "complete_with_ai":
+                    self.completed += 1
+                return await super().structured(messages, task=task, schema=schema)
+
+        provider = TwoFollowUpsProvider()
+        service = CourseDesignService(self.db, "user-1", provider)
+        session = asyncio.run(service.create("Python"))
+        first = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="follow-up-1", expectedRevision=session.revision, type="answer_question",
+            payload={"answer": {
+                "questionId": session.current_question.id,
+                "selectedOptionIds": ["understand-core"],
+            }},
+        )))
+        self.assertEqual(first.state, "collecting_goals")
+        second = asyncio.run(service.execute(first.session_id, CourseDesignCommandRequest(
+            commandId="follow-up-2", expectedRevision=first.revision, type="answer_question",
+            payload={"answer": {
+                "questionId": first.current_question.id,
+                "selectedOptionIds": [],
+                "customText": "希望能独立完成项目",
+            }},
+        )))
+        self.assertEqual(provider.completed, 1)
+        self.assertEqual(second.state, "collecting_background")
+        self.assertEqual(second.operation, {})
 
     def test_retry_requires_owned_failed_space_and_reuses_it(self):
         failed = LearningSpace(

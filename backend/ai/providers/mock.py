@@ -64,9 +64,9 @@ class MockTextProvider:
                 if stage == "collecting_goals":
                     return {
                         "briefPatch": {"learningOutcome": f"掌握 {topic} 核心原理并完成实践"},
-                        "decision": {"type": "advance", "nextStage": "collecting_background"},
+                        "sufficiency": "sufficient",
                         "assistantMessage": "接下来了解你的个人基础。",
-                        "nextQuestion": {
+                        "nextStageQuestion": {
                             "id": "background-1", "stage": "collecting_background", "target": "priorKnowledgeLevels",
                             "type": "multi_select_with_text", "title": "你目前具备哪些相关基础？", "description": "可以多选，也可以补充说明。",
                             "options": [], "allowCustom": True, "minimumSelections": 0,
@@ -74,9 +74,9 @@ class MockTextProvider:
                     }
                 return {
                     "briefPatch": {"priorKnowledge": f"具备 {topic} 相关基础"},
-                    "decision": {"type": "advance", "nextStage": "reviewing_brief"},
+                    "sufficiency": "sufficient",
                     "assistantMessage": "需求信息已经比较清楚，请确认课程摘要和规模。",
-                    "nextQuestion": None, "recommendedScale": "standard",
+                    "nextStageQuestion": None, "recommendedScale": "standard",
                 }
             if payload.get("task") == "complete_with_ai" and stage == "collecting_goals":
                 return {
@@ -85,9 +85,9 @@ class MockTextProvider:
                         "learningGoalDetails": "AI-completed learning goals" if english else "由 AI 补全学习目标",
                         "learningOutcome": f"Master {payload.get('brief', {}).get('topic') or 'the topic'} core principles and complete a practical exercise" if english else f"掌握 {payload.get('brief', {}).get('topic') or '主题'} 核心原理并完成实践",
                     },
-                    "decision": {"type": "advance", "nextStage": "collecting_background"},
+                    "sufficiency": "sufficient",
                     "assistantMessage": "Next, let us clarify your background." if english else "接下来了解你的个人基础。",
-                    "nextQuestion": {
+                    "nextStageQuestion": {
                         "id": "background-1", "stage": "collecting_background", "target": "priorKnowledgeLevels",
                         "type": "multi_select_with_text", "title": "What relevant background do you have?" if english else "你目前具备哪些相关基础？",
                         "description": "You can select multiple options or add your own." if english else "可以多选，也可以补充说明。", "options": [],
@@ -101,18 +101,18 @@ class MockTextProvider:
                         "priorKnowledgeDetails": "AI-completed background" if english else "由 AI 补全个人基础",
                         "priorKnowledge": "Has relevant background" if english else "具备相关基础",
                     },
-                    "decision": {"type": "advance", "nextStage": "reviewing_brief"},
+                    "sufficiency": "sufficient",
                     "assistantMessage": "Your requirements are clear. Please confirm the summary and course scale." if english else "需求信息已经比较清楚，请确认课程摘要和规模。",
-                    "nextQuestion": None, "recommendedScale": "standard",
+                    "nextStageQuestion": None, "recommendedScale": "standard",
                 }
             if stage == "collecting_goals":
                 has_answer = bool(payload.get("answer", {}).get("selectedLabels") or payload.get("answer", {}).get("customText"))
                 next_stage = "collecting_background" if has_answer and payload.get("task") == "evaluate_intake_answer" else "collecting_goals"
                 return {
                     "briefPatch": {"learningOutcome": f"Master {topic} core principles and complete a practical exercise" if english else f"掌握 {topic} 核心原理并完成实践"} if has_answer else {},
-                    "decision": {"type": "advance", "nextStage": next_stage},
+                    "sufficiency": "sufficient" if has_answer else "needs_clarification",
                     "assistantMessage": f"What capabilities do you want to gain from {topic}?" if english else f"你希望通过 {topic} 课程获得哪些能力？可以多选，也可以补充说明。",
-                    "nextQuestion": {
+                    ("nextStageQuestion" if has_answer else "clarificationQuestion"): {
                         "id": "background-1" if next_stage == "collecting_background" else "goals-1", "stage": next_stage, "target": "priorKnowledgeLevels" if next_stage == "collecting_background" else "learningGoals",
                         "type": "multi_select_with_text", "title": f"What capabilities do you want from {topic}?" if english else f"你希望通过 {topic} 获得哪些能力？",
                         "description": "You can select multiple options or add your own." if english else "可以多选，也可以输入自己的目标。",
@@ -126,9 +126,9 @@ class MockTextProvider:
                 }
             return {
                 "briefPatch": {"priorKnowledge": f"Has relevant {topic} background" if english else f"具备 {topic} 相关基础"},
-                "decision": {"type": "advance", "nextStage": "reviewing_brief"},
+                "sufficiency": "sufficient",
                 "assistantMessage": "Your requirements are clear. Please confirm the summary and course scale." if english else "需求信息已经比较清楚，请确认课程摘要和规模。",
-                "nextQuestion": None,
+                "nextStageQuestion": None,
                 "recommendedScale": "standard",
             }
         if task == "course_outline":

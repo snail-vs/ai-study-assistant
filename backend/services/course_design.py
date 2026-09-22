@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime
 from typing import Any
@@ -22,6 +23,9 @@ from ..schemas import (
 )
 from .course_generation import schedule_course_generation
 from .provider_settings import restore_active_provider
+
+
+logger = logging.getLogger(__name__)
 
 
 class CourseDesignConflict(Exception):
@@ -46,6 +50,7 @@ GOAL_FIELDS = {"learningGoals", "learningGoalDetails", "learningOutcome"}
 BACKGROUND_FIELDS = {"priorKnowledgeLevels", "priorKnowledgeDetails", "priorKnowledge"}
 INTAKE_FIELDS = GOAL_FIELDS | BACKGROUND_FIELDS
 SCALE_VALUES = {"quick", "standard", "series"}
+MAX_CONSECUTIVE_FOLLOW_UPS = 2
 _SCALE_QUESTION_MARKERS = (
     "课程规模", "学习规模", "规模和节奏", "学习节奏", "学习时长", "时间与深度",
     "快速了解", "系统入门", "项目掌握", "2-3 节", "5-8 节", "8-12 节",
@@ -109,6 +114,18 @@ def _fallback_question(stage: str, topic: str) -> CourseDesignQuestion:
             {"id": "practical-experience", "label": "有实际使用经验，想系统提升"},
         ],
     )
+
+
+def _next_intake_stage(stage: str) -> str:
+    return "collecting_background" if stage == "collecting_goals" else "reviewing_brief"
+
+
+def _stage_brief_is_complete(stage: str, brief: dict) -> bool:
+    if stage == "collecting_goals":
+        has_answer = brief.get("learningGoals") or str(brief.get("learningGoalDetails", "") or "").strip()
+        return bool(str(brief.get("learningOutcome", "") or "").strip() and has_answer)
+    has_answer = brief.get("priorKnowledgeLevels") or str(brief.get("priorKnowledgeDetails", "") or "").strip()
+    return bool(str(brief.get("priorKnowledge", "") or "").strip() and has_answer)
 
 
 class CourseDesignService:
@@ -205,9 +222,9 @@ class CourseDesignService:
             result = await agent.start(topic=topic)
         except ValueError as exc:
             raise CourseDesignInvalid(f"AI 返回的课程需求格式无效：{exc}") from exc
-        question = result.next_question
-        if not question or question.stage != "collecting_goals" or question.target != "learningGoals":
-            raise CourseDesignInvalid("Intake Agent 返回了无效的目标问题")
+        question = result.clarification_question or result.next_question or _fallback_question("collecting_goals", topic)
+        if question.stage != "collecting_goals" or question.target != "learningGoals":
+            question = _fallback_question("collecting_goals", topic)
         question = self._safe_intake_question(question, "collecting_goals", topic)
         if set(result.brief_patch) - (GOAL_FIELDS | {"topic"}):
             raise CourseDesignInvalid("Intake Agent 返回了无效的目标字段")
@@ -286,53 +303,78 @@ class CourseDesignService:
                 patch["priorKnowledgeDetails"] = "；".join(dict.fromkeys(filter(None, [prior, custom])))
         merged = {**session.brief, **patch}
         session.brief = CourseBrief.model_validate(merged).model_dump(by_alias=True)
-        # A repeated follow-up leaves the learner in a loop.  The answer has
-        # already been recorded above, so use the completion contract to
-        # summarize this stage and advance instead of displaying it again.
-        if (agent_result.decision.type == "ask_follow_up"
-                and _is_repeated_question(current_question, agent_result.next_question)):
+        clarification = agent_result.clarification_question
+        follow_up_count = 0
+        operation = session.operation
+        if operation.get("_intakeFollowUpStage") == session.state:
+            follow_up_count = int(operation.get("_intakeFollowUpCount", 0) or 0)
+        needs_clarification = agent_result.sufficiency == "needs_clarification"
+        repeated = needs_clarification and _is_repeated_question(current_question, clarification)
+        should_complete = needs_clarification and (
+            repeated or follow_up_count + 1 >= MAX_CONSECUTIVE_FOLLOW_UPS
+        )
+
+        # Repeated or excessive follow-ups use the existing completion contract
+        # once. A failed summary never grants permission to advance.
+        if should_complete:
+            logger.info(
+                "course intake follow-up guard triggered: session_id=%s stage=%s count=%s repeated=%s",
+                session.id,
+                session.state,
+                follow_up_count + 1,
+                repeated,
+            )
             try:
-                agent_result = await CourseIntakeAgent(self._gateway()).complete(
+                completed = await CourseIntakeAgent(self._gateway()).complete(
                     stage=session.state, brief=session.brief
                 )
-            except ValueError as exc:
-                raise CourseDesignInvalid(f"AI 返回的课程需求格式无效：{exc}") from exc
-            unknown = set(agent_result.brief_patch) - (INTAKE_FIELDS | {"topic"})
-            if unknown:
-                raise CourseDesignInvalid("Agent 返回了当前阶段禁止修改的字段")
-            patch = {key: value for key, value in agent_result.brief_patch.items() if key in allowed}
-            selected_field = "learningGoals" if session.state == "collecting_goals" else "priorKnowledgeLevels"
-            patch[selected_field] = list(dict.fromkeys([
-                *session.brief.get(selected_field, []), *patch.get(selected_field, []),
-            ]))
-            session.brief = CourseBrief.model_validate({**session.brief, **patch}).model_dump(by_alias=True)
-        next_stage = agent_result.decision.next_stage
-        if agent_result.decision.type == "ask_follow_up":
-            next_stage = session.state
-        if session.state == "collecting_goals":
-            if next_stage not in {"collecting_goals", "collecting_background"}:
-                raise CourseDesignInvalid("Agent 不允许从目标阶段跳转到该状态")
-        elif next_stage not in {"collecting_background", "reviewing_brief"}:
-            raise CourseDesignInvalid("Agent 不允许从基础阶段跳转到该状态")
-        if session.state == "collecting_goals" and next_stage == "collecting_background" and not session.brief.get("learningOutcome", "").strip():
-            raise CourseDesignInvalid("Agent 必须返回学习目标总结")
-        if session.state == "collecting_background" and next_stage == "reviewing_brief" and not session.brief.get("priorKnowledge", "").strip():
-            raise CourseDesignInvalid("Agent 必须返回个人基础总结")
+            except ValueError:
+                completed = None
+            if completed is not None:
+                unknown = set(completed.brief_patch) - (INTAKE_FIELDS | {"topic"})
+                if unknown:
+                    raise CourseDesignInvalid("Agent 返回了当前阶段禁止修改的字段")
+                completion_patch = {
+                    key: value for key, value in completed.brief_patch.items() if key in allowed
+                }
+                selected_field = "learningGoals" if session.state == "collecting_goals" else "priorKnowledgeLevels"
+                completion_patch[selected_field] = list(dict.fromkeys([
+                    *session.brief.get(selected_field, []),
+                    *completion_patch.get(selected_field, []),
+                ]))
+                session.brief = CourseBrief.model_validate({
+                    **session.brief, **completion_patch
+                }).model_dump(by_alias=True)
+                agent_result = completed
+
+        can_advance = (
+            agent_result.sufficiency == "sufficient"
+            and _stage_brief_is_complete(session.state, session.brief)
+        )
+        next_stage = _next_intake_stage(session.state) if can_advance else session.state
         if agent_result.recommended_scale in SCALE_VALUES:
             session.recommended_scale = agent_result.recommended_scale
         session.state = next_stage
         session.brief_revision += 1
         if next_stage == "reviewing_brief":
             session.current_question = {}
+            session.operation = {}
         else:
-            next_question = agent_result.next_question
+            if can_advance:
+                next_question = agent_result.next_stage_question
+                session.operation = {}
+            else:
+                next_question = clarification if needs_clarification and not repeated else None
+                new_count = follow_up_count + 1 if needs_clarification else 0
+                session.operation = {
+                    "_intakeFollowUpStage": session.state,
+                    "_intakeFollowUpCount": new_count,
+                } if new_count else {}
             expected_target = "learningGoals" if next_stage == "collecting_goals" else "priorKnowledgeLevels"
             if not next_question:
-                if next_stage == current_question.get("stage"):
-                    raise CourseDesignInvalid("Agent 必须返回当前阶段的追问")
                 next_question = _fallback_question(next_stage, session.topic)
             if next_question.stage != next_stage or next_question.target != expected_target:
-                raise CourseDesignInvalid("Agent 返回的问题目标字段与阶段不匹配")
+                next_question = _fallback_question(next_stage, session.topic)
             next_question = self._safe_intake_question(next_question, next_stage, session.topic)
             session.current_question = next_question.model_dump(by_alias=True)
             questions = session.questions
@@ -358,27 +400,23 @@ class CourseDesignService:
             patch = {key: value for key, value in result.brief_patch.items() if key in allowed}
             session.brief = CourseBrief.model_validate({**session.brief, **patch}).model_dump(by_alias=True)
             if session.state == "collecting_goals":
-                if result.decision.type != "advance" or result.decision.next_stage != "collecting_background":
-                    raise CourseDesignInvalid("Agent 未完成目标阶段")
                 if not session.brief.get("learningOutcome", "").strip() or not session.brief.get("learningGoals"):
                     raise CourseDesignInvalid("Agent 必须返回完整的学习目标总结")
-                if not result.next_question or result.next_question.stage != "collecting_background" or result.next_question.target != "priorKnowledgeLevels":
-                    raise CourseDesignInvalid("Agent 必须返回有效的基础问题")
                 session.state = "collecting_background"
-                question = self._safe_intake_question(result.next_question, "collecting_background", session.topic)
+                question = result.next_stage_question or _fallback_question("collecting_background", session.topic)
+                if question.stage != "collecting_background" or question.target != "priorKnowledgeLevels":
+                    question = _fallback_question("collecting_background", session.topic)
+                question = self._safe_intake_question(question, "collecting_background", session.topic)
                 session.current_question = question.model_dump(by_alias=True)
                 questions = session.questions
                 questions["collecting_background"] = session.current_question
                 session.questions = questions
             else:
-                if result.decision.type != "advance" or result.decision.next_stage != "reviewing_brief":
-                    raise CourseDesignInvalid("Agent 未完成基础阶段")
                 if not session.brief.get("priorKnowledge", "").strip() or not session.brief.get("priorKnowledgeLevels"):
                     raise CourseDesignInvalid("Agent 必须返回完整的个人基础总结")
-                if result.next_question is not None:
-                    raise CourseDesignInvalid("基础阶段完成后不应返回问题")
                 session.state = "reviewing_brief"
                 session.current_question = {}
+            session.operation = {}
             if result.recommended_scale in SCALE_VALUES:
                 session.recommended_scale = result.recommended_scale
             session.brief_revision += 1
@@ -440,20 +478,21 @@ class CourseDesignService:
                 session.outline_confirmed_at = None
                 session.outline_basis_brief_revision = None
                 session.outline_revision_messages = []
+            session.operation = {}
             return self._commit(session, command.command_id)
         if command.type == "restart":
             try:
                 result = await CourseIntakeAgent(self._gateway()).start(topic=session.topic)
             except ValueError as exc:
                 raise CourseDesignInvalid(f"AI 返回的课程需求格式无效：{exc}") from exc
-            if (set(result.brief_patch) - (GOAL_FIELDS | {"topic"})
-                    or not result.next_question
-                    or result.next_question.stage != "collecting_goals"
-                    or result.next_question.target != "learningGoals"):
-                raise CourseDesignInvalid("Intake Agent 返回了无效的目标问题")
+            if set(result.brief_patch) - (GOAL_FIELDS | {"topic"}):
+                raise CourseDesignInvalid("Intake Agent 返回了无效的目标字段")
             session.state = "collecting_goals"
             session.brief = CourseBrief.model_validate(_initial_brief(session.topic, result.brief_patch)).model_dump(by_alias=True)
-            question = self._safe_intake_question(result.next_question, "collecting_goals", session.topic)
+            question = result.clarification_question or result.next_question or _fallback_question("collecting_goals", session.topic)
+            if question.stage != "collecting_goals" or question.target != "learningGoals":
+                question = _fallback_question("collecting_goals", session.topic)
+            question = self._safe_intake_question(question, "collecting_goals", session.topic)
             session.current_question = question.model_dump(by_alias=True)
             session.questions = {"collecting_goals": session.current_question}
             session.selected_scale = None
@@ -461,6 +500,7 @@ class CourseDesignService:
             session.outline_confirmed_at = None
             session.outline_basis_brief_revision = None
             session.outline_revision_messages = []
+            session.operation = {}
             session.brief_revision += 1
             return self._commit(session, command.command_id)
         raise CourseDesignInvalid("不支持的命令")

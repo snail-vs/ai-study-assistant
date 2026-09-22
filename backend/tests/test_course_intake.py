@@ -280,11 +280,27 @@ class CourseIntakeTests(unittest.TestCase):
         self.assertEqual(result.brief_patch["learningOutcome"], "掌握核心能力")
 
         gateway = RepairGateway(repair_complete=False)
-        with self.assertRaises(CourseIntakeInvalidResult):
-            asyncio.run(CourseIntakeAgent(gateway).answer(
-                stage="collecting_goals", brief={"topic": "Python"}, selected_labels=["实践"],
-            ))
+        result = asyncio.run(CourseIntakeAgent(gateway).answer(
+            stage="collecting_goals", brief={"topic": "Python"}, selected_labels=["实践"],
+        ))
+        self.assertEqual(result.sufficiency, "sufficient")
+        self.assertNotIn("learningOutcome", result.brief_patch)
         self.assertEqual(gateway.calls, 2)
+
+    def test_new_state_protocol_wins_over_conflicting_legacy_decision(self):
+        result = normalize_state_result({
+            "briefPatch": {},
+            "sufficiency": "needs_clarification",
+            "clarificationQuestion": {
+                "title": "你更偏向理解原理还是完成项目？", "options": [],
+            },
+            "decision": {"type": "advance", "nextStage": "reviewing_outlinex"},
+            "nextQuestion": {"title": "旧协议问题", "options": []},
+        }, stage="collecting_goals")
+        self.assertEqual(result.sufficiency, "needs_clarification")
+        self.assertEqual(result.clarification_question.stage, "collecting_goals")
+        self.assertIn("理解原理", result.clarification_question.title)
+        self.assertIsNone(result.next_stage_question)
 
     def test_complete_repairs_missing_prior_knowledge_once(self):
         class RepairGateway:
