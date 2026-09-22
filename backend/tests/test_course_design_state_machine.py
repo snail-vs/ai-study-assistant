@@ -243,6 +243,30 @@ class CourseDesignStateMachineTests(unittest.TestCase):
         self.assertIn("完成实际练习", session.brief.learning_goals)
         self.assertNotEqual(session.current_question.title, "你希望获得哪些能力？")
 
+    def test_missing_next_stage_question_uses_server_fallback(self):
+        class MissingTransitionQuestionProvider:
+            def __init__(self):
+                self.calls = 0
+
+            async def structured(self, messages, *, task, schema):
+                self.calls += 1
+                if self.calls == 1:
+                    return await MockTextProvider().structured(messages, task=task, schema=schema)
+                return {
+                    "briefPatch": {"learningOutcome": "掌握 Go 基础"},
+                    "decision": {"type": "advance", "nextStage": "collecting_background"},
+                    "nextQuestion": None,
+                }
+
+        service = CourseDesignService(self.db, "user-1", MissingTransitionQuestionProvider())
+        session = asyncio.run(service.create("Go"))
+        session = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="goals", expectedRevision=session.revision, type="answer_question",
+            payload={"answer": {"questionId": session.current_question.id, "selectedOptionIds": ["understand-core"]}},
+        )))
+        self.assertEqual(session.state, "collecting_background")
+        self.assertEqual(session.current_question.id, "collecting-background-fallback")
+
     def test_scale_question_is_replaced_with_background_fallback(self):
         class ScaleQuestionProvider:
             def __init__(self):

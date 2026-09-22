@@ -328,7 +328,9 @@ class CourseDesignService:
             next_question = agent_result.next_question
             expected_target = "learningGoals" if next_stage == "collecting_goals" else "priorKnowledgeLevels"
             if not next_question:
-                raise CourseDesignInvalid("Agent 必须返回下一阶段问题")
+                if next_stage == current_question.get("stage"):
+                    raise CourseDesignInvalid("Agent 必须返回当前阶段的追问")
+                next_question = _fallback_question(next_stage, session.topic)
             if next_question.stage != next_stage or next_question.target != expected_target:
                 raise CourseDesignInvalid("Agent 返回的问题目标字段与阶段不匹配")
             next_question = self._safe_intake_question(next_question, next_stage, session.topic)
