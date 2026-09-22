@@ -7,7 +7,7 @@ vi.mock('../api/client', () => ({ request: vi.fn() }))
 
 const mockedRequest = vi.mocked(request)
 const card = { id: 'card-1' }
-const section = { id: 'section-1' }
+const section = { id: 'section-1', generationStatus: 'completed', contentMarkdown: '正文' }
 
 describe('study assist store', () => {
   beforeEach(() => {
@@ -41,6 +41,19 @@ describe('study assist store', () => {
     await oldLoad
 
     expect(store.sectionId).toBe('section-2')
+    expect(store.teacherGuidance).toEqual([])
+  })
+
+  it('does not generate guidance while section content is unfinished', async () => {
+    mockedRequest.mockResolvedValueOnce([] as never)
+    const store = useStudyAssistStore()
+
+    await store.loadTeacherGuidance(card, {
+      id: 'section-pending', generationStatus: 'generating', contentMarkdown: '',
+    })
+
+    expect(mockedRequest).toHaveBeenCalledTimes(1)
+    expect(mockedRequest).toHaveBeenCalledWith('/cards/card-1/sections/section-pending/guidance')
     expect(store.teacherGuidance).toEqual([])
   })
 

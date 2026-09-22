@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { request as apiRequest } from './api/client'
 import { storeToRefs } from 'pinia'
@@ -162,6 +162,17 @@ let resizingChat = false
 const md = new MarkdownIt({ html: false, breaks: false, linkify: true })
 
 conversationStore.setStudyAssistEventHandler(studyAssistStore.handleStreamEvent)
+
+watch(
+  () => [section.value?.id, section.value?.generationStatus, section.value?.contentMarkdown],
+  ([nextId, nextStatus, nextContent], [previousId, previousStatus, previousContent] = []) => {
+    const becameReady = ['completed', 'needs_attention'].includes(nextStatus)
+      && typeof nextContent === 'string'
+      && nextContent.trim().length > 0
+      && (!['completed', 'needs_attention'].includes(previousStatus) || !String(previousContent || '').trim())
+    if (nextId && nextId === previousId && becameReady) void loadTeacherGuidance()
+  },
+)
 
 function masteryLabel(level) {
   return level === 'mastered' ? '已掌握' : level === 'developing' ? '掌握中' : level === 'needs_review' ? '需要复习' : ''
@@ -837,7 +848,11 @@ function nextSection() {
               <span v-else class="teacher-guidance-trigger">{{ item.trigger === 'section_enter' ? '进入本节' : item.trigger === 'activity_result' ? '理解检查后' : '讨论后归位' }}</span>
               <p>{{ item.content }}</p>
             </article>
-            <div v-if="!teacherGuidance.length" class="teacher-guidance-empty">正在准备本节的学习引导…</div>
+            <div v-if="!teacherGuidance.length" class="teacher-guidance-empty">
+              {{ ['completed', 'needs_attention'].includes(section?.generationStatus)
+                ? '正在准备本节的学习引导…'
+                : '本节内容生成完成后，将准备学习引导。' }}
+            </div>
           </div>
         </section>
       </section>

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 
 
 class KnowledgeCardBehaviorTests(unittest.TestCase):
@@ -48,6 +49,65 @@ class KnowledgeCardBehaviorTests(unittest.TestCase):
         self.assertIs(result, existing)
         db.add.assert_not_called()
         db.commit.assert_not_called()
+
+    def test_guidance_creation_rejects_unfinished_section_without_calling_ai(self):
+        card = SimpleNamespace(id="card-1", status="active", title="Card")
+        section = SimpleNamespace(
+            id="section-1", card_id="card-1", title="Section", content_markdown="",
+            generation_status="generating",
+        )
+        db = MagicMock()
+        db.get.side_effect = [card, section]
+        db.scalar.return_value = None
+        with patch.object(self.module, "owned_card", return_value=card), patch.object(
+            self.module, "TeacherAgent", side_effect=AssertionError("AI must not run")
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                asyncio.run(self.module.create_section_guidance("card-1", "section-1", db))
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(caught.exception.detail, "Section content is still being generated")
+        db.add.assert_not_called()
+        db.commit.assert_not_called()
+
+    def test_guidance_creation_claims_before_calling_ai(self):
+        card = SimpleNamespace(id="card-1", status="active", title="Card")
+        section = SimpleNamespace(
+            id="section-1", card_id="card-1", title="Section", content_markdown="content",
+            generation_status="completed",
+        )
+        draft = SimpleNamespace(content="intro")
+        agent = MagicMock()
+        agent.create_section_intro = AsyncMock(return_value=draft)
+        db = MagicMock()
+        db.get.side_effect = [card, section]
+        db.scalar.return_value = None
+        with patch.object(self.module, "owned_card", return_value=card), patch.object(
+            self.module, "restore_active_provider", return_value=object()
+        ), patch.object(self.module, "TeacherAgent", return_value=agent):
+            result = asyncio.run(self.module.create_section_guidance("card-1", "section-1", db))
+
+        self.assertEqual(result.content, "intro")
+        self.assertEqual(db.commit.call_count, 2)
+        agent.create_section_intro.assert_awaited_once_with("Card", "Section", "content")
+
+    def test_guidance_creation_losing_claim_returns_inflight_row_without_ai(self):
+        card = SimpleNamespace(id="card-1", status="active", title="Card")
+        section = SimpleNamespace(
+            id="section-1", card_id="card-1", title="Section", content_markdown="content",
+            generation_status="completed",
+        )
+        claimed = SimpleNamespace(id="guidance-1", content="")
+        db = MagicMock()
+        db.get.side_effect = [card, section]
+        db.scalar.side_effect = [None, claimed]
+        db.commit.side_effect = IntegrityError("duplicate", {}, Exception("duplicate"))
+        with patch.object(self.module, "owned_card", return_value=card), patch.object(
+            self.module, "TeacherAgent", side_effect=AssertionError("AI must not run")
+        ):
+            result = asyncio.run(self.module.create_section_guidance("card-1", "section-1", db))
+
+        self.assertIs(result, claimed)
+        db.rollback.assert_called_once_with()
 
     def test_accept_missing_proposal_returns_not_found(self):
         db = MagicMock()

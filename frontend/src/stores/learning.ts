@@ -51,6 +51,17 @@ export const useLearningStore = defineStore('learning', () => {
         }
       }))
       historyCards.value = Object.fromEntries(entries)
+      if (space.value) {
+        space.value = history.value.find((item) => item.id === space.value?.id) || space.value
+      }
+      if (card.value && space.value) {
+        const refreshedCard = historyCards.value[space.value.id]?.find((item) => item.id === card.value?.id)
+        if (refreshedCard) {
+          const isRootCard = rootCard.value?.id === refreshedCard.id
+          card.value = refreshedCard
+          if (isRootCard) rootCard.value = refreshedCard
+        }
+      }
       const hasPending = history.value.some((item) => item.generationStatus === 'queued' || item.generationStatus === 'running')
       if (hasPending && !generationPollTimer) generationPollTimer = setInterval(() => { void loadHistory() }, 3000)
       else if (!hasPending) stopGenerationPolling()

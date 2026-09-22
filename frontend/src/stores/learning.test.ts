@@ -46,6 +46,25 @@ describe('learning store', () => {
     expect(store.navigationStack).toEqual([])
   })
 
+  it('refreshes the open card as background section generation progresses', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ items: [{ id: 'space-1', generationStatus: 'running' }] } as never)
+      .mockResolvedValueOnce([{
+        id: 'card-1', sections: [{ id: 'section-1', generationStatus: 'completed', contentMarkdown: '正文' }],
+      }] as never)
+    const store = useLearningStore()
+    store.setSpace({ id: 'space-1', generationStatus: 'running' })
+    store.setCard({
+      id: 'card-1', sections: [{ id: 'section-1', generationStatus: 'generating', contentMarkdown: '' }],
+    }, { root: true })
+
+    await store.loadHistory()
+
+    expect(store.section).toMatchObject({ generationStatus: 'completed', contentMarkdown: '正文' })
+    expect(store.rootCard).toBe(store.card)
+    store.stopGenerationPolling()
+  })
+
   it('deletes a failed space and removes its cached history cards', async () => {
     mockedRequest.mockResolvedValueOnce({ status: 'deleted', spaceId: 'space-1' } as never)
     const store = useLearningStore()

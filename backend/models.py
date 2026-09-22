@@ -2,7 +2,7 @@ from datetime import datetime
 import json
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -305,6 +305,16 @@ class ActivityAttempt(Base):
 
 class TeacherGuidance(Base):
     __tablename__ = "teacher_guidance"
+    __table_args__ = (
+        Index(
+            "uq_teacher_guidance_section_enter",
+            "card_id",
+            "section_id",
+            unique=True,
+            sqlite_where=text("trigger = 'section_enter'"),
+            postgresql_where=text("trigger = 'section_enter'"),
+        ),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     card_id: Mapped[str] = mapped_column(ForeignKey("knowledge_cards.id"))
     section_id: Mapped[str] = mapped_column(ForeignKey("card_sections.id"))

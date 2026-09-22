@@ -60,7 +60,10 @@ export const useStudyAssistStore = defineStore('study-assist', () => {
     guidanceError.value = ''
     try {
       let stored = await request<StudyAssistItem[]>(`/cards/${card.id}/sections/${section.id}/guidance`)
-      if (!stored.length) {
+      const contentReady = ['completed', 'needs_attention'].includes(section.generationStatus)
+        && typeof section.contentMarkdown === 'string'
+        && section.contentMarkdown.trim().length > 0
+      if (!stored.length && contentReady) {
         await request(`/cards/${card.id}/sections/${section.id}/guidance`, { method: 'POST' })
         stored = await request<StudyAssistItem[]>(`/cards/${card.id}/sections/${section.id}/guidance`)
       }

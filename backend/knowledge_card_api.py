@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .agents.teacher_agent import TeacherAgent
@@ -98,7 +99,11 @@ def list_teacher_guidance(card_id: str, section_id: str, db: Session = Depends(g
     return list(
         db.scalars(
             select(TeacherGuidance)
-            .where(TeacherGuidance.card_id == card_id, TeacherGuidance.section_id == section_id)
+            .where(
+                TeacherGuidance.card_id == card_id,
+                TeacherGuidance.section_id == section_id,
+                TeacherGuidance.content != "",
+            )
             .order_by(TeacherGuidance.created_at, TeacherGuidance.id)
         )
     )
@@ -126,18 +131,49 @@ async def create_section_guidance(card_id: str, section_id: str, db: Session = D
     )
     if existing:
         return existing
-    draft = await TeacherAgent(restore_active_provider(db)).create_section_intro(
-        card.title, section.title, section.content_markdown
-    )
+    if (
+        section.generation_status not in {"completed", "needs_attention"}
+        or not section.content_markdown.strip()
+    ):
+        raise HTTPException(status_code=409, detail="Section content is still being generated")
+
+    # Persist an empty row before the provider call. The partial unique index makes
+    # this an inter-process generation claim, not just a read-before-write check.
     guidance = TeacherGuidance(
         card_id=card_id,
         section_id=section_id,
         trigger="section_enter",
-        content=draft.content,
+        content="",
     )
     db.add(guidance)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        claimed = db.scalar(
+            select(TeacherGuidance).where(
+                TeacherGuidance.card_id == card_id,
+                TeacherGuidance.section_id == section_id,
+                TeacherGuidance.trigger == "section_enter",
+            )
+            .order_by(TeacherGuidance.created_at, TeacherGuidance.id)
+        )
+        if claimed:
+            return claimed
+        raise
+
     db.refresh(guidance)
+    try:
+        draft = await TeacherAgent(restore_active_provider(db)).create_section_intro(
+            card.title, section.title, section.content_markdown
+        )
+        guidance.content = draft.content
+        db.commit()
+        db.refresh(guidance)
+    except Exception:
+        db.delete(guidance)
+        db.commit()
+        raise
     return guidance
 
 

@@ -1112,6 +1112,9 @@ export interface components {
                 [key: string]: unknown;
             };
             /** @enum {string} */
+            generationStatus: "pending" | "generating" | "reviewing" | "completed" | "needs_attention" | "failed";
+            generationError?: string | null;
+            /** @enum {string} */
             learningStatus?: "unread" | "learning" | "completed";
         };
         LearningNavigationEntry: {
