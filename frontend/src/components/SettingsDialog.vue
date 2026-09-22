@@ -305,7 +305,7 @@ function selectAiTab(tab) {
                   </div>
                   <button
                     v-if="keyConfigured && !editingKey"
-                    class="edit-key"
+                    class="settings-secondary-button"
                     @click="emit('update:editingKey', true)"
                   >
                     更换

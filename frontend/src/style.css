@@ -34,7 +34,7 @@ body { margin: 0; min-width: 1100px; }.notes-open { overflow: hidden; }
 .note-editor-actions { flex: 0 0 64px; display: flex; align-items: center; gap: 10px; margin: 0; padding: 0 24px; border-top: 1px solid var(--course-border); color: var(--course-muted); font-size: 10px; }.note-editor-actions .note-shortcut { flex: 1; }.note-editor-actions button { padding: 8px 12px; border-radius: 7px; font-size: 11px; }.note-editor-actions .secondary { border: 1px solid var(--course-border); background: transparent; color: var(--course-muted); }.note-editor-actions .primary { min-width: 82px; border: 0; background: var(--course-accent); color: #0c1717; font-weight: 750; }.note-editor-actions button:disabled { cursor: not-allowed; opacity: .45; }
 @keyframes notes-shimmer { to { background-position: -200% 0; } }
 .model-check em { margin-left: auto; color: #6f8198; font-size: 11px; font-style: normal; }.model-check:has(input[type="radio"]:checked) em { color: #74d2b4; }
-.masked-key { box-sizing: border-box; flex: 1; margin-top: 8px; height: 39px; padding: 11px; border-radius: 6px; border: 1px solid #30415a; background: #0d1520; color: #9eafc3; letter-spacing: .18em; }.key-row .edit-key { color: #b5c4d6; border-color: #3b4d66; }
+.masked-key { box-sizing: border-box; flex: 1; margin-top: 8px; height: 39px; padding: 11px; border-radius: 6px; border: 1px solid #30415a; background: #0d1520; color: #9eafc3; letter-spacing: .18em; }
 .loading-state { display: grid; place-items: center; height: calc(100vh - 68px); color: #8192a8; }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
@@ -412,6 +412,9 @@ button { cursor: pointer; }
 /* Equal specificity to `.key-row button` so model actions are not overridden by its legacy dark palette. */
 button.settings-primary-button { min-width: 76px; padding: 10px 15px; border: 0; border-radius: 7px; background: var(--course-accent); color: var(--course-canvas); font-size: 11px; font-weight: 750; }
 button.settings-primary-button:disabled { cursor: not-allowed; opacity: .5; }
+button.settings-secondary-button { height: 39px; padding: 0 12px; border: 1px solid var(--course-border); border-radius: 7px; background: var(--course-surface-raised); color: var(--course-accent); font-size: 11px; font-weight: 700; }
+button.settings-secondary-button:hover { border-color: var(--course-border-active); background: var(--course-accent-soft); }
+.key-row input, .key-row .masked-key { font-size: 12px; }
 .settings-pane-actions .settings-primary-button { min-width: 116px; }
 .settings-choice-card { max-width: 540px; padding: 19px; border: 1px solid #2b3c51; border-radius: 10px; background: #0e1825; }
 .settings-modal .settings-choice-card label { margin: 0; color: #92a4b5; }

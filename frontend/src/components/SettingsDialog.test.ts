@@ -59,6 +59,7 @@ describe('SettingsDialog', () => {
 
   it('keeps manual model entry and provider saving in the model-service tab', async () => {
     const wrapper = mount(SettingsDialog, { props: baseProps })
+    expect(wrapper.find('.key-row > .settings-secondary-button').text()).toBe('更换')
     expect(wrapper.find('.key-row > .settings-primary-button').text()).toBe('刷新模型')
     expect(wrapper.find('.manual-model-entry .settings-primary-button').text()).toBe('添加')
     expect(wrapper.find('.settings-pane-actions .settings-primary-button').text()).toBe('保存服务配置')
