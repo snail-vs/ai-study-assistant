@@ -104,10 +104,14 @@ const theme = ref(localStorage.getItem('studycenter.theme') || 'light')
 const showSettings = ref(false)
 const taskDefinitions = [
   { id: 'course_intake', label: '课程需求访谈' },
+  { id: 'course_outline', label: '课程大纲生成' },
   { id: 'course_plan', label: '课程规划' },
   { id: 'section_content', label: '章节内容生成' },
+  { id: 'section_summary', label: '章节摘要生成' },
   { id: 'section_review', label: '章节质量审查' },
   { id: 'section_repair', label: '章节内容修订' },
+  { id: 'course_review', label: '课程整体质量审查' },
+  { id: 'course_targeted_repair', label: '课程定点修复' },
   { id: 'quiz_generation', label: '理解检查生成' },
   { id: 'quiz_evaluation', label: '理解检查评估' },
   { id: 'teacher_guidance', label: '导师引导' },
@@ -122,21 +126,21 @@ const taskDefinitions = [
 const modelRoleDefinitions = [
   {
     id: 'course',
-    label: '课程设计与内容生成',
-    hint: '课程规划、章节生成、内容修订、理解检查生成',
-    tasks: ['course_intake', 'course_plan', 'section_content', 'section_repair', 'quiz_generation'],
+    label: '课程创作',
+    hint: '大纲、规划、章节正文、章节修订与定点修复',
+    tasks: ['course_intake', 'course_outline', 'course_plan', 'section_content', 'section_repair', 'course_targeted_repair', 'quiz_generation'],
   },
   {
     id: 'quality',
     label: '质量审查与知识诊断',
-    hint: '章节审查、理解检查评估、知识断层诊断',
-    tasks: ['section_review', 'quiz_evaluation', 'gap_diagnosis'],
+    hint: '章节审查、课程整体审查、理解检查评估与知识断层诊断',
+    tasks: ['section_review', 'course_review', 'quiz_evaluation', 'gap_diagnosis'],
   },
   {
     id: 'interaction',
-    label: '课堂实时互动',
-    hint: '导师引导、课程讨论、知识桥接、多角色调度与会话标题',
-    tasks: ['teacher_guidance', 'side_answer', 'side_answer_plan', 'bridge_note', 'conversation_title', 'group_director'],
+    label: '快速辅助与实时互动',
+    hint: '章节摘要、导师引导、课程讨论、知识桥接、多角色调度与会话标题',
+    tasks: ['section_summary', 'teacher_guidance', 'side_answer', 'side_answer_plan', 'bridge_note', 'conversation_title', 'group_director'],
   },
 ]
 const allModelOptions = computed(() => {

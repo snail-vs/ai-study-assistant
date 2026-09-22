@@ -59,4 +59,31 @@ describe('SettingsDialog', () => {
     expect(wrapper.emitted('save-provider')).toHaveLength(1)
     expect(wrapper.emitted('save-model-assignments')).toBeUndefined()
   })
+
+  it('renders and assigns the new course generation roles without dropping task routes', async () => {
+    const taskDefinitions = [
+      { id: 'section_summary', label: '章节摘要生成' },
+      { id: 'course_review', label: '课程整体质量审查' },
+      { id: 'course_targeted_repair', label: '课程定点修复' },
+    ]
+    const modelRoleDefinitions = [
+      { id: 'course', label: '课程创作', hint: '课程定点修复', tasks: ['course_targeted_repair'] },
+      { id: 'quality', label: '质量审查', hint: '课程整体审查', tasks: ['course_review'] },
+      { id: 'quick', label: '快速辅助', hint: '章节摘要', tasks: ['section_summary'] },
+    ]
+    const wrapper = mount(SettingsDialog, {
+      props: { ...baseProps, taskDefinitions, modelRoleDefinitions },
+    })
+
+    await wrapper.findAll('.settings-tabs button')[2].trigger('click')
+    expect(wrapper.find('.role-table').text()).toContain('课程创作')
+    expect(wrapper.find('.role-table').text()).toContain('质量审查')
+    expect(wrapper.find('.role-table').text()).toContain('快速辅助')
+    const selects = wrapper.findAll('.role-table select')
+    await selects[0].setValue('deepseek:deepseek-chat')
+
+    expect(wrapper.emitted('update:taskRoutes')?.[0]).toEqual([{
+      course_targeted_repair: 'deepseek:deepseek-chat',
+    }])
+  })
 })

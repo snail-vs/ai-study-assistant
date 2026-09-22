@@ -135,6 +135,20 @@ class ProviderSettingsTests(unittest.TestCase):
         db = _SessionDouble(credentials=[_credential(self.user_id, "deepseek", ["m1"])])
         provider_service.validate_task_routes({"teacher_guidance": "deepseek:m1"}, db)
 
+    def test_new_course_tasks_are_validated_saved_and_serialized(self):
+        db = _SessionDouble(credentials=[_credential(self.user_id, "deepseek", ["fast", "quality"])])
+        routes = {
+            "section_summary": "deepseek:fast",
+            "course_review": "deepseek:quality",
+            "course_targeted_repair": "deepseek:quality",
+        }
+
+        provider_service.save_task_routes(routes, db)
+        db.routes.extend(db.added)
+
+        self.assertEqual({route.task for route in db.added}, set(routes))
+        self.assertEqual(provider_service.provider_settings(db)["taskRoutes"], routes)
+
     def test_save_task_routes_upserts_and_deletes_stale_routes_for_current_user(self):
         existing = TaskModelRoute(user_id=self.user_id, task="teacher_guidance", provider_name="deepseek", model_id="old")
         stale = TaskModelRoute(user_id=self.user_id, task="quiz_generation", provider_name="deepseek", model_id="m1")
