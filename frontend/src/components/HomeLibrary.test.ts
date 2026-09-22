@@ -38,4 +38,33 @@ describe('HomeLibrary', () => {
     expect(wrapper.emitted('retry-failed')?.[0]).toEqual([history[1]])
     expect(wrapper.emitted('delete-failed')?.[0]).toEqual([history[1]])
   })
+
+  it('shows one clickable generating item when partial card content is available', async () => {
+    const runningSpace = {
+      id: 'space-running',
+      title: '生成中的课程',
+      createdAt: '2026-09-22T00:00:00Z',
+      generationStatus: 'running',
+      rootCardId: 'card-running',
+    }
+    const wrapper = mount(HomeLibrary, {
+      props: {
+        history: [runningSpace],
+        historyCards: {
+          'space-running': [{ id: 'card-running', title: '生成中的课程', cardType: 'root' }],
+        },
+      },
+    })
+
+    expect(wrapper.find('.generation-item').exists()).toBe(true)
+    expect(wrapper.text()).toContain('正在生成')
+    expect(wrapper.text()).toContain('查看已生成内容')
+    expect(wrapper.text()).not.toContain('开始学习')
+    expect(wrapper.findAll('.history-item')).toHaveLength(1)
+    await wrapper.find('.generation-item .history-open').trigger('click')
+    expect(wrapper.emitted('open-card')?.[0]).toEqual([{
+      card: { id: 'card-running', title: '生成中的课程', cardType: 'root' },
+      space: runningSpace,
+    }])
+  })
 })

@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 type LearningSpace = Record<string, any>
 type LearningCard = Record<string, any>
 type HomeCard = { card: LearningCard; space: LearningSpace }
+type CreatingSpace = { card?: LearningCard; space: LearningSpace }
 type ViewMode = 'cards' | 'spaces'
 
 const props = defineProps<{
@@ -18,15 +19,24 @@ const emit = defineEmits([
 const homeViewMode = ref<ViewMode>(localStorage.getItem('studycenter.homeViewMode') === 'spaces' ? 'spaces' : 'cards')
 
 const homeCards = computed<HomeCard[]>(() => props.history.flatMap((spaceItem) => (
-  (props.historyCards[spaceItem.id] || []).map((cardItem) => ({ card: cardItem, space: spaceItem }))
+  spaceItem.generationStatus === 'completed'
+    ? (props.historyCards[spaceItem.id] || []).map((cardItem) => ({ card: cardItem, space: spaceItem }))
+    : []
 )))
 const spaceSummaries = computed(() => props.history.map((spaceItem) => ({
   space: spaceItem,
   cardCount: (props.historyCards[spaceItem.id] || []).length,
 })))
-const creatingSpaces = computed(() => props.history.filter((item) => (
-  item.generationStatus === 'queued' || item.generationStatus === 'running' || item.generationStatus === 'failed'
-)))
+const creatingSpaces = computed<CreatingSpace[]>(() => props.history
+  .filter((item) => (
+    item.generationStatus === 'queued' || item.generationStatus === 'running' || item.generationStatus === 'failed'
+  ))
+  .map((spaceItem) => {
+    const cards = props.historyCards[spaceItem.id] || []
+    const card = cards.find((item) => item.id === spaceItem.rootCardId)
+      || cards.find((item) => item.cardType === 'root')
+    return { card, space: spaceItem }
+  }))
 
 function setHomeViewMode(mode: ViewMode) {
   homeViewMode.value = mode
@@ -43,6 +53,11 @@ function generationStatusLabel(item: LearningSpace) {
 function openSpace(item: LearningSpace) {
   if (!item.rootCardId || item.generationStatus !== 'completed') return
   emit('open-space', item)
+}
+
+function openCreatingSpace(item: CreatingSpace) {
+  if (!item.card) return
+  emit('open-card', { card: item.card, space: item.space })
 }
 </script>
 
@@ -68,13 +83,16 @@ function openSpace(item: LearningSpace) {
       </div>
     </template>
     <template v-else>
-      <div v-for="item in creatingSpaces" :key="item.id" class="history-item generation-item">
-        <div class="history-open">
-          <span>{{ item.title }}</span>
-          <small>{{ generationStatusLabel(item) }}</small>
-        </div>
-        <button v-if="item.generationStatus === 'failed'" class="history-delete retry-generation" @click="emit('retry-failed', item)">继续生成</button>
-        <button v-if="item.generationStatus === 'failed'" class="history-delete" @click="emit('delete-failed', item)">删除</button>
+      <div v-for="item in creatingSpaces" :key="item.space.id" class="history-item generation-item">
+        <button class="history-open" :disabled="!item.card" @click="openCreatingSpace(item)">
+          <span>{{ item.space.title }}</span>
+          <small>
+            {{ generationStatusLabel(item.space) }}
+            <template v-if="item.card"> · 查看已生成内容 →</template>
+          </small>
+        </button>
+        <button v-if="item.space.generationStatus === 'failed'" class="history-delete retry-generation" @click="emit('retry-failed', item.space)">继续生成</button>
+        <button v-if="item.space.generationStatus === 'failed'" class="history-delete" @click="emit('delete-failed', item.space)">删除</button>
       </div>
       <div v-for="item in homeCards" :key="item.card.id" class="history-item">
         <button class="history-open" @click="emit('open-card', item)">
