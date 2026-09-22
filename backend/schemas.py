@@ -151,6 +151,19 @@ class CourseBrief(ApiModel):
 class CourseOutlineItem(ApiModel):
     title: str = Field(min_length=1, max_length=200)
     objective: str = Field(min_length=1, max_length=2000)
+    role: Literal[
+        "orientation", "concept", "mechanism", "comparison", "demonstration",
+        "practice", "assessment", "transfer", "summary", "quiz", "interactive",
+    ] = "concept"
+    prerequisites: list[str] = Field(default_factory=list, max_length=20)
+    key_concepts: list[str] = Field(default_factory=list, alias="keyConcepts", max_length=20)
+    misconceptions: list[str] = Field(default_factory=list, max_length=20)
+    teaching_strategy: str = Field(default="", alias="teachingStrategy", max_length=2000)
+    practice_task: str | None = Field(default=None, alias="practiceTask", max_length=2000)
+    mastery_evidence: str = Field(default="", alias="masteryEvidence", max_length=2000)
+    previous_connection: str = Field(default="", alias="previousConnection", max_length=2000)
+    next_connection: str = Field(default="", alias="nextConnection", max_length=2000)
+    estimated_minutes: int | None = Field(default=None, alias="estimatedMinutes", ge=1, le=10000)
 
 
 class CourseIntakeMessage(ApiModel):

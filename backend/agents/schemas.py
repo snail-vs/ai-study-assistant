@@ -1,6 +1,21 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+SectionRole = Literal[
+    "orientation",
+    "concept",
+    "mechanism",
+    "comparison",
+    "demonstration",
+    "practice",
+    "assessment",
+    "transfer",
+    "summary",
+    "quiz",
+    "interactive",
+]
 
 
 class RelatedCardProposal(BaseModel):
@@ -31,21 +46,66 @@ class TeacherGuidanceDraft(BaseModel):
 class CardSectionDraft(BaseModel):
     title: str
     content_markdown: str
-    content_type: Literal["concept", "practice", "summary", "quiz", "interactive"] = "concept"
+    content_type: SectionRole = "concept"
     teaching_objective: str | None = None
     quality_report: dict[str, object] = Field(default_factory=dict)
+    plan: dict[str, object] = Field(default_factory=dict)
+    actual_summary: dict[str, object] = Field(default_factory=dict)
 
 
 class SectionPlanDraft(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     title: str
     teaching_objective: str
-    content_type: Literal["concept", "practice", "summary", "quiz", "interactive"] = "concept"
+    content_type: SectionRole = "concept"
+    prerequisites: list[str] = Field(default_factory=list)
+    key_concepts: list[str] = Field(default_factory=list)
+    misconceptions: list[str] = Field(default_factory=list)
+    teaching_strategy: str = ""
+    practice_task: str | None = None
+    mastery_evidence: str = ""
+    previous_connection: str = ""
+    next_connection: str = ""
+    estimated_minutes: int | None = Field(default=None, ge=1, le=10000)
 
 
 class KnowledgeCardPlanDraft(BaseModel):
     title: str
     summary: str
-    sections: list[SectionPlanDraft]
+    sections: list[SectionPlanDraft] = Field(min_length=1)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SectionPlanDigest(BaseModel):
+    title: str
+    teaching_objective: str
+    content_type: SectionRole
+    key_concepts: list[str] = Field(default_factory=list)
+
+
+class ActualSectionSummary(BaseModel):
+    actually_taught: list[str] = Field(default_factory=list)
+    assumed_knowledge: list[str] = Field(default_factory=list)
+    examples_used: list[str] = Field(default_factory=list)
+    misconceptions_addressed: list[str] = Field(default_factory=list)
+    introduced_not_mastered: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    next_prerequisites: list[str] = Field(default_factory=list)
+    summary: str = ""
+
+
+class SectionGenerationContext(BaseModel):
+    learner_brief: dict = Field(default_factory=dict)
+    course_title: str
+    course_summary: str
+    course_plan: list[SectionPlanDigest]
+    current_section: SectionPlanDraft
+    previous_actual_summary: ActualSectionSummary | None = None
+    taught_concepts: list[str] = Field(default_factory=list)
+    introduced_not_mastered: list[str] = Field(default_factory=list)
+    examples_already_used: list[str] = Field(default_factory=list)
+    next_section: SectionPlanDigest | None = None
 
 
 class SectionContentDraft(BaseModel):
@@ -57,6 +117,11 @@ class SectionQualityReview(BaseModel):
     goal_alignment: int = Field(ge=0, le=4)
     clarity: int = Field(ge=0, le=4)
     information_density: int = Field(ge=0, le=4)
+    prerequisite_fit: int = Field(default=4, ge=0, le=4)
+    cognitive_load: int = Field(default=4, ge=0, le=4)
+    example_quality: int = Field(default=4, ge=0, le=4)
+    active_learning: int = Field(default=4, ge=0, le=4)
+    personalization: int = Field(default=4, ge=0, le=4)
     blocking_issues: list[str] = Field(default_factory=list)
     repair_instructions: list[str] = Field(default_factory=list)
 
@@ -67,8 +132,13 @@ class SectionQualityReview(BaseModel):
             self.goal_alignment,
             self.clarity,
             self.information_density,
+            self.prerequisite_fit,
+            self.cognitive_load,
+            self.example_quality,
+            self.active_learning,
+            self.personalization,
         )
-        return bool(self.blocking_issues) or min(scores) < 3 or sum(scores) < 12
+        return bool(self.blocking_issues) or min(scores) < 3 or sum(scores) < 3 * len(scores)
 
 
 class SectionQualityReport(BaseModel):
@@ -184,6 +254,16 @@ class CourseIntakeStateResult(BaseModel):
 class CourseOutlineItemDraft(BaseModel):
     title: str = Field(min_length=1)
     objective: str = Field(min_length=1)
+    role: SectionRole = "concept"
+    prerequisites: list[str] = Field(default_factory=list)
+    key_concepts: list[str] = Field(default_factory=list, alias="keyConcepts")
+    misconceptions: list[str] = Field(default_factory=list)
+    teaching_strategy: str = Field(default="", alias="teachingStrategy")
+    practice_task: str | None = Field(default=None, alias="practiceTask")
+    mastery_evidence: str = Field(default="", alias="masteryEvidence")
+    previous_connection: str = Field(default="", alias="previousConnection")
+    next_connection: str = Field(default="", alias="nextConnection")
+    estimated_minutes: int | None = Field(default=None, alias="estimatedMinutes", ge=1, le=10000)
 
 
 class CourseOutlineDraft(BaseModel):

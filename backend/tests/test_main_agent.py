@@ -1,4 +1,5 @@
 import asyncio
+import json
 import unittest
 
 from backend.agents.main_agent import MainAgent
@@ -9,8 +10,10 @@ class PlanRepairGateway:
     def __init__(self, *, repair_succeeds: bool):
         self.repair_succeeds = repair_succeeds
         self.plan_calls = 0
+        self.calls = []
 
-    async def structured(self, _messages, *, task, schema):
+    async def structured(self, messages, *, task, schema):
+        self.calls.append((task, messages))
         if task == "course_plan":
             self.plan_calls += 1
             if self.plan_calls == 1 or not self.repair_succeeds:
@@ -31,6 +34,14 @@ class PlanRepairGateway:
                 "goal_alignment": 4,
                 "clarity": 4,
                 "information_density": 4,
+            }
+        if task == "section_summary":
+            payload = json.loads(messages[-1]["content"])
+            title = payload["sectionContext"]["current_section"]["title"]
+            return {
+                "actually_taught": [title],
+                "examples_used": [f"{title}示例"],
+                "summary": f"已讲授{title}",
             }
         raise AssertionError(f"unexpected task: {task}")
 
@@ -56,12 +67,52 @@ class MainAgentTests(unittest.TestCase):
 
         result = asyncio.run(MainAgent(gateway).create_card(
             "学习 Go",
-            CourseBrief(topic="Go", learning_outcome="完成服务"),
+            CourseBrief(
+                topic="Go",
+                learning_outcome="完成服务",
+                prior_knowledge="了解基本语法",
+                preferred_style=["实战"],
+            ),
             "quick",
-            [CourseOutlineItem(title="基础", objective="理解语法"), CourseOutlineItem(title="实战", objective="完成服务")],
+            [
+                CourseOutlineItem(title="基础", objective="理解语法", role="concept", keyConcepts=["变量"]),
+                CourseOutlineItem(title="实战", objective="完成服务", role="practice", prerequisites=["变量"]),
+            ],
         ))
 
         self.assertEqual(len(result.sections), 2)
+        self.assertEqual(gateway.plan_calls, 0)
+        self.assertEqual([section.content_type for section in result.sections], ["concept", "practice"])
+        second_author_call = [call for call in gateway.calls if call[0] == "section_content"][1]
+        payload = json.loads(second_author_call[1][-1]["content"])
+        context = payload["sectionContext"]
+        self.assertEqual(context["learner_brief"]["priorKnowledge"], "了解基本语法")
+        self.assertEqual(context["learner_brief"]["preferredStyle"], ["实战"])
+        self.assertEqual(context["previous_actual_summary"]["summary"], "已讲授基础")
+        self.assertEqual(context["taught_concepts"], ["基础"])
+        self.assertEqual(context["examples_already_used"], ["基础示例"])
+
+    def test_does_not_append_generic_fillers_after_short_repair(self):
+        class ShortPlanGateway(PlanRepairGateway):
+            async def structured(self, messages, *, task, schema):
+                if task == "course_plan":
+                    self.plan_calls += 1
+                    return {
+                        "title": "Go 入门",
+                        "summary": "聚焦一个真实目标",
+                        "sections": [{
+                            "title": "最小服务",
+                            "teaching_objective": "完成最小服务",
+                            "content_type": "practice",
+                        }],
+                    }
+                return await super().structured(messages, task=task, schema=schema)
+
+        gateway = ShortPlanGateway(repair_succeeds=True)
+        result = asyncio.run(MainAgent(gateway).create_card("学习 Go", scale="quick"))
+
+        self.assertEqual(gateway.plan_calls, 2)
+        self.assertEqual([section.title for section in result.sections], ["最小服务"])
 
 
 if __name__ == "__main__":
