@@ -366,6 +366,9 @@ class GenerationStatusResponse(ApiModel):
     phase: str
     error: str | None = None
     root_card_id: str | None = Field(default=None, alias="rootCardId")
+    completed_sections: int = Field(default=0, alias="completedSections")
+    total_sections: int = Field(default=0, alias="totalSections")
+    current_section_title: str | None = Field(default=None, alias="currentSectionTitle")
     updated_at: datetime = Field(alias="updatedAt")
 
 

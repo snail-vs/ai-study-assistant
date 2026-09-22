@@ -1004,6 +1004,18 @@ components:
       properties:
         title: { type: string }
         objective: { type: string }
+        role:
+          type: string
+          enum: [orientation, concept, mechanism, comparison, demonstration, practice, assessment, transfer, summary, quiz, interactive]
+        prerequisites: { type: array, maxItems: 20, items: { type: string } }
+        keyConcepts: { type: array, maxItems: 20, items: { type: string } }
+        misconceptions: { type: array, maxItems: 20, items: { type: string } }
+        teachingStrategy: { type: string }
+        practiceTask: { type: string, nullable: true }
+        masteryEvidence: { type: string }
+        previousConnection: { type: string }
+        nextConnection: { type: string }
+        estimatedMinutes: { type: integer, minimum: 1, maximum: 10000, nullable: true }
     CourseDesignTurnRequest:
       type: object
       properties:
@@ -1165,7 +1177,7 @@ components:
         learningGoal: { type: string }
         rootCardId: { type: string, nullable: true }
         generationStatus: { type: string, enum: [queued, running, completed, failed] }
-        generationPhase: { type: string, enum: [queued, generating, saving, completed, failed] }
+        generationPhase: { type: string }
         generationError: { type: string, nullable: true }
         courseBrief: { $ref: '#/components/schemas/CourseBrief' }
         courseScale: { type: string, enum: [quick, standard, series] }
@@ -1173,13 +1185,16 @@ components:
         createdAt: { type: string, format: date-time }
     GenerationStatus:
       type: object
-      required: [spaceId, status, phase, rootCardId, updatedAt]
+      required: [spaceId, status, phase, rootCardId, completedSections, totalSections, updatedAt]
       properties:
         spaceId: { type: string }
         status: { type: string, enum: [queued, running, completed, failed] }
-        phase: { type: string, enum: [queued, generating, saving, completed, failed] }
+        phase: { type: string }
         error: { type: string, nullable: true }
         rootCardId: { type: string, nullable: true }
+        completedSections: { type: integer, default: 0 }
+        totalSections: { type: integer, default: 0 }
+        currentSectionTitle: { type: string, nullable: true }
         updatedAt: { type: string, format: date-time }
     LearningSpaceList:
       type: object

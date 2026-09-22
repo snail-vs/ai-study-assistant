@@ -870,6 +870,17 @@ export interface components {
         CourseOutlineItem: {
             title: string;
             objective: string;
+            /** @enum {string} */
+            role?: "orientation" | "concept" | "mechanism" | "comparison" | "demonstration" | "practice" | "assessment" | "transfer" | "summary" | "quiz" | "interactive";
+            prerequisites?: string[];
+            keyConcepts?: string[];
+            misconceptions?: string[];
+            teachingStrategy?: string;
+            practiceTask?: string | null;
+            masteryEvidence?: string;
+            previousConnection?: string;
+            nextConnection?: string;
+            estimatedMinutes?: number | null;
         };
         CourseDesignTurnRequest: {
             messages?: components["schemas"]["CourseIntakeMessage"][];
@@ -1005,8 +1016,7 @@ export interface components {
             rootCardId: string | null;
             /** @enum {string} */
             generationStatus: "queued" | "running" | "completed" | "failed";
-            /** @enum {string} */
-            generationPhase: "queued" | "generating" | "saving" | "completed" | "failed";
+            generationPhase: string;
             generationError?: string | null;
             courseBrief: components["schemas"]["CourseBrief"];
             /** @enum {string} */
@@ -1019,10 +1029,14 @@ export interface components {
             spaceId: string;
             /** @enum {string} */
             status: "queued" | "running" | "completed" | "failed";
-            /** @enum {string} */
-            phase: "queued" | "generating" | "saving" | "completed" | "failed";
+            phase: string;
             error?: string | null;
             rootCardId: string | null;
+            /** @default 0 */
+            completedSections: number;
+            /** @default 0 */
+            totalSections: number;
+            currentSectionTitle?: string | null;
             /** Format: date-time */
             updatedAt: string;
         };

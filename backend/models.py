@@ -162,12 +162,36 @@ class KnowledgeCard(Base):
     parent_section_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     source_conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     title: Mapped[str] = mapped_column(String(200))
+    summary: Mapped[str] = mapped_column(Text, default="", server_default="")
     card_type: Mapped[str] = mapped_column(String(20), default="root")
     relation_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="draft")
+    course_plan_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    course_quality_report_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    generation_version: Mapped[str] = mapped_column(String(50), default="v2", server_default="v2")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     space: Mapped[LearningSpace] = relationship(back_populates="cards")
     sections: Mapped[list["CardSection"]] = relationship(back_populates="card", cascade="all, delete-orphan")
+
+    @property
+    def course_plan(self) -> dict:
+        try:
+            value = json.loads(self.course_plan_json or "{}")
+            return value if isinstance(value, dict) else {}
+        except (TypeError, json.JSONDecodeError):
+            return {}
+
+    @course_plan.setter
+    def course_plan(self, value: dict) -> None:
+        self.course_plan_json = json.dumps(value if isinstance(value, dict) else {}, ensure_ascii=False)
+
+    @property
+    def course_quality_report(self) -> dict:
+        try:
+            value = json.loads(self.course_quality_report_json or "{}")
+            return value if isinstance(value, dict) else {}
+        except (TypeError, json.JSONDecodeError):
+            return {}
 
 
 class CardSection(Base):
@@ -180,6 +204,13 @@ class CardSection(Base):
     content_type: Mapped[str] = mapped_column(String(30), default="concept", server_default="concept")
     teaching_objective: Mapped[str | None] = mapped_column(Text, nullable=True)
     quality_report_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    plan_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    actual_summary_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    content_blocks_json: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
+    generation_status: Mapped[str] = mapped_column(String(30), default="completed", server_default="completed")
+    generation_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    generation_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    generation_metadata_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
     learning_status: Mapped[str] = mapped_column(String(20), default="unread")
     card: Mapped[KnowledgeCard] = relationship(back_populates="sections")
 
@@ -187,6 +218,22 @@ class CardSection(Base):
     def quality_report(self) -> dict:
         try:
             value = json.loads(self.quality_report_json)
+            return value if isinstance(value, dict) else {}
+        except (TypeError, json.JSONDecodeError):
+            return {}
+
+    @property
+    def plan(self) -> dict:
+        try:
+            value = json.loads(self.plan_json or "{}")
+            return value if isinstance(value, dict) else {}
+        except (TypeError, json.JSONDecodeError):
+            return {}
+
+    @property
+    def actual_summary(self) -> dict:
+        try:
+            value = json.loads(self.actual_summary_json or "{}")
             return value if isinstance(value, dict) else {}
         except (TypeError, json.JSONDecodeError):
             return {}

@@ -182,19 +182,11 @@ def delete_failed_learning_space(space_id: str, db: Session = Depends(get_db)):
             status_code=409,
             detail="Only failed course generations can be deleted",
         )
-    if space.root_card_id:
+    cards = list(db.scalars(select(KnowledgeCard).where(KnowledgeCard.space_id == space_id)))
+    if any(card.status != "draft" for card in cards):
         raise HTTPException(
             status_code=409,
-            detail="A learning space with a generated root card cannot be deleted here",
-        )
-
-    existing_card = db.scalar(
-        select(KnowledgeCard).where(KnowledgeCard.space_id == space_id)
-    )
-    if existing_card:
-        raise HTTPException(
-            status_code=409,
-            detail="A learning space with knowledge cards cannot be deleted here",
+            detail="A learning space with published knowledge cards cannot be deleted here",
         )
     existing_runtime = db.scalar(
         select(LearningRuntime).where(LearningRuntime.space_id == space_id)
@@ -214,6 +206,8 @@ def delete_failed_learning_space(space_id: str, db: Session = Depends(get_db)):
     )
     for session in sessions:
         db.delete(session)
+    for card in cards:
+        db.delete(card)
     db.delete(space)
     db.commit()
     return {"status": "deleted", "spaceId": space_id}
@@ -222,12 +216,30 @@ def delete_failed_learning_space(space_id: str, db: Session = Depends(get_db)):
 @router.get("/learning-spaces/{space_id}/generation", response_model=GenerationStatusResponse)
 def get_course_generation_status(space_id: str, db: Session = Depends(get_db)):
     space = owned_space(db, space_id)
+    sections = []
+    if space.root_card_id:
+        sections = list(db.scalars(
+            select(CardSection)
+            .where(CardSection.card_id == space.root_card_id)
+            .order_by(CardSection.order_index)
+        ))
+    completed = sum(
+        section.generation_status in {"completed", "needs_attention"}
+        for section in sections
+    )
+    current = next(
+        (section for section in sections if section.generation_status in {"generating", "reviewing"}),
+        None,
+    )
     return {
         "spaceId": space.id,
         "status": space.generation_status,
         "phase": space.generation_phase,
         "error": space.generation_error,
         "rootCardId": space.root_card_id,
+        "completedSections": completed,
+        "totalSections": len(sections),
+        "currentSectionTitle": current.title if current else None,
         "updatedAt": space.generation_updated_at or space.created_at,
     }
 
@@ -242,7 +254,9 @@ async def retry_course_generation(
     if space.generation_status != "failed":
         raise HTTPException(status_code=409, detail="Only failed course generations can be retried")
     if space.root_card_id:
-        raise HTTPException(status_code=409, detail="A completed course cannot be regenerated")
+        root_card = db.get(KnowledgeCard, space.root_card_id)
+        if root_card and root_card.status == "active":
+            raise HTTPException(status_code=409, detail="A completed course cannot be regenerated")
     space.title = payload.title
     space.learning_goal = payload.learning_goal
     if payload.course_brief is not None:

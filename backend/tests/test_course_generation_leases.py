@@ -96,7 +96,7 @@ class CourseGenerationLeaseTests(unittest.TestCase):
     def test_cancelled_generation_releases_lease(self):
         self.add_space()
 
-        async def cancelled(*_args):
+        async def cancelled(*_args, **_kwargs):
             raise asyncio.CancelledError
 
         with (
@@ -106,7 +106,7 @@ class CourseGenerationLeaseTests(unittest.TestCase):
                 side_effect=lambda: Session(self.engine),
             ),
             patch.object(course_generation, "restore_active_provider", return_value=object()),
-            patch.object(course_generation.MainAgent, "create_card", new=cancelled),
+            patch.object(course_generation.MainAgent, "plan_course", new=cancelled),
         ):
             with self.assertRaises(asyncio.CancelledError):
                 asyncio.run(course_generation.generate_course("space-1", "user-1", "goal"))
