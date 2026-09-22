@@ -409,8 +409,9 @@ button { cursor: pointer; }
 .settings-empty { padding: 16px 3px; color: #64788c; font-size: 10px; }
 .settings-empty.large { display: grid; min-height: 180px; place-items: center; border: 1px dashed #314157; border-radius: 10px; background: #0e1824; }
 .settings-pane-actions { display: flex; justify-content: flex-end; margin-top: auto; padding-top: 24px; }
-.settings-primary-button { min-width: 76px; padding: 10px 15px; border: 0; border-radius: 7px; background: #74d2b4; color: #0c1717; font-size: 11px; font-weight: 750; }
-.settings-primary-button:disabled { cursor: not-allowed; opacity: .5; }
+/* Equal specificity to `.key-row button` so model actions are not overridden by its legacy dark palette. */
+button.settings-primary-button { min-width: 76px; padding: 10px 15px; border: 0; border-radius: 7px; background: var(--course-accent); color: var(--course-canvas); font-size: 11px; font-weight: 750; }
+button.settings-primary-button:disabled { cursor: not-allowed; opacity: .5; }
 .settings-pane-actions .settings-primary-button { min-width: 116px; }
 .settings-choice-card { max-width: 540px; padding: 19px; border: 1px solid #2b3c51; border-radius: 10px; background: #0e1825; }
 .settings-modal .settings-choice-card label { margin: 0; color: #92a4b5; }
