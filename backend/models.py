@@ -366,6 +366,22 @@ class AIRun(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
 
 
+class AITaskUsage(Base):
+    """A prompt-free audit row for one completed or failed gateway call."""
+    __tablename__ = "ai_task_usage"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    task: Mapped[str] = mapped_column(String(80), index=True)
+    provider_name: Mapped[str] = mapped_column(String(50))
+    model_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    succeeded: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+
+
 class Note(Base):
     __tablename__ = "notes"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)

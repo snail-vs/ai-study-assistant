@@ -66,6 +66,19 @@ class TaskRouteResponse(ApiModel):
     model: str | None = None
 
 
+class AITaskUsageSummaryResponse(ApiModel):
+    task: str
+    provider: str
+    model: str | None = None
+    calls: int
+    successes: int
+    failures: int
+    average_duration_ms: int = Field(alias="averageDurationMs")
+    input_tokens: int | None = Field(default=None, alias="inputTokens")
+    output_tokens: int | None = Field(default=None, alias="outputTokens")
+    total_tokens: int | None = Field(default=None, alias="totalTokens")
+
+
 class ConfigureTaskRoutesRequest(ApiModel):
     # Values use provider:model, e.g. deepseek:deepseek-chat.
     routes: dict[str, str] = Field(default_factory=dict)

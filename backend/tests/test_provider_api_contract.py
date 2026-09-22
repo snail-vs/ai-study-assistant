@@ -17,6 +17,7 @@ class ProviderApiContractTests(unittest.TestCase):
             ("GET", "/api/v1/settings/model-routes"),
             ("PUT", "/api/v1/settings/model-routes"),
             ("GET", "/api/v1/settings/providers"),
+            ("GET", "/api/v1/settings/ai-usage"),
             ("POST", "/api/v1/settings/providers/chatgpt/oauth/complete"),
             ("POST", "/api/v1/settings/providers/chatgpt/oauth/login"),
             ("POST", "/api/v1/settings/providers/chatgpt/oauth/logout"),

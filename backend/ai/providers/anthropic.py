@@ -71,6 +71,17 @@ class AnthropicMessagesProvider:
             headers["x-api-key"] = self.api_key
         return headers
 
+    def _capture_usage(self, body: dict[str, Any]) -> None:
+        usage = body.get("usage") or {}
+        if not isinstance(usage, dict):
+            return
+        input_tokens = usage.get("input_tokens")
+        output_tokens = usage.get("output_tokens")
+        self.last_usage = {
+            "input_tokens": input_tokens, "output_tokens": output_tokens,
+            "total_tokens": (input_tokens + output_tokens) if isinstance(input_tokens, int) and isinstance(output_tokens, int) else None,
+        }
+
     def _models_url(self) -> str:
         if self.endpoint.endswith("/messages"):
             return f"{self.endpoint[: -len('/messages')]}/models"
@@ -151,6 +162,7 @@ class AnthropicMessagesProvider:
                         continue
                     try:
                         event = json.loads(data)
+                        self._capture_usage(event)
                     except json.JSONDecodeError as exc:
                         raise AIProviderError("Invalid Anthropic streaming response") from exc
                     event_type = event.get("type")
@@ -174,6 +186,7 @@ class AnthropicMessagesProvider:
             raise AIProviderError("Invalid Anthropic response") from exc
         if not isinstance(body, dict):
             raise AIProviderError("Anthropic response must be an object", category="invalid_response")
+        self._capture_usage(body)
         return body
 
     async def structured(

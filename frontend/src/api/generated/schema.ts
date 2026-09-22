@@ -216,6 +216,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/ai-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAiUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -784,6 +800,18 @@ export interface components {
             label: string;
             category: string;
             model?: string | null;
+        };
+        AiTaskUsageSummary: {
+            task: string;
+            provider: string;
+            model?: string | null;
+            calls: number;
+            successes: number;
+            failures: number;
+            averageDurationMs: number;
+            inputTokens?: number | null;
+            outputTokens?: number | null;
+            totalTokens?: number | null;
         };
         ConfigureTaskRoutesRequest: {
             routes: {
@@ -1687,6 +1715,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderSettings"];
+                };
+            };
+        };
+    };
+    getAiUsage: {
+        parameters: {
+            query?: {
+                start?: string;
+                end?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Prompt-free AI task usage summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiTaskUsageSummary"][];
                 };
             };
         };

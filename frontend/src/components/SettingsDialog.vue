@@ -21,6 +21,7 @@ const props = defineProps({
   taskDefinitions: { type: Array, default: () => [] },
   modelRoleDefinitions: { type: Array, default: () => [] },
   roleRouteValue: { type: Function, required: true },
+  usageSummary: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits([
@@ -51,6 +52,7 @@ const aiTabs = [
   { id: 'default', label: '默认模型' },
   { id: 'roles', label: '模型分工' },
   { id: 'advanced', label: '高级路由' },
+  { id: 'usage', label: '用量摘要' },
 ]
 const selectedProviderLabel = computed(() => (
   providerOptions.find((provider) => provider.id === props.selectedProvider)?.label
@@ -477,6 +479,17 @@ function selectAiTab(tab) {
                 {{ savingModelAssignments ? '保存中…' : '保存模型分工' }}
               </button>
             </div>
+          </section>
+
+          <section v-else-if="activeAiTab === 'usage'" class="settings-pane">
+            <div class="settings-section-head"><div><span>任务级用量</span><h2>调用与 token 摘要</h2><p>仅记录任务、模型、结果、耗时和 token；不会保存提示词或生成内容。</p></div></div>
+            <div v-if="usageSummary.length" class="advanced-route-grid">
+              <div v-for="row in usageSummary" :key="`${row.task}-${row.provider}-${row.model}`" class="settings-choice-card">
+                <strong>{{ row.task }}</strong><small>{{ row.provider }} · {{ row.model || '默认模型' }}</small>
+                <p>{{ row.calls }} 次调用 · 成功 {{ row.successes }} · 失败 {{ row.failures }} · {{ row.totalTokens ?? '—' }} tokens · {{ row.averageDurationMs }} ms</p>
+              </div>
+            </div>
+            <div v-else class="settings-empty large">暂无调用记录。完成一次 AI 任务后会显示汇总。</div>
           </section>
 
           <section

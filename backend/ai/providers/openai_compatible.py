@@ -36,6 +36,15 @@ class OpenAICompatibleProvider:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
+    def _capture_usage(self, body: dict[str, Any]) -> None:
+        usage = body.get("usage") or {}
+        if not isinstance(usage, dict):
+            return
+        input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
+        output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))
+        total_tokens = usage.get("total_tokens")
+        self.last_usage = {"input_tokens": input_tokens, "output_tokens": output_tokens, "total_tokens": total_tokens}
+
     @staticmethod
     def _json_object_messages(
         messages: Sequence[dict[str, str]], schema: dict[str, Any]
@@ -100,6 +109,7 @@ class OpenAICompatibleProvider:
                         break
                     try:
                         chunk = json.loads(data)
+                        self._capture_usage(chunk)
                         # Compatible providers may send usage/final chunks with an
                         # empty choices array. They are valid SSE events, but do
                         # not contain text to yield.
@@ -134,6 +144,7 @@ class OpenAICompatibleProvider:
                         break
                     try:
                         event = json.loads(data)
+                        self._capture_usage(event)
                     except json.JSONDecodeError as exc:
                         raise AIProviderError("Invalid Responses streaming response") from exc
                     if event.get("type") == "response.output_text.delta":
@@ -180,6 +191,7 @@ class OpenAICompatibleProvider:
             raise provider_error(response.status_code, response.text)
         try:
             body = response.json()
+            self._capture_usage(body)
             choices = body.get("choices")
             if not choices:
                 raise AIProviderError("Provider returned no choices")
@@ -212,6 +224,7 @@ class OpenAICompatibleProvider:
             raise provider_error(response.status_code, response.text)
         try:
             body = response.json()
+            self._capture_usage(body)
             return parse_json_text(self._responses_content(body))
         except AIProviderError:
             raise

@@ -222,6 +222,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProviderSettings'
+  /settings/ai-usage:
+    get:
+      operationId: getAiUsage
+      parameters:
+        - name: start
+          in: query
+          schema: { type: string, format: date-time }
+        - name: end
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Prompt-free AI task usage summary
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AiTaskUsageSummary'
   /health:
     get:
       operationId: getHealth
@@ -900,6 +919,20 @@ components:
         label: { type: string }
         category: { type: string }
         model: { type: string, nullable: true }
+    AiTaskUsageSummary:
+      type: object
+      required: [task, provider, calls, successes, failures, averageDurationMs]
+      properties:
+        task: { type: string }
+        provider: { type: string }
+        model: { type: string, nullable: true }
+        calls: { type: integer }
+        successes: { type: integer }
+        failures: { type: integer }
+        averageDurationMs: { type: integer }
+        inputTokens: { type: integer, nullable: true }
+        outputTokens: { type: integer, nullable: true }
+        totalTokens: { type: integer, nullable: true }
     ConfigureTaskRoutesRequest:
       type: object
       required: [routes]

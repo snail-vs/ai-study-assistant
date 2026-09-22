@@ -120,7 +120,7 @@ def persist_chatgpt_token(user_id: str, credential: ChatGptCredential) -> None:
 
 def build_provider(provider_name: str, model: str | None, row: ProviderCredential | None):
     if provider_name == CHATGPT_PROVIDER:
-        return create_named_text_provider(
+        provider = create_named_text_provider(
             provider_name,
             "",
             model,
@@ -131,10 +131,14 @@ def build_provider(provider_name: str, model: str | None, row: ProviderCredentia
             if row
             else None,
         )
+        provider.provider_name = provider_name
+        return provider
     if row is None:
         raise ValueError(f"Provider is not configured: {provider_name}")
     api_key = decrypt_secret(row.api_key_ciphertext, row.api_key_nonce)
-    return create_named_text_provider(provider_name, api_key, model)
+    provider = create_named_text_provider(provider_name, api_key, model)
+    provider.provider_name = provider_name
+    return provider
 
 
 def restore_active_provider(db: Session, user_id: str | None = None) -> AIGateway:
@@ -155,7 +159,7 @@ def restore_active_provider(db: Session, user_id: str | None = None) -> AIGatewa
             )
         )
     if not credential:
-        return AIGateway(MockTextProvider())
+        return AIGateway(MockTextProvider(), user_id=user_id)
     default_model = (
         preference.model_id
         if preference and preference.provider_name == credential.provider_name
@@ -203,7 +207,7 @@ def restore_active_provider(db: Session, user_id: str | None = None) -> AIGatewa
                     task_providers[route.task] = task_provider
         except (EncryptionError, ValueError):
             continue
-    user_gateway = AIGateway()
+    user_gateway = AIGateway(user_id=user_id)
     user_gateway.configure(default_provider, task_providers)
     return user_gateway
 

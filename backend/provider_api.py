@@ -2,7 +2,8 @@
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -31,7 +32,9 @@ from .schemas import (
     ProviderSettingsResponse,
     SelectModelRequest,
     TaskRouteResponse,
+    AITaskUsageSummaryResponse,
 )
+from .services.ai_usage import usage_summary
 from .security.auth import current_user_id, require_current_user
 from .security.encryption import EncryptionError, decrypt_secret, encrypt_secret
 from .services.provider_settings import (
@@ -66,6 +69,14 @@ async def run_chatgpt_device_login(session_id: str, device, user_id: str) -> Non
     )
 
 router = APIRouter(dependencies=[Depends(require_current_user)])
+
+
+@router.get("/settings/ai-usage", response_model=list[AITaskUsageSummaryResponse])
+def get_ai_usage(
+    start: datetime | None = Query(default=None), end: datetime | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    return usage_summary(db, current_user_id(), start, end)
 
 
 @router.get("/settings/providers", response_model=ProviderSettingsResponse)

@@ -21,6 +21,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const editingKey = ref(false)
   const savingModelAssignments = ref(false)
   const chatgptLogin = ref(initialChatgptLogin())
+  const usageSummary = ref<any[]>([])
   let chatgptPollTimer = null
 
   async function load() {
@@ -34,6 +35,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function open() {
     await load()
+    try { usageSummary.value = await request<any[]>('/settings/ai-usage') } catch (_) { usageSummary.value = [] }
     selectedProvider.value = ['deepseek', 'google', 'opencode', 'openrouter', 'anthropic', 'glm', 'zai', 'chatgpt'].includes(status.value.activeProvider)
       ? status.value.activeProvider : 'deepseek'
     selectedModels.value = [...(status.value.models?.[selectedProvider.value] || [])]
@@ -169,5 +171,5 @@ export const useSettingsStore = defineStore('settings', () => {
     } finally { savingModelAssignments.value = false }
   }
 
-  return { status, selectedProvider, apiKey, availableModels, selectedModels, modelDiscovery, selectedDefaultModel, taskRoutes, showAdvancedRoutes, saving, fetchingModels, editingKey, savingModelAssignments, chatgptLogin, load, open, changeProvider, resetChatgptLogin, stopChatgptPolling, startChatgptLogin, completeChatgptLogin, pollChatgptLogin, logoutChatgpt, fetchModels, addManualModel, saveProvider, saveModelAssignments }
+  return { status, selectedProvider, apiKey, availableModels, selectedModels, modelDiscovery, selectedDefaultModel, taskRoutes, showAdvancedRoutes, saving, fetchingModels, editingKey, savingModelAssignments, chatgptLogin, usageSummary, load, open, changeProvider, resetChatgptLogin, stopChatgptPolling, startChatgptLogin, completeChatgptLogin, pollChatgptLogin, logoutChatgpt, fetchModels, addManualModel, saveProvider, saveModelAssignments }
 })

@@ -26,6 +26,7 @@ const baseProps = {
   taskDefinitions: [{ id: 'course_plan', label: '课程规划' }],
   modelRoleDefinitions: [{ id: 'course', label: '课程生成', hint: '课程规划', tasks: ['course_plan'] }],
   roleRouteValue: () => '',
+  usageSummary: [],
 }
 
 describe('SettingsDialog', () => {
@@ -47,6 +48,13 @@ describe('SettingsDialog', () => {
     expect(wrapper.find('.advanced-route-grid').text()).toContain('课程规划')
     const advancedEvents = wrapper.emitted('update:showAdvancedRoutes') || []
     expect(advancedEvents[advancedEvents.length - 1]).toEqual([true])
+  })
+
+  it('shows prompt-free task usage summaries', async () => {
+    const wrapper = mount(SettingsDialog, { props: { ...baseProps, usageSummary: [{ task: 'section_summary', provider: 'deepseek', model: 'fast', calls: 3, successes: 3, failures: 0, totalTokens: 120, averageDurationMs: 90 }] } })
+    await wrapper.findAll('.settings-tabs button')[4].trigger('click')
+    expect(wrapper.find('.settings-pane').text()).toContain('section_summary')
+    expect(wrapper.find('.settings-pane').text()).toContain('120 tokens')
   })
 
   it('keeps manual model entry and provider saving in the model-service tab', async () => {
