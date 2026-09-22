@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from typing import Any
 
@@ -77,6 +78,14 @@ def _is_scale_question(question: CourseDesignQuestion) -> bool:
 def _is_conflict_resolution_question(question: dict) -> bool:
     text = " ".join(str(question.get(key, "")) for key in ("title", "description"))
     return any(marker in text for marker in _CONFLICT_RESOLUTION_MARKERS)
+
+
+def _is_repeated_question(previous: dict, candidate: CourseDesignQuestion | None) -> bool:
+    """Detect a provider restating the question that the learner just answered."""
+    if not candidate:
+        return False
+    normalize = lambda value: re.sub(r"[\W_]+", "", str(value).casefold())
+    return bool(normalize(previous.get("title")) and normalize(previous.get("title")) == normalize(candidate.title))
 
 
 def _fallback_question(stage: str, topic: str) -> CourseDesignQuestion:
@@ -252,7 +261,8 @@ class CourseDesignService:
         labels = [option_map[item] for item in selected_ids]
         try:
             agent_result = await CourseIntakeAgent(self._gateway()).answer(
-                stage=session.state, brief=session.brief, selected_labels=labels, custom_text=custom
+                stage=session.state, brief=session.brief, selected_labels=labels, custom_text=custom,
+                answered_question=current_question,
             )
         except ValueError as exc:
             raise CourseDesignInvalid(f"AI 返回的课程需求格式无效：{exc}") from exc
@@ -276,6 +286,26 @@ class CourseDesignService:
                 patch["priorKnowledgeDetails"] = "；".join(dict.fromkeys(filter(None, [prior, custom])))
         merged = {**session.brief, **patch}
         session.brief = CourseBrief.model_validate(merged).model_dump(by_alias=True)
+        # A repeated follow-up leaves the learner in a loop.  The answer has
+        # already been recorded above, so use the completion contract to
+        # summarize this stage and advance instead of displaying it again.
+        if (agent_result.decision.type == "ask_follow_up"
+                and _is_repeated_question(current_question, agent_result.next_question)):
+            try:
+                agent_result = await CourseIntakeAgent(self._gateway()).complete(
+                    stage=session.state, brief=session.brief
+                )
+            except ValueError as exc:
+                raise CourseDesignInvalid(f"AI 返回的课程需求格式无效：{exc}") from exc
+            unknown = set(agent_result.brief_patch) - (INTAKE_FIELDS | {"topic"})
+            if unknown:
+                raise CourseDesignInvalid("Agent 返回了当前阶段禁止修改的字段")
+            patch = {key: value for key, value in agent_result.brief_patch.items() if key in allowed}
+            selected_field = "learningGoals" if session.state == "collecting_goals" else "priorKnowledgeLevels"
+            patch[selected_field] = list(dict.fromkeys([
+                *session.brief.get(selected_field, []), *patch.get(selected_field, []),
+            ]))
+            session.brief = CourseBrief.model_validate({**session.brief, **patch}).model_dump(by_alias=True)
         next_stage = agent_result.decision.next_stage
         if agent_result.decision.type == "ask_follow_up":
             next_stage = session.state

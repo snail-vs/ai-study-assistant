@@ -127,7 +127,7 @@ class CourseIntakeTests(unittest.TestCase):
     def test_legacy_state_payload_is_normalized_at_agent_boundary(self):
         result = asyncio.run(CourseIntakeAgent(LegacyStateGateway()).start(topic="Kubernetes Operator"))
         self.assertEqual(result.decision.type, "ask_follow_up")
-        self.assertEqual(result.next_question.id, "collecting_goals-question")
+        self.assertTrue(result.next_question.id.startswith("collecting_goals-"))
         self.assertEqual([item.id for item in result.next_question.options], ["理解原理", "完成实践"])
         self.assertTrue(result.next_question.allow_custom)
 

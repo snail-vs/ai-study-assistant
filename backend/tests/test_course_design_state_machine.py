@@ -1,4 +1,5 @@
 import asyncio
+import json
 import unittest
 from unittest.mock import patch
 
@@ -197,6 +198,50 @@ class CourseDesignStateMachineTests(unittest.TestCase):
             }},
         )))
         self.assertEqual(session.brief.learning_goals, ["会其他语言，但没写过 Go"])
+
+    def test_repeated_follow_up_is_completed_instead_of_shown_again(self):
+        class RepeatingQuestionProvider:
+            def __init__(self):
+                self.answer_payload = None
+
+            async def structured(self, messages, *, task, schema):
+                payload = json.loads(messages[-1]["content"])
+                if payload.get("task") == "start_intake":
+                    return {
+                        "briefPatch": {},
+                        "decision": {"type": "ask_follow_up", "nextStage": "collecting_goals"},
+                        "nextQuestion": {
+                            "id": "goals", "stage": "collecting_goals", "target": "learningGoals",
+                            "title": "你希望获得哪些能力？",
+                            "options": [{"id": "practice", "label": "完成实际练习"}],
+                        },
+                    }
+                if payload.get("task") == "evaluate_intake_answer":
+                    self.answer_payload = payload
+                    return {
+                        "briefPatch": {},
+                        "decision": {"type": "ask_follow_up", "nextStage": "collecting_goals"},
+                        "nextQuestion": {
+                            "id": "same-goals", "stage": "collecting_goals", "target": "learningGoals",
+                            "title": "你希望获得哪些能力？",
+                            "options": [{"id": "practice", "label": "完成实际练习"}],
+                        },
+                    }
+                if payload.get("task") == "complete_with_ai":
+                    return await MockTextProvider().structured(messages, task=task, schema=schema)
+                raise AssertionError(f"unexpected payload: {payload}")
+
+        provider = RepeatingQuestionProvider()
+        service = CourseDesignService(self.db, "user-1", provider)
+        session = asyncio.run(service.create("Go"))
+        session = asyncio.run(service.execute(session.session_id, CourseDesignCommandRequest(
+            commandId="goals", expectedRevision=session.revision, type="answer_question",
+            payload={"answer": {"questionId": session.current_question.id, "selectedOptionIds": ["practice"]}},
+        )))
+        self.assertEqual(provider.answer_payload["answeredQuestion"]["id"], "goals")
+        self.assertEqual(session.state, "collecting_background")
+        self.assertIn("完成实际练习", session.brief.learning_goals)
+        self.assertNotEqual(session.current_question.title, "你希望获得哪些能力？")
 
     def test_scale_question_is_replaced_with_background_fallback(self):
         class ScaleQuestionProvider:

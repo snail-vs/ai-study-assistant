@@ -1,5 +1,6 @@
 """Pre-generation course requirements interview."""
 
+import hashlib
 import json
 import re
 
@@ -149,7 +150,15 @@ def normalize_state_result(raw: dict, *, stage: str) -> CourseIntakeStateResult:
             else:
                 raise CourseIntakeInvalidResult("问题选项格式无效")
             normalized_options.append({"id": option_id, "label": label.strip()})
-        question["id"] = question.get("id") or f"{question_stage}-question"
+        # Providers often omit IDs.  A fixed stage ID makes a new follow-up look
+        # like the previous question to Vue, preserving stale selections.
+        question_fingerprint = "\n".join([
+            question_stage,
+            title.strip(),
+            *(item["label"] for item in normalized_options),
+        ])
+        generated_id = f"{question_stage}-{hashlib.sha256(question_fingerprint.encode()).hexdigest()[:12]}"
+        question["id"] = question.get("id") or generated_id
         question["stage"] = question_stage
         question["target"] = target
         question["type"] = "multi_select_with_text"
@@ -288,6 +297,7 @@ class CourseIntakeAgent:
         brief: dict,
         selected_labels: list[str],
         custom_text: str = "",
+        answered_question: dict | None = None,
     ) -> CourseIntakeStateResult:
         """Evaluate one explicit stage answer; the service owns transitions."""
         language = infer_response_language(brief.get("topic", ""))
@@ -299,6 +309,7 @@ class CourseIntakeAgent:
                     "stage": stage,
                     "brief": brief,
                     "answer": {"selectedLabels": selected_labels, "customText": custom_text},
+                    "answeredQuestion": answered_question or {},
                     "responseLanguage": language,
                 }, ensure_ascii=False)},
             ],

@@ -32,7 +32,7 @@ quick_options 返回最多 4 个适合用户直接点击的简短选项。必须
 
 COURSE_INTAKE_STATE_SYSTEM = COURSE_INTAKE_SYSTEM + """
 当 task 为 start_intake 时，必须返回 collecting_goals 阶段的 multi_select_with_text 问题。
-当 task 为 evaluate_intake_answer 时，只能在当前阶段继续追问或进入协议允许的下一阶段；不得直接生成大纲或课程。
+当 task 为 evaluate_intake_answer 时，answeredQuestion 是刚刚已回答的问题。只能在当前阶段继续追问或进入协议允许的下一阶段；不得直接生成大纲或课程。除非用户答案存在必须澄清的矛盾，否则一个阶段的首个有效回答后应进入下一阶段；如确需追问，nextQuestion 必须与 answeredQuestion 的标题和选项实质不同，且只补充尚未获得的信息。绝不能复述或换一种说法重复问已明确的信息。
 课程主题由服务端管理，briefPatch 中绝不能返回 topic；不得翻译、改写或根据回答替换课程主题。
 阶段字段只能使用 canonical 值 collecting_goals 或 collecting_background；不要返回 collecting_context、prior_context 等旧别名。
 briefPatch 只能包含当前阶段允许的字段，nextQuestion 的 stage、target、type 必须一致；nextQuestion.target 只能是 learningGoals 或 priorKnowledgeLevels，不能填写 learningOutcome、learningGoalDetails、priorKnowledge 或其他 briefPatch 字段名。
