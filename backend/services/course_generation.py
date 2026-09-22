@@ -122,6 +122,52 @@ def release_generation_lease(db, space_id: str, token: str) -> bool:
         return True
 
 
+def reconcile_completed_generation(
+    db,
+    space: LearningSpace,
+    review_error: Exception | str | None = None,
+) -> bool:
+    """Publish fully generated content even when the optional course review failed."""
+    if not space.root_card_id:
+        return False
+    card = db.get(KnowledgeCard, space.root_card_id)
+    if card is None or card.space_id != space.id:
+        return False
+    sections = list(db.scalars(
+        select(CardSection)
+        .where(CardSection.card_id == card.id)
+        .order_by(CardSection.order_index)
+    ))
+    usable_statuses = {"completed", "needs_attention", "reviewing"}
+    if not sections or any(
+        section.generation_status not in usable_statuses
+        or not (section.content_markdown or "").strip()
+        for section in sections
+    ):
+        return False
+
+    warning = "整课质量复核未完成，已保留全部生成内容。"
+    for section in sections:
+        if section.generation_status == "reviewing":
+            section.generation_status = "needs_attention"
+            section.generation_error = warning
+    if not card.course_quality_report:
+        card.course_quality_report_json = json.dumps(
+            {
+                "quality_status": "needs_attention",
+                "review_warning": warning,
+                **({"review_error": str(review_error)} if review_error else {}),
+            },
+            ensure_ascii=False,
+        )
+    card.status = "active"
+    space.generation_status = "completed"
+    space.generation_phase = "completed"
+    space.generation_error = None
+    space.generation_updated_at = now()
+    return True
+
+
 async def _lease_heartbeat(space_id: str, token: str) -> None:
     """Keep ownership while a provider call takes longer than one lease window."""
     try:
@@ -143,10 +189,18 @@ def _fail_generation(space_id: str, lease_token: str | None, error: Exception) -
     try:
         space = db.get(LearningSpace, space_id)
         if space:
-            space.generation_status = "failed"
-            space.generation_phase = "failed"
-            space.generation_error = str(error)
-            space.generation_updated_at = now()
+            recovered = reconcile_completed_generation(db, space, error)
+            if recovered:
+                logger.warning(
+                    "course review failed after content generation; "
+                    "publishing generated content: space_id=%s",
+                    space_id,
+                )
+            else:
+                space.generation_status = "failed"
+                space.generation_phase = "failed"
+                space.generation_error = str(error)
+                space.generation_updated_at = now()
             if lease_token:
                 release_generation_lease(db, space_id, lease_token)
             db.commit()

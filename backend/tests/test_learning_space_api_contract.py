@@ -1,8 +1,9 @@
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend import api
+from backend import api, learning_space_api
 from backend.learning_space_api import router as learning_space_router
 from backend.main import app
 from backend.security.auth import require_current_user
@@ -84,6 +85,29 @@ class LearningSpaceApiContractTests(unittest.TestCase):
                 resume.assert_awaited_once_with()
 
         asyncio.run(exercise_startup())
+
+    def test_list_reconciles_every_legacy_failed_space(self):
+        failed_a = SimpleNamespace(id="a", generation_status="failed", generation_error="old-a")
+        completed = SimpleNamespace(id="b", generation_status="completed", generation_error=None)
+        failed_c = SimpleNamespace(id="c", generation_status="failed", generation_error="old-c")
+        db = MagicMock()
+        db.scalars.return_value = [failed_a, completed, failed_c]
+
+        with (
+            patch.object(learning_space_api, "current_user_id", return_value="user-1"),
+            patch.object(
+                learning_space_api,
+                "reconcile_completed_generation",
+                side_effect=[True, True],
+            ) as reconcile,
+        ):
+            result = learning_space_api.list_learning_spaces(db)
+
+        self.assertEqual(result["items"], [failed_a, completed, failed_c])
+        self.assertEqual(reconcile.call_count, 2)
+        reconcile.assert_any_call(db, failed_a, "old-a")
+        reconcile.assert_any_call(db, failed_c, "old-c")
+        db.commit.assert_called_once_with()
 
 
 if __name__ == "__main__":

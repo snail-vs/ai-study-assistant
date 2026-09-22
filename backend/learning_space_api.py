@@ -26,7 +26,10 @@ from .schemas import (
     UpdateLearningRuntimeRequest,
 )
 from .security.auth import current_user_id, require_current_user
-from .services.course_generation import schedule_course_generation
+from .services.course_generation import (
+    reconcile_completed_generation,
+    schedule_course_generation,
+)
 from .services.ownership import owned_space
 
 router = APIRouter(dependencies=[Depends(require_current_user)])
@@ -158,15 +161,23 @@ async def create_learning_space(
 
 @router.get("/learning-spaces", response_model=LearningSpaceList)
 def list_learning_spaces(db: Session = Depends(get_db)):
-    return {
-        "items": list(
-            db.scalars(
-                select(LearningSpace)
-                .where(LearningSpace.user_id == current_user_id())
-                .order_by(LearningSpace.created_at.desc())
-            )
+    items = list(
+        db.scalars(
+            select(LearningSpace)
+            .where(LearningSpace.user_id == current_user_id())
+            .order_by(LearningSpace.created_at.desc())
         )
-    }
+    )
+    reconciled = False
+    for space in items:
+        if space.generation_status == "failed":
+            reconciled = (
+                reconcile_completed_generation(db, space, space.generation_error)
+                or reconciled
+            )
+    if reconciled:
+        db.commit()
+    return {"items": items}
 
 
 @router.get("/learning-spaces/{space_id}", response_model=LearningSpaceResponse)

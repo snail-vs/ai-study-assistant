@@ -224,6 +224,58 @@ class CourseGenerationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(card.course_quality_report["quality_status"], "passed")
             self.assertEqual(card.course_quality_report["repaired_sections"], ["练习"])
 
+    async def test_course_review_failure_keeps_generated_course_available(self):
+        fake_agent = _agent(
+            _section("变量", "变量正文"),
+            _section("练习", "练习正文", "practice"),
+        )
+        fake_agent.review_course.side_effect = RuntimeError("review unavailable")
+        with (
+            patch.object(course_generation, "SessionLocal", side_effect=self.session_factory),
+            patch.object(course_generation, "restore_active_provider", return_value=object()),
+            patch.object(course_generation, "MainAgent", return_value=fake_agent),
+        ):
+            await course_generation.generate_course("space-1", "user-1", "学习 Python")
+
+        with Session(self.engine) as db:
+            space = db.get(LearningSpace, "space-1")
+            card = db.get(KnowledgeCard, space.root_card_id)
+            self.assertEqual(space.generation_status, "completed")
+            self.assertIsNone(space.generation_error)
+            self.assertEqual(card.status, "active")
+            self.assertEqual(card.course_quality_report["quality_status"], "needs_attention")
+            self.assertEqual(card.course_quality_report["review_error"], "review unavailable")
+
+    async def test_reconcile_repairs_legacy_failed_space_with_complete_sections(self):
+        fake_agent = _agent(
+            _section("变量", "变量正文"),
+            _section("练习", "练习正文", "practice"),
+        )
+        with (
+            patch.object(course_generation, "SessionLocal", side_effect=self.session_factory),
+            patch.object(course_generation, "restore_active_provider", return_value=object()),
+            patch.object(course_generation, "MainAgent", return_value=fake_agent),
+        ):
+            await course_generation.generate_course("space-1", "user-1", "学习 Python")
+
+        with Session(self.engine) as db:
+            space = db.get(LearningSpace, "space-1")
+            card = db.get(KnowledgeCard, space.root_card_id)
+            space.generation_status = "failed"
+            space.generation_phase = "failed"
+            space.generation_error = "stale review failure"
+            card.status = "draft"
+            card.course_quality_report_json = "{}"
+            db.commit()
+
+            self.assertTrue(course_generation.reconcile_completed_generation(
+                db, space, space.generation_error
+            ))
+            db.commit()
+            self.assertEqual(space.generation_status, "completed")
+            self.assertIsNone(space.generation_error)
+            self.assertEqual(card.status, "active")
+
     async def test_missing_space_exits_and_cleans_registry(self):
         with Session(self.engine) as db:
             db.delete(db.get(LearningSpace, "space-1"))
