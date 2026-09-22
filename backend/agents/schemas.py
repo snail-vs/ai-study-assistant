@@ -148,6 +148,57 @@ class SectionQualityReport(BaseModel):
     quality_status: Literal["passed", "needs_attention"] = "passed"
 
 
+class CourseReviewSectionSnapshot(BaseModel):
+    order_index: int = Field(ge=0)
+    title: str
+    plan: dict[str, object] = Field(default_factory=dict)
+    actual_summary: dict[str, object] = Field(default_factory=dict)
+    quality_report: dict[str, object] = Field(default_factory=dict)
+
+
+class CourseSectionIssue(BaseModel):
+    section_title: str
+    issue_type: str
+    detail: str
+
+
+class CourseRepairAction(BaseModel):
+    section_title: str
+    issue_type: str
+    instructions: list[str] = Field(min_length=1)
+    priority: int = Field(default=1, ge=1, le=5)
+
+
+class CourseQualityReview(BaseModel):
+    goal_coverage: int = Field(ge=0, le=4)
+    progression: int = Field(ge=0, le=4)
+    prerequisite_order: int = Field(ge=0, le=4)
+    redundancy: int = Field(ge=0, le=4)
+    difficulty_curve: int = Field(ge=0, le=4)
+    practice_coverage: int = Field(ge=0, le=4)
+    assessment_alignment: int = Field(ge=0, le=4)
+    personalization: int = Field(ge=0, le=4)
+    missing_objectives: list[str] = Field(default_factory=list)
+    duplicated_concepts: list[str] = Field(default_factory=list)
+    prerequisite_violations: list[str] = Field(default_factory=list)
+    weak_sections: list[CourseSectionIssue] = Field(default_factory=list)
+    repair_plan: list[CourseRepairAction] = Field(default_factory=list)
+
+    @property
+    def needs_revision(self) -> bool:
+        scores = (
+            self.goal_coverage,
+            self.progression,
+            self.prerequisite_order,
+            self.redundancy,
+            self.difficulty_curve,
+            self.practice_coverage,
+            self.assessment_alignment,
+            self.personalization,
+        )
+        return bool(self.repair_plan) or min(scores) < 3 or sum(scores) < 3 * len(scores)
+
+
 class AnswerPlanDraft(BaseModel):
     intent: Literal[
         "definition",

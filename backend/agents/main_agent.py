@@ -6,12 +6,16 @@ from .prompts import (
     CONTENT_AUTHOR_SYSTEM,
     CONTENT_REPAIR_SYSTEM,
     CONTENT_REVIEWER_SYSTEM,
+    COURSE_REVIEWER_SYSTEM,
     COURSE_PLANNER_SYSTEM,
     SECTION_SUMMARY_SYSTEM,
 )
 from .schemas import (
     ActualSectionSummary,
     CardSectionDraft,
+    CourseQualityReview,
+    CourseRepairAction,
+    CourseReviewSectionSnapshot,
     KnowledgeCardDraft,
     KnowledgeCardPlanDraft,
     SectionContentDraft,
@@ -326,6 +330,99 @@ class MainAgent:
             quality_report=quality_report.model_dump(),
             plan=context.current_section.model_dump(),
             actual_summary=actual_summary.model_dump(),
+        )
+
+    async def review_course(
+        self,
+        plan: KnowledgeCardPlanDraft,
+        brief: dict,
+        sections: list[CourseReviewSectionSnapshot],
+        *,
+        language: str,
+    ) -> CourseQualityReview:
+        result = await self.gateway.structured(
+            [
+                {"role": "system", "content": COURSE_REVIEWER_SYSTEM + "\n" + response_language_instruction(language)},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "responseLanguage": language,
+                            "learnerBrief": brief,
+                            "coursePlan": plan.model_dump(),
+                            "sectionSummaries": [item.model_dump() for item in sections],
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            task="course_review",
+            schema=CourseQualityReview.model_json_schema(),
+        )
+        return CourseQualityReview.model_validate(result)
+
+    async def repair_section(
+        self,
+        context: SectionGenerationContext,
+        original_content: str,
+        action: CourseRepairAction,
+        *,
+        language: str,
+    ) -> CardSectionDraft:
+        repaired_result = await self.gateway.structured(
+            [
+                {"role": "system", "content": CONTENT_REPAIR_SYSTEM + "\n" + response_language_instruction(language)},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "responseLanguage": language,
+                            "sectionContext": context.model_dump(),
+                            "originalContentMarkdown": original_content,
+                            "courseReviewIssue": action.model_dump(),
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            task="course_targeted_repair",
+            schema=SectionContentDraft.model_json_schema(),
+        )
+        content = SectionContentDraft.model_validate(repaired_result)
+        review = await self._review_section(context, content, language)
+        summary_result = await self.gateway.structured(
+            [
+                {"role": "system", "content": SECTION_SUMMARY_SYSTEM + "\n" + response_language_instruction(language)},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "responseLanguage": language,
+                            "sectionContext": context.model_dump(),
+                            "finalContentMarkdown": content.content_markdown,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            task="section_summary",
+            schema=ActualSectionSummary.model_json_schema(),
+        )
+        summary = ActualSectionSummary.model_validate(summary_result)
+        quality = SectionQualityReport(
+            initial_review=review,
+            final_review=review,
+            revision_attempted=True,
+            quality_status="passed" if not review.needs_revision else "needs_attention",
+        )
+        return CardSectionDraft(
+            title=context.current_section.title,
+            content_markdown=content.content_markdown,
+            content_type=context.current_section.content_type,
+            teaching_objective=context.current_section.teaching_objective,
+            quality_report=quality.model_dump(),
+            plan=context.current_section.model_dump(),
+            actual_summary=summary.model_dump(),
         )
 
     async def create_card(

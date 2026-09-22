@@ -3,6 +3,7 @@ import json
 import unittest
 
 from backend.agents.main_agent import MainAgent
+from backend.agents.schemas import CourseReviewSectionSnapshot, KnowledgeCardPlanDraft, SectionPlanDraft
 from backend.schemas import CourseBrief, CourseOutlineItem
 
 
@@ -42,6 +43,17 @@ class PlanRepairGateway:
                 "actually_taught": [title],
                 "examples_used": [f"{title}示例"],
                 "summary": f"已讲授{title}",
+            }
+        if task == "course_review":
+            return {
+                "goal_coverage": 4,
+                "progression": 4,
+                "prerequisite_order": 4,
+                "redundancy": 4,
+                "difficulty_curve": 4,
+                "practice_coverage": 4,
+                "assessment_alignment": 4,
+                "personalization": 4,
             }
         raise AssertionError(f"unexpected task: {task}")
 
@@ -113,6 +125,32 @@ class MainAgentTests(unittest.TestCase):
 
         self.assertEqual(gateway.plan_calls, 2)
         self.assertEqual([section.title for section in result.sections], ["最小服务"])
+
+    def test_course_review_uses_summaries_without_section_body(self):
+        gateway = PlanRepairGateway(repair_succeeds=True)
+        plan = KnowledgeCardPlanDraft(
+            title="Go",
+            summary="学习 Go",
+            sections=[SectionPlanDraft(title="变量", teaching_objective="理解变量")],
+        )
+        review = asyncio.run(MainAgent(gateway).review_course(
+            plan,
+            {"topic": "Go", "priorKnowledge": "初学者"},
+            [CourseReviewSectionSnapshot(
+                order_index=0,
+                title="变量",
+                plan={"key_concepts": ["变量"]},
+                actual_summary={"actually_taught": ["变量"]},
+                quality_report={"quality_status": "passed"},
+            )],
+            language="zh",
+        ))
+
+        self.assertFalse(review.needs_revision)
+        call = next(call for call in gateway.calls if call[0] == "course_review")
+        payload = json.loads(call[1][-1]["content"])
+        self.assertIn("sectionSummaries", payload)
+        self.assertNotIn("contentMarkdown", json.dumps(payload))
 
 
 if __name__ == "__main__":

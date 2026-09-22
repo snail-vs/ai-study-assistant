@@ -10,6 +10,8 @@ from sqlalchemy.pool import StaticPool
 from backend.agents.main_agent import MainAgent
 from backend.agents.schemas import (
     CardSectionDraft,
+    CourseQualityReview,
+    CourseRepairAction,
     KnowledgeCardPlanDraft,
     SectionPlanDraft,
 )
@@ -54,11 +56,28 @@ def _section(title, content, content_type="concept"):
     )
 
 
+def _course_review(**values):
+    scores = {
+        "goal_coverage": 4,
+        "progression": 4,
+        "prerequisite_order": 4,
+        "redundancy": 4,
+        "difficulty_curve": 4,
+        "practice_coverage": 4,
+        "assessment_alignment": 4,
+        "personalization": 4,
+    }
+    scores.update(values)
+    return CourseQualityReview(**scores)
+
+
 def _agent(*section_results, plan=None):
     return SimpleNamespace(
         plan_course=AsyncMock(return_value=plan or _plan()),
         build_section_context=MainAgent.build_section_context,
         generate_section=AsyncMock(side_effect=list(section_results)),
+        review_course=AsyncMock(return_value=_course_review()),
+        repair_section=AsyncMock(),
     )
 
 
@@ -163,6 +182,47 @@ class CourseGenerationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(card.status, "active")
             self.assertEqual([item.generation_attempts for item in sections], [1, 2])
             self.assertEqual(sections[1].content_markdown, "恢复后的练习")
+
+    async def test_course_review_repairs_only_targeted_section_then_rechecks(self):
+        fake_agent = _agent(
+            _section("变量", "原变量正文"),
+            _section("练习", "原练习正文", "practice"),
+        )
+        fake_agent.review_course.side_effect = [
+            _course_review(
+                progression=2,
+                repair_plan=[CourseRepairAction(
+                    section_title="练习",
+                    issue_type="prerequisite_gap",
+                    instructions=["显式连接上一节的变量概念"],
+                    priority=5,
+                )],
+            ),
+            _course_review(),
+        ]
+        fake_agent.repair_section.return_value = _section(
+            "练习", "已连接变量概念的练习", "practice"
+        )
+        with (
+            patch.object(course_generation, "SessionLocal", side_effect=self.session_factory),
+            patch.object(course_generation, "restore_active_provider", return_value=object()),
+            patch.object(course_generation, "MainAgent", return_value=fake_agent),
+        ):
+            await course_generation.generate_course("space-1", "user-1", "学习 Python")
+
+        fake_agent.repair_section.assert_awaited_once()
+        self.assertEqual(fake_agent.review_course.await_count, 2)
+        with Session(self.engine) as db:
+            space = db.get(LearningSpace, "space-1")
+            card = db.get(KnowledgeCard, space.root_card_id)
+            sections = list(db.scalars(
+                select(CardSection).where(CardSection.card_id == card.id).order_by(CardSection.order_index)
+            ))
+            self.assertEqual(sections[0].generation_attempts, 1)
+            self.assertEqual(sections[1].generation_attempts, 2)
+            self.assertEqual(sections[1].content_markdown, "已连接变量概念的练习")
+            self.assertEqual(card.course_quality_report["quality_status"], "passed")
+            self.assertEqual(card.course_quality_report["repaired_sections"], ["练习"])
 
     async def test_missing_space_exits_and_cleans_registry(self):
         with Session(self.engine) as db:

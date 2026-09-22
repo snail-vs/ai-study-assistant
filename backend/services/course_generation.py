@@ -12,7 +12,11 @@ from sqlalchemy import and_, or_, select, update
 
 from ..agents.main_agent import MainAgent
 from ..agents.language_policy import infer_response_language
-from ..agents.schemas import ActualSectionSummary, KnowledgeCardPlanDraft
+from ..agents.schemas import (
+    ActualSectionSummary,
+    CourseReviewSectionSnapshot,
+    KnowledgeCardPlanDraft,
+)
 from ..db import SessionLocal
 from ..models import CardSection, KnowledgeCard, LearningSpace, now
 from .provider_settings import restore_active_provider
@@ -23,6 +27,7 @@ course_generation_tasks: dict[str, asyncio.Task] = {}
 scheduled_generation_tokens: dict[str, str] = {}
 LEASE_SECONDS = 300
 LEASE_OWNER = f"{socket.gethostname()}:{os.getpid()}"
+MAX_COURSE_REPAIR_SECTIONS = 3
 
 
 def claim_generation_lease(
@@ -340,10 +345,156 @@ async def generate_course(
 
         db = SessionLocal()
         space = db.get(LearningSpace, space_id)
+        if not space or not refresh_generation_lease(db, space_id, lease_token):
+            return
+        persisted_sections = list(db.scalars(
+            select(CardSection)
+            .where(CardSection.card_id == card_id)
+            .order_by(CardSection.order_index)
+        ))
+        snapshots = [
+            CourseReviewSectionSnapshot(
+                order_index=section.order_index,
+                title=section.title,
+                plan=section.plan,
+                actual_summary=section.actual_summary,
+                quality_report=section.quality_report,
+            )
+            for section in persisted_sections
+        ]
+        space.generation_phase = "course_review"
+        space.generation_updated_at = now()
+        db.commit()
+        db.close()
+        db = None
+
+        initial_course_review = await agent.review_course(
+            plan, generation_brief or {}, snapshots, language=language
+        )
+        final_course_review = initial_course_review
+        repaired_titles: list[str] = []
+        seen_titles: set[str] = set()
+        repair_actions = []
+        for action in sorted(
+            initial_course_review.repair_plan,
+            key=lambda item: item.priority,
+            reverse=True,
+        ):
+            if action.section_title in seen_titles:
+                continue
+            seen_titles.add(action.section_title)
+            repair_actions.append(action)
+            if len(repair_actions) >= MAX_COURSE_REPAIR_SECTIONS:
+                break
+
+        for action in repair_actions:
+            db = SessionLocal()
+            space = db.get(LearningSpace, space_id)
+            if not space or not refresh_generation_lease(db, space_id, lease_token):
+                return
+            persisted_sections = list(db.scalars(
+                select(CardSection)
+                .where(CardSection.card_id == card_id)
+                .order_by(CardSection.order_index)
+            ))
+            target = next(
+                (section for section in persisted_sections if section.title == action.section_title),
+                None,
+            )
+            if target is None:
+                db.commit()
+                db.close()
+                db = None
+                continue
+            actual_summaries = [
+                ActualSectionSummary.model_validate(section.actual_summary)
+                for section in persisted_sections
+                if section.order_index < target.order_index
+                and section.generation_status in {"completed", "needs_attention"}
+            ]
+            context = agent.build_section_context(
+                plan, generation_brief or {}, target.order_index, actual_summaries
+            )
+            target_index = target.order_index
+            original_content = target.content_markdown
+            target.generation_status = "reviewing"
+            target.generation_attempts += 1
+            target.generation_error = None
+            space.generation_phase = f"repairing_{target.order_index + 1}_of_{len(plan.sections)}"
+            space.generation_updated_at = now()
+            db.commit()
+            db.close()
+            db = None
+
+            repaired = await agent.repair_section(
+                context,
+                original_content,
+                action,
+                language=language,
+            )
+            db = SessionLocal()
+            space = db.get(LearningSpace, space_id)
+            target = db.scalar(select(CardSection).where(
+                CardSection.card_id == card_id,
+                CardSection.order_index == target_index,
+            ))
+            if not space or target is None or not refresh_generation_lease(db, space_id, lease_token):
+                return
+            target.content_markdown = repaired.content_markdown
+            target.quality_report_json = json.dumps(repaired.quality_report, ensure_ascii=False)
+            target.actual_summary_json = json.dumps(repaired.actual_summary, ensure_ascii=False)
+            target.generation_status = (
+                "needs_attention"
+                if repaired.quality_report.get("quality_status") == "needs_attention"
+                else "completed"
+            )
+            repaired_titles.append(target.title)
+            space.generation_updated_at = now()
+            db.commit()
+            db.close()
+            db = None
+
+        if repaired_titles:
+            db = SessionLocal()
+            persisted_sections = list(db.scalars(
+                select(CardSection)
+                .where(CardSection.card_id == card_id)
+                .order_by(CardSection.order_index)
+            ))
+            snapshots = [
+                CourseReviewSectionSnapshot(
+                    order_index=section.order_index,
+                    title=section.title,
+                    plan=section.plan,
+                    actual_summary=section.actual_summary,
+                    quality_report=section.quality_report,
+                )
+                for section in persisted_sections
+            ]
+            db.close()
+            db = None
+            final_course_review = await agent.review_course(
+                plan, generation_brief or {}, snapshots, language=language
+            )
+
+        db = SessionLocal()
+        space = db.get(LearningSpace, space_id)
         card = db.get(KnowledgeCard, card_id)
         if not space or not card or not refresh_generation_lease(db, space_id, lease_token):
             return
         card.status = "active"
+        card.course_quality_report_json = json.dumps(
+            {
+                "initial_review": initial_course_review.model_dump(),
+                "final_review": final_course_review.model_dump(),
+                "repair_attempted": bool(repaired_titles),
+                "repaired_sections": repaired_titles,
+                "quality_status": (
+                    "needs_attention" if final_course_review.needs_revision else "passed"
+                ),
+            },
+            ensure_ascii=False,
+        )
         space.generation_status = "completed"
         space.generation_phase = "completed"
         space.generation_error = None

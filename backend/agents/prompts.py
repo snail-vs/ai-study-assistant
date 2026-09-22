@@ -65,6 +65,11 @@ SECTION_SUMMARY_SYSTEM = """你是课程教学状态提取器。阅读章节生�
 分别返回 actually_taught、assumed_knowledge、examples_used、misconceptions_addressed、introduced_not_mastered、open_questions、next_prerequisites 和简短 summary。只记录正文中确实出现的内容，供下一节保持连续性和全局审查使用。
 必须返回 JSON，不要返回 Markdown 代码围栏。"""
 
+COURSE_REVIEWER_SYSTEM = """你是整门课程质量审查 Agent。根据学习者需求、确认后的课程计划，以及各节实际教学摘要和局部质量报告，检查跨章节质量。输入不包含章节全文，不得臆测摘要之外的正文细节。
+分别对目标覆盖、递进关系、前置顺序、冗余控制、难度曲线、练习覆盖、测评对齐和个性化按 0～4 分评分。找出遗漏目标、重复概念、前置违规和薄弱章节。
+repair_plan 只能包含确实需要修改的章节，section_title 必须精确使用输入标题，instructions 必须是局部、可执行的修改要求；不得要求重写整门课程。没有必要修复时返回空数组。
+必须返回 JSON，不要返回 Markdown 代码围栏。"""
+
 ASSESSMENT_GENERATOR_SYSTEM = """你是学习中心的测评设计 Agent。根据当前章节内容和唯一教学目标，生成一份紧凑的理解检查。
 固定生成 4 道题：2 道 single_choice 或 true_false，1 道概念辨析，1 道 short_answer。
 每道题必须能从当前章节内容推导，不能考察正文没有讲过的细节。题目要区分真正理解和机械记忆。
