@@ -30,4 +30,12 @@ describe('CourseOutlineReview', () => {
     await wrapper.setProps({ session: { ...session, state: 'outline_confirmed', outlineConfirmed: true } })
     expect(wrapper.text()).toContain('确认并生成课程')
   })
+
+  it('disables back, confirm, and generate controls while busy', async () => {
+    const wrapper = mount(CourseOutlineReview, { props: { session } })
+    await wrapper.setProps({ busy: true, activeCommand: 'confirm_outline' })
+
+    expect(wrapper.find('.course-design-head button').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.course-design-actions button').attributes('disabled')).toBeDefined()
+  })
 })

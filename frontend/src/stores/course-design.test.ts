@@ -103,4 +103,31 @@ describe('course design session store', () => {
     expect(localStorage.getItem('studycenter.courseDesign.sessionId')).toBe(null)
     expect(JSON.parse(mockedRequest.mock.calls[0][1]?.body as string).type).toBe('generate_course')
   })
+
+  it('holds loading across update_brief and generate_outline without a gap', async () => {
+    mockedRequest.mockResolvedValueOnce(snapshot({ state: 'reviewing_brief', revision: 3, briefRevision: 2, brief: { topic: 'Kubernetes', learningOutcome: '掌握原理', priorKnowledge: '有基础' }, currentQuestion: null, recommendedScale: 'standard' }))
+    const store = useCourseDesignStore()
+    await store.begin('学习 Kubernetes')
+    store.setOutcomeDraft('掌握原理')
+    store.setPriorKnowledgeDraft('有基础')
+
+    let resolveBrief!: (value: unknown) => void
+    let resolveOutline!: (value: unknown) => void
+    mockedRequest.mockReturnValueOnce(new Promise((resolve) => { resolveBrief = resolve }))
+    mockedRequest.mockReturnValueOnce(new Promise((resolve) => { resolveOutline = resolve }))
+
+    const pending = store.updateBriefAndGenerateOutline()
+    await vi.waitFor(() => expect(store.loading).toBe(true))
+    expect(store.activeCommand).toBe('update_brief')
+    resolveBrief(snapshot({ state: 'reviewing_brief', revision: 4, briefRevision: 3, brief: { topic: 'Kubernetes', learningOutcome: '掌握原理', priorKnowledge: '有基础' }, currentQuestion: null, recommendedScale: 'standard', selectedScale: 'standard' }))
+    await vi.waitFor(() => expect(store.activeCommand).toBe('generate_outline'))
+    expect(store.loading).toBe(true)
+    resolveOutline(snapshot({ state: 'reviewing_outline', revision: 5, briefRevision: 3, brief: { topic: 'Kubernetes', learningOutcome: '掌握原理', priorKnowledge: '有基础' }, currentQuestion: null, recommendedScale: 'standard', selectedScale: 'standard', outline: [{ title: '原理', objective: '理解' }] }))
+    await pending
+    expect(store.loading).toBe(false)
+    expect(store.activeCommand).toBe(null)
+    const commandCalls = mockedRequest.mock.calls.filter((call) => String(call[0]).includes('/commands'))
+    expect(JSON.parse(commandCalls[0][1]?.body as string).type).toBe('update_brief')
+    expect(JSON.parse(commandCalls[1][1]?.body as string).type).toBe('generate_outline')
+  })
 })

@@ -136,23 +136,32 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
     } finally { loading.value = false }
   }
 
-  async function execute(type: CourseDesignCommandType, payload: CourseDesignPayload = {}) {
+  async function sendCommand(type: CourseDesignCommandType, payload: CourseDesignPayload = {}) {
     const current = session.value
-    if (!current || loading.value) return null
+    if (!current) return null
+    const snapshot = await request<CourseDesignSession>(`/course-design/sessions/${current.sessionId}/commands`, {
+      method: 'POST', body: JSON.stringify({ commandId: commandId(), expectedRevision: current.revision, type, payload }),
+    })
+    applySnapshot(snapshot)
+    return snapshot
+  }
+
+  function captureCommandError(err: unknown) {
+    const message = err instanceof Error ? err.message : '课程设计操作失败'
+    error.value = message
+    operationError.value = message
+  }
+
+  async function execute(type: CourseDesignCommandType, payload: CourseDesignPayload = {}) {
+    if (!session.value || loading.value) return null
     loading.value = true
     activeCommand.value = type
     error.value = ''
     operationError.value = ''
     try {
-      const snapshot = await request<CourseDesignSession>(`/course-design/sessions/${current.sessionId}/commands`, {
-        method: 'POST', body: JSON.stringify({ commandId: commandId(), expectedRevision: current.revision, type, payload }),
-      })
-      applySnapshot(snapshot)
-      return snapshot
+      return await sendCommand(type, payload)
     } catch (err) {
-      const message = err instanceof Error ? err.message : '课程设计操作失败'
-      error.value = message
-      operationError.value = message
+      captureCommandError(err)
       throw err
     } finally {
       loading.value = false
@@ -199,10 +208,25 @@ export const useCourseDesignStore = defineStore('courseDesign', () => {
   function setOutcomeDraft(value: string) { learningOutcomeDraft.value = value }
   function setPriorKnowledgeDraft(value: string) { priorKnowledgeDraft.value = value }
   async function updateBriefAndGenerateOutline() {
-    if (!session.value) return null
-    const updated = await updateBrief()
-    if (!updated) return null
-    return generateOutline()
+    if (!session.value || loading.value) return null
+    loading.value = true
+    error.value = ''
+    operationError.value = ''
+    try {
+      activeCommand.value = 'update_brief'
+      const updated = await sendCommand('update_brief', {
+        brief: { learningOutcome: learningOutcomeDraft.value.trim(), priorKnowledge: priorKnowledgeDraft.value.trim() },
+      })
+      if (!updated || !session.value) return null
+      activeCommand.value = 'generate_outline'
+      return await sendCommand('generate_outline')
+    } catch (err) {
+      captureCommandError(err)
+      throw err
+    } finally {
+      loading.value = false
+      activeCommand.value = null
+    }
   }
 
   return {

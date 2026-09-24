@@ -58,6 +58,7 @@ async function backFromOutline() { try { await store.goBack() } catch { /* store
           v-if="editingLearningSpaceId"
           type="button"
           class="secondary"
+          :disabled="store.loading"
           @click="emit('cancel')"
         >
           取消

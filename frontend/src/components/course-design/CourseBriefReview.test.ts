@@ -31,4 +31,22 @@ describe('CourseBriefReview', () => {
     expect(generateButton.find('.status-spinner').exists()).toBe(true)
     expect(generateButton.text()).toContain('正在生成课程大纲…')
   })
+
+  it('disables restart, back, scale, and generate controls while busy', () => {
+    const wrapper = mount(CourseBriefReview, {
+      props: {
+        session: { ...session, selectedScale: 'standard' },
+        brief: session.brief,
+        scales,
+        busy: true,
+        activeCommand: 'generate_outline',
+      },
+    })
+
+    expect(wrapper.find('.course-design-head button').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.course-design-actions .secondary').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.course-design-actions .primary').attributes('disabled')).toBeDefined()
+    expect(wrapper.findAll('.course-scale-card').every((card) => card.attributes('disabled') !== undefined)).toBe(true)
+    expect(wrapper.findAll('textarea').every((area) => area.attributes('disabled') !== undefined)).toBe(true)
+  })
 })

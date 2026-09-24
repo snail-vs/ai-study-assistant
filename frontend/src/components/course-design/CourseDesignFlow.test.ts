@@ -111,4 +111,29 @@ describe('CourseDesignFlow', () => {
     const types = mockedRequest.mock.calls.slice(1).map((call) => JSON.parse(call[1]?.body as string).type)
     expect(types).toEqual(['select_scale', 'update_brief', 'generate_outline'])
   })
+
+  it('keeps action buttons disabled across the update_brief to generate_outline handoff', async () => {
+    mockedRequest.mockResolvedValueOnce(snapshot({ state: 'reviewing_brief', revision: 3, briefRevision: 2, brief, currentQuestion: null, recommendedScale: 'standard' }))
+    const wrapper = mount(CourseDesignFlow)
+    await wrapper.get('textarea[name="topic"]').setValue('学习 Kubernetes')
+    await wrapper.get('form').trigger('submit')
+    mockedRequest.mockResolvedValueOnce(snapshot({ state: 'reviewing_brief', revision: 4, briefRevision: 3, brief, currentQuestion: null, recommendedScale: 'standard', selectedScale: 'standard' }))
+    await wrapper.get('.course-scale-card').trigger('click')
+    let resolveBrief!: (value: unknown) => void
+    let resolveOutline!: (value: unknown) => void
+    mockedRequest.mockReturnValueOnce(new Promise((resolve) => { resolveBrief = resolve }))
+    mockedRequest.mockReturnValueOnce(new Promise((resolve) => { resolveOutline = resolve }))
+    const generating = wrapper.get('button.primary').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('正在保存/整理课程需求…'))
+    expect(wrapper.get('.course-design-head button').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.course-design-actions .secondary').attributes('disabled')).toBeDefined()
+    resolveBrief(snapshot({ state: 'reviewing_brief', revision: 5, briefRevision: 4, brief, currentQuestion: null, recommendedScale: 'standard', selectedScale: 'standard' }))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('正在生成课程大纲…'))
+    expect(wrapper.get('.course-design-head button').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.course-design-actions .secondary').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.course-design-actions .primary').attributes('disabled')).toBeDefined()
+    resolveOutline(snapshot({ state: 'reviewing_outline', revision: 6, briefRevision: 4, brief, currentQuestion: null, recommendedScale: 'standard', selectedScale: 'standard', outline: [{ title: '原理', objective: '理解' }] }))
+    await generating
+    await flushPromises()
+  })
 })

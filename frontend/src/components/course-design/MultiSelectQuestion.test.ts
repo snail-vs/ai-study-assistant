@@ -39,4 +39,16 @@ describe('MultiSelectQuestion', () => {
     const wrapper = mount(MultiSelectQuestion, { props: { question, stage: 'collecting_background' } })
     expect(wrapper.text()).toContain('2 / 3')
   })
+
+  it('disables back, complete, next, chips, and textarea while busy', () => {
+    const wrapper = mount(MultiSelectQuestion, {
+      props: { question, busy: true, activeCommand: 'complete_with_ai', selected: ['a'], customText: '目标' },
+    })
+
+    const actions = wrapper.findAll('.course-design-actions button')
+    expect(actions).toHaveLength(3)
+    expect(actions.every((button) => button.attributes('disabled') !== undefined)).toBe(true)
+    expect(wrapper.findAll('.course-option-chip').every((chip) => chip.attributes('disabled') !== undefined)).toBe(true)
+    expect(wrapper.get('textarea').attributes('disabled')).toBeDefined()
+  })
 })
