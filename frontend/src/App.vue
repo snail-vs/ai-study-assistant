@@ -70,6 +70,7 @@ const showKnowledgeSidebar = ref(localStorage.getItem('studycenter.knowledgeSide
 const showTeacherGuidance = ref(true)
 const input = ref('')
 const composerInput = ref(null)
+const composerFullscreen = ref(false)
 const creatingBranch = ref(false)
 const startingDiscussion = ref(false)
 
@@ -322,12 +323,27 @@ function resizeComposer(event) {
   const textarea = event?.target || composerInput.value
   if (!textarea) return
   textarea.style.height = 'auto'
-  const height = Math.min(textarea.scrollHeight, 180)
+  const maxHeight = composerFullscreen.value ? Math.floor(window.innerHeight * 0.65) : 180
+  const height = Math.min(textarea.scrollHeight, maxHeight)
   textarea.style.height = `${height}px`
-  textarea.style.overflowY = textarea.scrollHeight > 180 ? 'auto' : 'hidden'
+  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
+}
+
+function toggleComposerFullscreen() {
+  composerFullscreen.value = !composerFullscreen.value
+  nextTick(() => {
+    resizeComposer()
+    if (composerFullscreen.value) composerInput.value?.focus()
+  })
 }
 
 function handleComposerKeydown(event) {
+  if (event.key === 'Escape' && composerFullscreen.value) {
+    event.preventDefault()
+    composerFullscreen.value = false
+    nextTick(() => resizeComposer())
+    return
+  }
   if (event.key !== 'Enter' || (!event.shiftKey && !event.ctrlKey && !event.metaKey)) return
   event.preventDefault()
   sendMessage()
@@ -898,8 +914,10 @@ function nextSection() {
         </div>
         <div v-if="sideRun.active" class="chat-run-status"><i class="status-spinner"></i>{{ sideRun.label }}</div>
         <p v-if="error" class="error chat-error">{{ error }}</p>
-        <form class="composer" @submit.prevent="activeConversation ? sendMessage() : openSideConversation()">
+        <form class="composer" :class="{ 'composer-fullscreen': composerFullscreen }" @submit.prevent="activeConversation ? sendMessage() : openSideConversation()">
+          <div v-if="composerFullscreen" class="composer-fullscreen-header"><span>撰写讨论内容</span><button type="button" class="composer-fullscreen-toggle" aria-label="收起输入框" @click="toggleComposerFullscreen">收起 ✕</button></div>
           <textarea ref="composerInput" v-model="input" :disabled="sideRun.active" placeholder="问问当前内容…（Shift / Ctrl / ⌘ + Enter 发送）" @input="resizeComposer" @keydown="handleComposerKeydown"></textarea>
+          <button type="button" class="composer-fullscreen-toggle" :aria-label="composerFullscreen ? '收起输入框' : '全屏输入'" @click="toggleComposerFullscreen">{{ composerFullscreen ? '收起' : '全屏 ↗' }}</button>
           <button :disabled="sideRun.active">{{ sideRun.active ? '回答中…' : '发送 ↗' }}</button>
         </form>
       </aside>
