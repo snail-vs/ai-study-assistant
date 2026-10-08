@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { describe, expect, it } from 'vitest'
 import SettingsDialog from './SettingsDialog.vue'
 
@@ -31,7 +32,7 @@ const baseProps = {
 
 describe('SettingsDialog', () => {
   it('renders an application settings shell and separates AI settings into tabs', async () => {
-    const wrapper = mount(SettingsDialog, { props: baseProps })
+    const wrapper = mount(SettingsDialog, { props: baseProps, global: { plugins: [createPinia()] } })
 
     expect(wrapper.find('.settings-sidebar').text()).toContain('设置中心')
     expect(wrapper.find('.settings-nav-item').text()).toContain('AI 与模型')
@@ -51,14 +52,14 @@ describe('SettingsDialog', () => {
   })
 
   it('shows prompt-free task usage summaries', async () => {
-    const wrapper = mount(SettingsDialog, { props: { ...baseProps, usageSummary: [{ task: 'section_summary', provider: 'deepseek', model: 'fast', calls: 3, successes: 3, failures: 0, totalTokens: 120, averageDurationMs: 90 }] } })
+    const wrapper = mount(SettingsDialog, { props: { ...baseProps, usageSummary: [{ task: 'section_summary', provider: 'deepseek', model: 'fast', calls: 3, successes: 3, failures: 0, totalTokens: 120, averageDurationMs: 90 }] }, global: { plugins: [createPinia()] } })
     await wrapper.findAll('.settings-tabs button')[4].trigger('click')
     expect(wrapper.find('.settings-pane').text()).toContain('section_summary')
     expect(wrapper.find('.settings-pane').text()).toContain('120 tokens')
   })
 
   it('keeps manual model entry and provider saving in the model-service tab', async () => {
-    const wrapper = mount(SettingsDialog, { props: baseProps })
+    const wrapper = mount(SettingsDialog, { props: baseProps, global: { plugins: [createPinia()] } })
     expect(wrapper.find('.key-row > .settings-secondary-button').text()).toBe('更换')
     expect(wrapper.find('.key-row > .settings-primary-button').text()).toBe('刷新模型')
     expect(wrapper.find('.manual-model-entry .settings-primary-button').text()).toBe('添加')
@@ -85,6 +86,7 @@ describe('SettingsDialog', () => {
     ]
     const wrapper = mount(SettingsDialog, {
       props: { ...baseProps, taskDefinitions, modelRoleDefinitions },
+      global: { plugins: [createPinia()] },
     })
 
     await wrapper.findAll('.settings-tabs button')[2].trigger('click')

@@ -1,18 +1,16 @@
 import hashlib
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .models import AuthSession, DefaultModelPreference, InviteCode, LearningSpace, ProviderCredential, TaskModelRoute, User
-from .schemas import AuthUserResponse, LoginRequest, RegisterRequest
+from .models import AuthSession, DefaultModelPreference, LearningSpace, ProviderCredential, TaskModelRoute, User
+from .schemas import AuthUserResponse, ChangePasswordRequest, LoginRequest, RegisterRequest
 from .security.auth import (
     SESSION_COOKIE,
     consume_invite,
     create_session,
-    current_user_id,
     get_current_user,
     hash_password,
     set_session_cookie,
@@ -53,10 +51,68 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     user = db.scalar(select(User).where(User.username == payload.username))
     if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-    token = create_session(db, user)
-    db.commit()
+    try:
+        # Serialize session creation with password changes, so a login that
+        # verified an old hash cannot create a session after it is replaced.
+        authenticated = db.execute(
+            update(User)
+            .where(
+                User.id == user.id,
+                User.password_hash == user.password_hash,
+                User.is_active.is_(True),
+            )
+            .values(password_hash=user.password_hash)
+            .execution_options(synchronize_session=False)
+        )
+        if authenticated.rowcount != 1:
+            raise HTTPException(status_code=401, detail="用户名或密码错误")
+        token = create_session(db, user)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     set_session_cookie(response, token)
     return user_response(user)
+
+
+@router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    payload: ChangePasswordRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    user = get_current_user(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="请先登录")
+    original_hash = user.password_hash
+    if not verify_password(payload.current_password, original_hash):
+        raise HTTPException(status_code=400, detail="当前密码不正确")
+    if payload.new_password == payload.current_password:
+        raise HTTPException(status_code=400, detail="新密码不能与当前密码相同")
+
+    try:
+        # Claim the original hash atomically: concurrent submissions must not
+        # overwrite a successful change or leave an extra authenticated session.
+        updated = db.execute(
+            update(User)
+            .where(
+                User.id == user.id,
+                User.password_hash == original_hash,
+                User.is_active.is_(True),
+            )
+            .values(password_hash=hash_password(payload.new_password))
+            .execution_options(synchronize_session=False)
+        )
+        if updated.rowcount != 1:
+            raise HTTPException(status_code=400, detail="当前密码已变更，请重新登录后重试")
+        db.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+        token = create_session(db, user)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    set_session_cookie(response, token)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

@@ -423,6 +423,10 @@ button.settings-secondary-button { height: 39px; padding: 0 12px; border: 1px so
 button.settings-secondary-button:hover { border-color: var(--course-border-active); background: var(--course-accent-soft); }
 .key-row input, .key-row .masked-key { font-size: 12px; }
 .settings-pane-actions .settings-primary-button { min-width: 116px; }
+.settings-password-form { width: 100%; max-width: 460px; min-width: 0; }
+.settings-password-form .settings-field:first-child { margin-top: 0; }
+.settings-password-message { margin: 16px 0 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.settings-password-success { color: var(--course-accent); }
 .settings-choice-card { max-width: 540px; padding: 19px; border: 1px solid #2b3c51; border-radius: 10px; background: #0e1825; }
 .settings-modal .settings-choice-card label { margin: 0; color: #92a4b5; }
 .settings-choice-card p { margin: 10px 0 0; color: #667a8e; font-size: 10px; }
@@ -446,10 +450,12 @@ button.settings-secondary-button:hover { border-color: var(--course-border-activ
 
 @media (max-width: 720px) {
   .modal-backdrop { padding: 0; place-items: stretch; }
-  .settings-modal.settings-center { grid-template-columns: 1fr; width: 100%; height: 100dvh; max-height: none; border: 0; border-radius: 0; }
+  .settings-modal.settings-center { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100dvh; max-height: none; border: 0; border-radius: 0; }
   .settings-sidebar { display: block; padding: 14px 16px 0; border-right: 0; border-bottom: 1px solid #26364a; }
   .settings-brand { padding: 0 0 12px; }
-  .settings-brand span, .settings-sidebar nav, .settings-sidebar-footer { display: none; }
+  .settings-brand span, .settings-nav-group, .settings-sidebar-footer { display: none; }
+  .settings-sidebar nav { display: flex; gap: 8px; padding-bottom: 12px; overflow-x: auto; }
+  .settings-nav-item { flex: 0 0 auto; width: auto; }
   .settings-brand strong { font-size: 17px; }
   .settings-main-head { padding: 17px 18px 14px; }
   .settings-main-head p { display: none; }

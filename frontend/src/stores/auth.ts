@@ -38,10 +38,17 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await request('/auth/password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    })
+  }
+
   async function logout() {
     await request('/auth/logout', { method: 'POST' }).catch(() => {})
     user.value = null
   }
 
-  return { checked, user, mode, username, password, inviteCode, loading, check, submit, logout }
+  return { checked, user, mode, username, password, inviteCode, loading, check, submit, logout, changePassword }
 })

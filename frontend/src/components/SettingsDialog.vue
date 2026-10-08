@@ -1,5 +1,6 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
+import { useAuthStore } from '../stores/auth'
 
 const props = defineProps({
   providerStatus: { type: Object, required: true },
@@ -36,6 +37,77 @@ const emit = defineEmits([
 const isChatGpt = computed(() => props.selectedProvider === 'chatgpt')
 const manualModel = ref('')
 const activeAiTab = ref('providers')
+const activeCategory = ref('ai')
+const authStore = useAuthStore()
+const currentPassword = ref('')
+const newPassword = ref('')
+const confirmPassword = ref('')
+const passwordPending = ref(false)
+const passwordError = ref('')
+const passwordSuccess = ref('')
+let passwordStateVersion = 0
+
+function clearPasswordInputs() {
+  currentPassword.value = ''
+  newPassword.value = ''
+  confirmPassword.value = ''
+}
+
+function resetPasswordState() {
+  passwordStateVersion += 1
+  clearPasswordInputs()
+  passwordError.value = ''
+  passwordSuccess.value = ''
+}
+
+function selectCategory(category) {
+  if (category === activeCategory.value) return
+  resetPasswordState()
+  activeCategory.value = category
+}
+
+function closeSettings() {
+  resetPasswordState()
+  emit('close')
+}
+
+async function submitPasswordChange() {
+  if (passwordPending.value) return
+  passwordError.value = ''
+  passwordSuccess.value = ''
+  if (currentPassword.value.length < 1 || currentPassword.value.length > 200) {
+    passwordError.value = '请输入当前密码，长度为 1–200 个字符。'
+    return
+  }
+  if (newPassword.value.length < 8 || newPassword.value.length > 200) {
+    passwordError.value = '新密码长度须为 8–200 个字符。'
+    return
+  }
+  if (newPassword.value === currentPassword.value) {
+    passwordError.value = '新密码不能与当前密码相同。'
+    return
+  }
+  if (confirmPassword.value !== newPassword.value) {
+    passwordError.value = '两次输入的新密码不一致。'
+    return
+  }
+
+  const stateVersion = passwordStateVersion
+  passwordPending.value = true
+  try {
+    await authStore.changePassword(currentPassword.value, newPassword.value)
+    if (stateVersion !== passwordStateVersion) return
+    clearPasswordInputs()
+    passwordSuccess.value = '密码修改成功。当前登录已保留，其他设备需重新登录。'
+  } catch (error) {
+    if (stateVersion !== passwordStateVersion) return
+    passwordError.value = error instanceof Error ? error.message : '修改密码失败，请重试。'
+  } finally {
+    passwordPending.value = false
+  }
+}
+
+onUnmounted(resetPasswordState)
 
 const providerOptions = [
   { id: 'deepseek', label: 'DeepSeek' },
@@ -95,7 +167,7 @@ function selectAiTab(tab) {
 <template>
   <div
     class="modal-backdrop"
-    @click.self="emit('close')"
+    @click.self="closeSettings"
   >
     <section class="settings-modal settings-center">
       <aside class="settings-sidebar">
@@ -108,16 +180,32 @@ function selectAiTab(tab) {
             智能服务
           </div>
           <button
-            class="settings-nav-item active"
+            class="settings-nav-item"
+            :class="{ active: activeCategory === 'ai' }"
+            :aria-pressed="activeCategory === 'ai'"
             type="button"
+            @click="selectCategory('ai')"
           >
             <span class="settings-nav-icon">AI</span>
             <span><strong>AI 与模型</strong><small>服务、模型与任务路由</small></span>
           </button>
+          <div class="settings-nav-group">
+            个人设置
+          </div>
+          <button
+            class="settings-nav-item"
+            :class="{ active: activeCategory === 'account' }"
+            :aria-pressed="activeCategory === 'account'"
+            type="button"
+            @click="selectCategory('account')"
+          >
+            <span class="settings-nav-icon">账号</span>
+            <span><strong>账号与安全</strong><small>管理登录密码</small></span>
+          </button>
         </nav>
         <div class="settings-sidebar-footer">
           <span>已配置 {{ configuredProviders.length }} 个模型服务</span>
-          <small>更多设置项将在这里集中管理</small>
+          <small>账号与 AI 配置集中管理</small>
         </div>
       </aside>
 
@@ -125,21 +213,22 @@ function selectAiTab(tab) {
         <header class="settings-main-head">
           <div>
             <div class="panel-title">
-              AI 与模型
+              {{ activeCategory === 'ai' ? 'AI 与模型' : '账号与安全' }}
             </div>
-            <p>管理模型服务、默认模型和学习任务分工。</p>
+            <p>{{ activeCategory === 'ai' ? '管理模型服务、默认模型和学习任务分工。' : '管理账号密码与登录安全。' }}</p>
           </div>
           <button
             class="settings-close"
             type="button"
             aria-label="关闭设置"
-            @click="emit('close')"
+            @click="closeSettings"
           >
             ×
           </button>
         </header>
 
         <nav
+          v-if="activeCategory === 'ai'"
           class="settings-tabs"
           aria-label="AI 设置"
         >
@@ -156,7 +245,93 @@ function selectAiTab(tab) {
 
         <div class="settings-content">
           <section
-            v-if="activeAiTab === 'providers'"
+            v-if="activeCategory === 'account'"
+            class="settings-pane account-pane"
+          >
+            <div class="settings-section-head">
+              <div>
+                <span>登录安全</span>
+                <h2>修改密码</h2>
+                <p>修改成功后，其他设备和浏览器的登录将失效，当前浏览器保持登录。</p>
+              </div>
+            </div>
+            <form
+              class="settings-password-form"
+              novalidate
+              :aria-busy="passwordPending"
+              @submit.prevent="submitPasswordChange"
+            >
+              <div class="settings-field">
+                <label for="settings-current-password">当前密码</label>
+                <input
+                  id="settings-current-password"
+                  v-model="currentPassword"
+                  name="currentPassword"
+                  type="password"
+                  autocomplete="current-password"
+                  minlength="1"
+                  maxlength="200"
+                  required
+                  :disabled="passwordPending"
+                >
+              </div>
+              <div class="settings-field">
+                <label for="settings-new-password">新密码</label>
+                <input
+                  id="settings-new-password"
+                  v-model="newPassword"
+                  name="newPassword"
+                  type="password"
+                  autocomplete="new-password"
+                  minlength="8"
+                  maxlength="200"
+                  required
+                  :disabled="passwordPending"
+                  aria-describedby="settings-password-requirements"
+                >
+                <p id="settings-password-requirements">8–200 个字符，不能与当前密码相同；空格将保留。</p>
+              </div>
+              <div class="settings-field">
+                <label for="settings-confirm-password">确认新密码</label>
+                <input
+                  id="settings-confirm-password"
+                  v-model="confirmPassword"
+                  name="confirmPassword"
+                  type="password"
+                  autocomplete="new-password"
+                  minlength="8"
+                  maxlength="200"
+                  required
+                  :disabled="passwordPending"
+                >
+              </div>
+              <p
+                v-if="passwordError"
+                class="settings-password-message error"
+                role="alert"
+              >
+                {{ passwordError }}
+              </p>
+              <p
+                v-if="passwordSuccess"
+                class="settings-password-message settings-password-success"
+                role="status"
+              >
+                {{ passwordSuccess }}
+              </p>
+              <div class="settings-pane-actions">
+                <button
+                  class="settings-primary-button"
+                  type="submit"
+                  :disabled="passwordPending"
+                >
+                  {{ passwordPending ? '修改中…' : '修改密码' }}
+                </button>
+              </div>
+            </form>
+          </section>
+          <section
+            v-else-if="activeAiTab === 'providers'"
             class="settings-pane provider-pane"
           >
             <div class="settings-section-head">

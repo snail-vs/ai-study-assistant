@@ -19,6 +19,11 @@ class LoginRequest(ApiModel):
     password: str = Field(min_length=1, max_length=200)
 
 
+class ChangePasswordRequest(ApiModel):
+    current_password: str = Field(alias="currentPassword", min_length=1, max_length=200)
+    new_password: str = Field(alias="newPassword", min_length=8, max_length=200)
+
+
 class AuthUserResponse(ApiModel):
     id: str
     username: str
