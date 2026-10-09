@@ -555,6 +555,9 @@ class AIRunResponse(ApiModel):
     error_message: str | None = Field(default=None, alias="errorMessage")
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
+    retryable: bool = False
+    question_message_id: str | None = Field(default=None, alias="questionMessageId")
+    answer_message_id: str | None = Field(default=None, alias="answerMessageId")
 
 
 class CreateConversationRequest(ApiModel):

@@ -749,6 +749,47 @@ paths:
             text/event-stream:
               schema:
                 type: string
+  /conversations/{conversationId}/runs/latest:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
+    get:
+      operationId: getLatestConversationRun
+      description: Restore the last turn's status and retry eligibility, including failed or expired runs.
+      responses:
+        '200':
+          description: Latest AI run, if any
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/AIRun'
+                  - type: 'null'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /conversations/{conversationId}/runs/{runId}/retry:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
+      - name: runId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: retryConversationRun
+      description: |
+        Regenerate the latest incomplete answer without adding another user question.
+        Reuses the failed or expired run and replaces only its partial assistant message.
+        run.started contains questionMessageId and replacedMessageId; message.started
+        contains the persisted answer ID. run.failed carries runId, phase, retryable,
+        questionMessageId and answerMessageId. message.completed terminates the stream.
+      responses:
+        '200':
+          description: Server-sent AI events for the accepted retry
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409': { description: Run is not the latest retryable incomplete turn, or the conversation is busy }
   /conversations/{conversationId}/messages:
     parameters:
       - $ref: '#/components/parameters/ConversationId'
@@ -1468,6 +1509,21 @@ components:
         directorPolicy: { type: string, enum: [guided, deterministic, llm] }
         status: { type: string, enum: [active, completed, archived] }
         createdAt: { type: string, format: date-time }
+    AIRun:
+      type: object
+      required: [id, conversationId, runType, status, phase, errorMessage, createdAt, updatedAt, retryable, questionMessageId, answerMessageId]
+      properties:
+        id: { type: string }
+        conversationId: { type: string }
+        runType: { type: string }
+        status: { type: string, enum: [queued, running, completed, failed, expired] }
+        phase: { type: string, nullable: true }
+        errorMessage: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        retryable: { type: boolean }
+        questionMessageId: { type: string, nullable: true }
+        answerMessageId: { type: string, nullable: true }
     RelatedCardProposal:
       type: object
       required: [id, cardId, title, reason, status, createdAt]

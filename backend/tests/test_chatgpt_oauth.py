@@ -1,6 +1,10 @@
+import json
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
+
+from backend.ai.base import AIProviderError
 from backend.ai.providers.chatgpt import ChatGptCodexProvider
 from backend.ai.oauth_chatgpt import ChatGptOAuthError, DeviceAuthorization
 from backend.services import chatgpt_oauth as oauth_service
@@ -244,6 +248,42 @@ class ChatGptCodexPayloadTests(unittest.TestCase):
 
         self.assertEqual(payload["input"], [self.messages[1]])
         self.assertEqual(payload["text"], {"verbosity": "low"})
+
+
+class ChatGptCodexStreamTests(unittest.IsolatedAsyncioTestCase):
+    async def consume(self, events):
+        body = "".join(f"data: {json.dumps(event)}\n\n" for event in events)
+        transport = httpx.MockTransport(
+            lambda request: httpx.Response(200, content=body, request=request)
+        )
+        client = httpx.AsyncClient(transport=transport)
+        provider = ChatGptCodexProvider(credential=_credential())
+        with patch("backend.ai.providers.chatgpt.httpx.AsyncClient", return_value=client):
+            return [
+                delta async for delta in provider.stream_text(
+                    [{"role": "user", "content": "Explain."}], task="side_answer"
+                )
+            ]
+
+    async def test_eof_without_response_completion_rejects_partial_answer(self):
+        with self.assertRaises(AIProviderError) as caught:
+            await self.consume([
+                {"type": "response.output_text.delta", "delta": "未完成"},
+                {"type": "response.output_text.done", "text": "未完成"},
+            ])
+        self.assertEqual(caught.exception.category, "provider_unavailable")
+
+    async def test_empty_stream_is_not_a_successful_answer(self):
+        with self.assertRaises(AIProviderError):
+            await self.consume([])
+
+    async def test_completed_response_finishes_without_reading_broken_trailer(self):
+        answer = await self.consume([
+            {"type": "response.output_text.delta", "delta": "完整回答"},
+            {"type": "response.completed"},
+            {"type": "error", "error": "closed after completion"},
+        ])
+        self.assertEqual(answer, ["完整回答"])
 
 
 if __name__ == "__main__":

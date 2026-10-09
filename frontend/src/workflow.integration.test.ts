@@ -31,9 +31,9 @@ function mockWorkspaceApi() {
     if (path === '/cards/card-2/sections/section-1/guidance') return []
     if (String(path).endsWith('/guidance') && options.method === 'POST') return {}
     if (String(path).includes('/activities')) return []
+    if (String(path).includes('/runs/latest')) return null
     if (String(path).includes('/conversations')) return []
     if (String(path).includes('/messages')) return []
-    if (String(path).includes('/runs/active')) return null
     return []
   })
 }
@@ -88,7 +88,7 @@ describe('learning workflow integration', () => {
     const encoder = new TextEncoder()
     const body = new ReadableStream({
       start(controller) {
-        controller.enqueue(encoder.encode('event: run.failed\ndata: {"message":"服务失败"}\n\n'))
+        controller.enqueue(encoder.encode('event: run.failed\ndata: {"message":"服务失败"}\n\nevent: message.completed\ndata: {}\n\n'))
         controller.close()
       },
     })

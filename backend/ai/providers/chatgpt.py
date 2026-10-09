@@ -225,9 +225,14 @@ class ChatGptCodexProvider:
                                 delta = event.get("delta")
                                 if delta:
                                     yield delta
+                            elif event_type == "response.completed":
+                                return
                             elif event_type in ("error", "response.failed"):
                                 raise AIProviderError(str(event.get("error") or event))
-                        return
+                        raise AIProviderError(
+                            "ChatGPT Codex 回答未完成：连接在完成事件之前结束，请重新生成回答",
+                            category="provider_unavailable",
+                        )
             except httpx.HTTPError as exc:
                 raise AIProviderError(
                     f"ChatGPT Codex 连接失败: {exc}", category="provider_unavailable"

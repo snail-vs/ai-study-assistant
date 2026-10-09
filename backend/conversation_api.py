@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from .agents.registry import default_participants, get_agent
 from .db import get_db
-from .models import AIRun, CardSection, Conversation, KnowledgeCard, Message, now
+from .models import AIRun, CardSection, Conversation, KnowledgeCard, Message
 from .schemas import (
     AIRunResponse,
     ConversationResponse,
@@ -90,20 +90,16 @@ def list_messages(conversation_id: str, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/conversations/{conversation_id}/runs/active", response_model=AIRunResponse | None)
-def get_active_run(conversation_id: str, db: Session = Depends(get_db)):
+@router.get("/conversations/{conversation_id}/runs/latest", response_model=AIRunResponse | None)
+def get_latest_run(conversation_id: str, db: Session = Depends(get_db)):
     owned_conversation(db, conversation_id)
-    run = db.scalar(
-        select(AIRun)
-        .where(AIRun.conversation_id == conversation_id, AIRun.status.in_(("queued", "running")))
-        .order_by(AIRun.created_at.desc())
-    )
-    if run and run.updated_at and (now() - run.updated_at).total_seconds() > 180:
-        run.status = "expired"
-        run.phase = "expired"
-        run.error_message = "AI 请求可能已中断，请重新发送。"
-        db.commit()
-    return run
+    conversation = db.get(Conversation, conversation_id)
+    card = db.get(KnowledgeCard, conversation.card_id) if conversation else None
+    if not conversation or not card or card.status == "deleted":
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    service = ConversationStreamService(db)
+    run = service.latest_run(conversation_id)
+    return service.run_response(conversation, run) if run else None
 
 
 @router.post("/conversations/{conversation_id}/messages/stream")
@@ -124,6 +120,9 @@ async def stream_message(
         )
     if payload.section_id != conversation.section_id:
         raise HTTPException(status_code=409, detail="Conversation belongs to a different section")
+    section = db.get(CardSection, conversation.section_id)
+    if not section or section.card_id != conversation.card_id:
+        raise HTTPException(status_code=409, detail="Conversation section is unavailable")
     active_run = db.scalar(
         select(AIRun)
         .where(AIRun.conversation_id == conversation_id, AIRun.status.in_(("queued", "running")))
@@ -137,4 +136,18 @@ async def stream_message(
 
     service = ConversationStreamService(db)
     context = service.prepare(conversation, card, payload)
+    return StreamingResponse(service.events(context), media_type="text/event-stream")
+
+
+@router.post("/conversations/{conversation_id}/runs/{run_id}/retry")
+async def retry_run(
+    conversation_id: str, run_id: str, db: Session = Depends(get_db),
+) -> StreamingResponse:
+    owned_conversation(db, conversation_id)
+    conversation = db.get(Conversation, conversation_id)
+    card = db.get(KnowledgeCard, conversation.card_id) if conversation else None
+    if not conversation or not card or card.status == "deleted":
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    service = ConversationStreamService(db)
+    context = service.prepare_retry(conversation, card, run_id)
     return StreamingResponse(service.events(context), media_type="text/event-stream")

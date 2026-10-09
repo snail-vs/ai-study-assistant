@@ -671,6 +671,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/conversations/{conversationId}/runs/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: components["parameters"]["ConversationId"];
+            };
+            cookie?: never;
+        };
+        /** @description Restore the last turn's status and retry eligibility, including failed or expired runs. */
+        get: operations["getLatestConversationRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/conversations/{conversationId}/runs/{runId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: components["parameters"]["ConversationId"];
+                runId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Regenerate the latest incomplete answer without adding another user question.
+         *     Reuses the failed or expired run and replaces only its partial assistant message.
+         *     run.started contains questionMessageId and replacedMessageId; message.started
+         *     contains the persisted answer ID. run.failed carries runId, phase, retryable,
+         *     questionMessageId and answerMessageId. message.completed terminates the stream.
+         */
+        post: operations["retryConversationRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/conversations/{conversationId}/messages": {
         parameters: {
             query?: never;
@@ -1272,6 +1317,22 @@ export interface components {
             status: "active" | "completed" | "archived";
             /** Format: date-time */
             createdAt: string;
+        };
+        AIRun: {
+            id: string;
+            conversationId: string;
+            runType: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "completed" | "failed" | "expired";
+            phase: string | null;
+            errorMessage: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            retryable: boolean;
+            questionMessageId: string | null;
+            answerMessageId: string | null;
         };
         RelatedCardProposal: {
             id: string;
@@ -2616,6 +2677,60 @@ export interface operations {
                 content: {
                     "text/event-stream": string;
                 };
+            };
+        };
+    };
+    getLatestConversationRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: components["parameters"]["ConversationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Latest AI run, if any */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIRun"] | null;
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    retryConversationRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: components["parameters"]["ConversationId"];
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-sent AI events for the accepted retry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Run is not the latest retryable incomplete turn */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

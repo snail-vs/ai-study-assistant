@@ -46,7 +46,7 @@ const {
 } = storeToRefs(learningStore)
 const {
   conversations, activeConversation, showConversationList, showMobileDiscussion,
-  messages, highlightedMessageIds, sideRun, streamError,
+  messages, highlightedMessageIds, sideRun, streamError, retryRun, canRetry, restoringRetry,
 } = storeToRefs(conversationStore)
 const {
   proposal, recommendations, teacherGuidance, selectedRecommendation,
@@ -65,6 +65,14 @@ const {
   operationError: notesError,
 } = storeToRefs(notesStore)
 const { error, learningView } = storeToRefs(workspaceStore)
+
+watch(() => activeConversation.value?.id, () => { error.value = '' }, { flush: 'sync' })
+watch(() => section.value?.id, (sectionId) => {
+  if (activeConversation.value && activeConversation.value.sectionId !== sectionId) {
+    activeConversation.value = null
+    conversationStore.clearMessages()
+  }
+}, { flush: 'sync' })
 
 const showKnowledgeSidebar = ref(localStorage.getItem('studycenter.knowledgeSidebar') !== 'false')
 const showTeacherGuidance = ref(true)
@@ -181,16 +189,21 @@ function masteryLabel(level) {
 }
 
 onMounted(async () => {
+  let studyRoutesReady = false
   const removeRouteListener = router.afterEach((to) => {
-    void workspaceStore.restoreStudyRoute(to)
+    if (studyRoutesReady && authUser.value) void workspaceStore.restoreStudyRoute(to)
   })
   routeListenerCleanup = removeRouteListener
+  await router.isReady()
   await checkAuth()
   if (authUser.value) {
     await Promise.all([loadHistory(), loadProviderSettings()])
+    authChecked.value = true
+    studyRoutesReady = true
     await restoreStudyRoute()
   }
   authChecked.value = true
+  studyRoutesReady = true
 })
 onUnmounted(() => {
   stopChatResize()
@@ -615,16 +628,28 @@ async function openSideConversation() {
 }
 
 async function sendMessage(text = input.value) {
-  if (!activeConversation.value || !section.value || !text.trim() || sideRun.value.active) return
+  if (!activeConversation.value || !section.value || !text.trim() || sideRun.value.active || restoringRetry.value) return
+  const conversationId = activeConversation.value.id
   error.value = ''
   input.value = ''
   await nextTick()
   resizeComposer()
   try {
+    if (activeConversation.value?.id !== conversationId) return
     await conversationStore.sendMessage(text, section.value)
-    if (streamError.value) error.value = streamError.value
   } catch (err) {
-    error.value = err.message
+    if (activeConversation.value?.id === conversationId && !streamError.value) error.value = err.message
+  }
+}
+
+async function retryMessage() {
+  if (!canRetry.value || !section.value) return
+  const conversationId = activeConversation.value?.id
+  error.value = ''
+  try {
+    await conversationStore.retryMessage(section.value)
+  } catch (err) {
+    if (activeConversation.value?.id === conversationId && !streamError.value) error.value = err.message
   }
 }
 
@@ -886,8 +911,8 @@ function nextSection() {
 
       <aside class="chat panel">
         <div class="chat-head">
-          <div class="chat-heading"><span class="chat-region-label">讨论区</span><button class="conversation-trigger" :disabled="sideRun.active" @click="showConversationList = !showConversationList" :aria-expanded="showConversationList"><span class="panel-title">{{ activeConversation?.title || '新问题讨论' }}</span><span class="conversation-trigger-icon">⌄</span></button></div>
-          <div class="chat-head-actions"><button class="new-chat" :disabled="sideRun.active" @click="activeConversation = null; messages = []; showConversationList = false">＋ 新建讨论</button><button class="mobile-chat-close" aria-label="关闭讨论区" @click="showMobileDiscussion = false">×</button></div>
+          <div class="chat-heading"><span class="chat-region-label">讨论区</span><button class="conversation-trigger" :disabled="sideRun.active || restoringRetry" @click="showConversationList = !showConversationList" :aria-expanded="showConversationList"><span class="panel-title">{{ activeConversation?.title || '新问题讨论' }}</span><span class="conversation-trigger-icon">⌄</span></button></div>
+          <div class="chat-head-actions"><button class="new-chat" :disabled="sideRun.active || restoringRetry" @click="conversationStore.selectConversation(null); showConversationList = false">＋ 新建讨论</button><button class="mobile-chat-close" aria-label="关闭讨论区" @click="showMobileDiscussion = false">×</button></div>
         </div>
         <div v-if="showConversationList" class="conversation-menu-backdrop" @click="showConversationList = false">
           <div class="conversation-list" @click.stop>
@@ -903,6 +928,7 @@ function nextSection() {
             <span>{{ message.senderName || (message.role === 'user' ? '你' : 'AI') }}</span><i v-if="message.pending" class="typing-dots"><b></b><b></b><b></b></i>
             <div v-if="message.role === 'assistant'" class="message-markdown" v-html="renderMessage(message.content)"></div>
             <div v-else class="message-plain">{{ message.content }}</div>
+            <small v-if="message.incomplete" class="message-incomplete">回答未完成</small>
           </div>
           <div v-if="!messages.length" class="chat-empty">从当前章节提出一个问题，开始独立讨论。</div>
           <div v-if="proposal" class="proposal-card">
@@ -912,13 +938,17 @@ function nextSection() {
             <div class="proposal-actions"><button @click="studyAssistStore.setSelectedRecommendation(proposal)">查看建议</button><button :disabled="creatingBranch" @click="acceptProposal()">{{ creatingBranch ? '正在创建…' : '创建学习分支' }}</button></div>
           </div>
         </div>
-        <div v-if="sideRun.active" class="chat-run-status"><i class="status-spinner"></i>{{ sideRun.label }}</div>
-        <p v-if="error" class="error chat-error">{{ error }}</p>
+        <div v-if="sideRun.active || restoringRetry" class="chat-run-status" role="status"><i class="status-spinner"></i>{{ restoringRetry ? '正在恢复回答状态…' : sideRun.label }}</div>
+        <div v-if="streamError || retryRun" class="error chat-error" role="status">
+          <p>{{ streamError || '回答未完成，可以重新生成回答。' }}</p>
+          <button v-if="retryRun" type="button" class="secondary" :disabled="!canRetry" @click="retryMessage">{{ sideRun.active ? '正在重新生成…' : restoringRetry ? '正在恢复状态…' : '重新生成回答' }}</button>
+        </div>
+        <p v-if="error && error !== streamError" class="error chat-error">{{ error }}</p>
         <form class="composer" :class="{ 'composer-expanded': composerFullscreen }" @submit.prevent="activeConversation ? sendMessage() : openSideConversation()">
-          <textarea ref="composerInput" v-model="input" :disabled="sideRun.active" placeholder="问问当前内容…（Shift / Ctrl / ⌘ + Enter 发送）" @input="resizeComposer" @keydown="handleComposerKeydown"></textarea>
+          <textarea ref="composerInput" v-model="input" :disabled="sideRun.active || restoringRetry" placeholder="问问当前内容…（Shift / Ctrl / ⌘ + Enter 发送）" @input="resizeComposer" @keydown="handleComposerKeydown"></textarea>
           <div class="composer-actions">
             <button type="button" class="composer-fullscreen-toggle" :aria-label="composerFullscreen ? '收起输入框' : '展开输入框'" @click="toggleComposerFullscreen">{{ composerFullscreen ? '收起输入框' : '展开输入框 ↗' }}</button>
-            <button :disabled="sideRun.active">{{ sideRun.active ? '回答中…' : '发送 ↗' }}</button>
+            <button :disabled="sideRun.active || restoringRetry">{{ sideRun.active ? '回答中…' : restoringRetry ? '恢复中…' : '发送 ↗' }}</button>
           </div>
         </form>
       </aside>

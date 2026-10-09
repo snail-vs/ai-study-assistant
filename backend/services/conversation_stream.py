@@ -1,10 +1,13 @@
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
 from typing import AsyncIterator
 from uuid import uuid4
 
-from sqlalchemy import select
+from fastapi import HTTPException
+from sqlalchemy import exists, or_, select, update
+from sqlalchemy.orm import aliased
 from sqlalchemy.orm import Session
 
 from ..agents.prompts import QA_TUTOR_SYSTEM
@@ -19,8 +22,9 @@ from ..models import (
     Message,
     RelatedCardProposal,
     TeacherGuidance,
+    now,
 )
-from ..schemas import CreateMessageRequest, TeacherGuidanceResponse
+from ..schemas import AIRunResponse, CreateMessageRequest, TeacherGuidanceResponse
 from ..services.provider_settings import restore_active_provider
 from ..sse import encode_event
 
@@ -36,11 +40,122 @@ class StreamContext:
     run: AIRun
     primary_agent_id: str
     primary_agent: object | None
+    replaced_message_id: str | None = None
 
 
 class ConversationStreamService:
     def __init__(self, db: Session):
         self.db = db
+
+    def latest_run(self, conversation_id: str) -> AIRun | None:
+        run = self.db.scalar(
+            select(AIRun)
+            .where(AIRun.conversation_id == conversation_id)
+            .order_by(AIRun.created_at.desc(), AIRun.id.desc())
+            .limit(1)
+        )
+        if (
+            run and run.status in ("queued", "running") and run.updated_at
+            and (now() - run.updated_at).total_seconds() > 180
+        ):
+            run.status = "expired"
+            # Keep the interrupted phase: an expired diagnosis has a complete answer.
+            run.error_message = "AI 请求可能已中断。"
+            self.db.commit()
+        return run
+
+    def latest_turn(self, run: AIRun) -> tuple[Message | None, Message | None]:
+        if run.run_type != "side_message" or not run.created_at:
+            return None, None
+        ambiguous = self.db.scalar(select(AIRun.id).where(
+            AIRun.conversation_id == run.conversation_id,
+            AIRun.id != run.id, AIRun.created_at == run.created_at,
+        ).limit(1))
+        if ambiguous:
+            return None, None
+        # SQLAlchemy inserts the run just before its user message. Do not attach
+        # the preceding completed question to a legacy run with no new question.
+        turn = list(self.db.scalars(
+            select(Message)
+            .where(
+                Message.conversation_id == run.conversation_id,
+                Message.created_at >= run.created_at,
+            )
+            .order_by(Message.created_at, Message.id)
+        ))
+        if not turn or len(turn) > 2:
+            return None, None
+        question = turn[0]
+        if (
+            question.role != "user" or question.visibility != "user"
+            or not question.content.strip() or question.created_at <= run.created_at
+        ):
+            return None, None
+        answer = turn[1] if len(turn) == 2 else None
+        if answer and (
+            answer.role != "assistant" or answer.visibility != "user"
+            or answer.created_at <= question.created_at
+        ):
+            return None, None
+        return question, answer
+
+    def run_response(self, conversation: Conversation, run: AIRun) -> AIRunResponse:
+        question, answer = self.latest_turn(run)
+        section = self.db.get(CardSection, conversation.section_id) if conversation.section_id else None
+        active = self.db.scalar(select(AIRun.id).where(
+            AIRun.conversation_id == conversation.id,
+            AIRun.status.in_(("queued", "running")),
+        ).limit(1))
+        guidance = self.db.scalar(select(TeacherGuidance.id).where(
+            TeacherGuidance.source_question_message_id == question.id,
+        ).limit(1)) if question else None
+        response = AIRunResponse.model_validate(run)
+        response.question_message_id = question.id if question else None
+        response.answer_message_id = answer.id if answer else None
+        response.retryable = bool(
+            run.run_type == "side_message" and run.status in ("failed", "expired")
+            and run.phase in ("waiting", "planning", "answering")
+            and question and section and section.card_id == conversation.card_id
+            and (not answer or run.phase == "answering")
+            and not active and not guidance
+        )
+        return response
+
+    def prepare_retry(
+        self, conversation: Conversation, card: KnowledgeCard, run_id: str,
+    ) -> StreamContext:
+        run = self.latest_run(conversation.id)
+        if not run or run.id != run_id or not self.run_response(conversation, run).retryable:
+            raise HTTPException(status_code=409, detail="该轮回答不可重试")
+        question, answer = self.latest_turn(run)
+        other = aliased(AIRun)
+        # The database claim, not the preflight read, decides who may regenerate.
+        claimed = self.db.execute(
+            update(AIRun).where(
+                AIRun.id == run.id,
+                AIRun.status.in_(("failed", "expired")),
+                AIRun.phase.in_(("waiting", "planning", "answering")),
+                ~exists(select(other.id).where(
+                    other.conversation_id == conversation.id,
+                    or_(
+                        other.status.in_(("queued", "running")),
+                        other.created_at > run.created_at,
+                        (other.created_at == run.created_at) & (other.id > run.id),
+                    ),
+                )),
+            ).values(status="running", phase="waiting", error_message=None, updated_at=now()),
+            execution_options={"synchronize_session": False},
+        )
+        if claimed.rowcount != 1:
+            self.db.rollback()
+            raise HTTPException(status_code=409, detail="该轮回答正在处理或不可重试")
+        replaced_message_id = answer.id if answer else None
+        if answer:
+            self.db.delete(answer)
+        self.db.commit()
+        self.db.refresh(run)
+        payload = CreateMessageRequest(content=question.content, sectionId=conversation.section_id)
+        return self._context(conversation, card, payload, question, run, replaced_message_id)
 
     def prepare(
         self,
@@ -48,10 +163,15 @@ class ConversationStreamService:
         card: KnowledgeCard,
         payload: CreateMessageRequest,
     ) -> StreamContext:
-        primary_agent_id = conversation.participant_ids[0] if conversation.participant_ids else (
-            "teacher" if conversation.conversation_type == "main" else "side_tutor"
+        # Explicit creation order also makes new turns unambiguous on refresh.
+        run = AIRun(
+            conversation_id=conversation.id,
+            run_type="side_message",
+            status="running",
+            phase="waiting",
         )
-        primary_agent = get_agent(primary_agent_id)
+        self.db.add(run)
+        self.db.flush()
         user_message = Message(
             conversation_id=conversation.id,
             role="user",
@@ -62,22 +182,22 @@ class ConversationStreamService:
             content=payload.content,
         )
         self.db.add(user_message)
-        run = AIRun(
-            conversation_id=conversation.id,
-            run_type="side_message",
-            status="running",
-            phase="waiting",
-        )
-        self.db.add(run)
         self.db.commit()
+        return self._context(conversation, card, payload, user_message, run)
+
+    def _context(
+        self, conversation: Conversation, card: KnowledgeCard,
+        payload: CreateMessageRequest, user_message: Message, run: AIRun,
+        replaced_message_id: str | None = None,
+    ) -> StreamContext:
+        primary_agent_id = conversation.participant_ids[0] if conversation.participant_ids else (
+            "teacher" if conversation.conversation_type == "main" else "side_tutor"
+        )
         return StreamContext(
-            conversation=conversation,
-            card=card,
-            payload=payload,
-            user_message=user_message,
-            run=run,
-            primary_agent_id=primary_agent_id,
-            primary_agent=primary_agent,
+            conversation=conversation, card=card, payload=payload,
+            user_message=user_message, run=run,
+            primary_agent_id=primary_agent_id, primary_agent=get_agent(primary_agent_id),
+            replaced_message_id=replaced_message_id,
         )
 
     async def events(self, context: StreamContext) -> AsyncIterator[str]:
@@ -95,6 +215,8 @@ class ConversationStreamService:
             {
                 "conversationId": conversation.id,
                 "runId": run.id,
+                "questionMessageId": user_message.id,
+                "replacedMessageId": context.replaced_message_id,
                 "phase": "waiting",
                 "label": "正在等待 AI 响应",
             },
@@ -173,9 +295,10 @@ class ConversationStreamService:
                     "message.delta",
                     {"messageId": message_id, "senderId": primary_agent_id, "delta": delta},
                 )
-        except Exception as exc:
+        except (Exception, asyncio.CancelledError) as exc:
             if response_parts:
                 db.add(Message(
+                    id=message_id,
                     conversation_id=conversation.id,
                     role="assistant",
                     sender_id=primary_agent_id,
@@ -184,11 +307,12 @@ class ConversationStreamService:
                     visibility="user",
                     content="".join(response_parts),
                 ))
-                db.commit()
             run.status = "failed"
             run.phase = "answering"
-            run.error_message = str(exc)
+            run.error_message = str(exc) or "AI 回答已中断"
             db.commit()
+            if isinstance(exc, asyncio.CancelledError):
+                raise
             message = str(exc)
             if "MissingSessionID" in message or "only be used in OpenCode" in message:
                 message = (
@@ -196,10 +320,16 @@ class ConversationStreamService:
                     " OpenCode 付费模型、"
                     "DeepSeek 或 OpenRouter 模型。"
                 )
-            yield encode_event("run.failed", {"code": "AI_PROVIDER_ERROR", "message": message})
+            yield encode_event("run.failed", {
+                "code": "AI_PROVIDER_ERROR", "message": message,
+                "runId": run.id, "phase": run.phase, "retryable": True,
+                "questionMessageId": user_message.id,
+                "answerMessageId": message_id if response_parts else None,
+            })
             yield "event: message.completed\ndata: {}\n\n"
             return
         assistant = Message(
+            id=message_id,
             conversation_id=conversation.id,
             role="assistant",
             sender_id=primary_agent_id,
@@ -320,7 +450,11 @@ class ConversationStreamService:
             db.commit()
             yield encode_event(
                 "run.failed",
-                {"code": "AI_DIAGNOSIS_FAILED", "message": str(exc)},
+                {
+                    "code": "AI_DIAGNOSIS_FAILED", "message": str(exc),
+                    "runId": run.id, "phase": run.phase, "retryable": False,
+                    "questionMessageId": user_message.id, "answerMessageId": assistant.id,
+                },
                 ensure_ascii=True,
             )
         if run.status != "failed":

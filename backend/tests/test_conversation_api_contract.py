@@ -83,7 +83,8 @@ class ConversationApiContractTests(unittest.TestCase):
             ("POST", "/cards/{card_id}/conversations"),
             ("GET", "/cards/{card_id}/conversations"),
             ("GET", "/conversations/{conversation_id}/messages"),
-            ("GET", "/conversations/{conversation_id}/runs/active"),
+            ("GET", "/conversations/{conversation_id}/runs/latest"),
+            ("POST", "/conversations/{conversation_id}/runs/{run_id}/retry"),
             ("POST", "/conversations/{conversation_id}/messages/stream"),
         }
         actual = [
@@ -111,11 +112,17 @@ class ConversationApiContractTests(unittest.TestCase):
             list[MessageResponse],
         )
         self.assertEqual(
-            routes[("GET", "/conversations/{conversation_id}/runs/active")].response_model,
+            routes[("GET", "/conversations/{conversation_id}/runs/latest")].response_model,
             AIRunResponse | None,
         )
         self.assertIsNone(
             routes[("POST", "/conversations/{conversation_id}/messages/stream")].response_model
+        )
+        self.assertIsNone(
+            routes[("POST", "/conversations/{conversation_id}/runs/{run_id}/retry")].response_model
+        )
+        self.assertIsNone(
+            routes[("POST", "/conversations/{conversation_id}/runs/{run_id}/retry")].body_field
         )
         self.assertEqual(routes[("POST", "/cards/{card_id}/conversations")].status_code, 201)
         for key, route in routes.items():
@@ -133,7 +140,8 @@ class ConversationApiContractTests(unittest.TestCase):
             ("GET", "/api/v1/cards/{card_id}/conversations"),
             ("POST", "/api/v1/cards/{card_id}/conversations"),
             ("GET", "/api/v1/conversations/{conversation_id}/messages"),
-            ("GET", "/api/v1/conversations/{conversation_id}/runs/active"),
+            ("GET", "/api/v1/conversations/{conversation_id}/runs/latest"),
+            ("POST", "/api/v1/conversations/{conversation_id}/runs/{run_id}/retry"),
             ("POST", "/api/v1/conversations/{conversation_id}/messages/stream"),
         ]
         self.assertEqual(sorted(entries), sorted(expected))
