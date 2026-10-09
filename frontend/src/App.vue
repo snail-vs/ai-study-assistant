@@ -48,6 +48,9 @@ const {
   conversations, activeConversation, showConversationList, showMobileDiscussion,
   messages, highlightedMessageIds, sideRun, streamError, retryRun, canRetry, restoringRetry,
 } = storeToRefs(conversationStore)
+const retryQuestion = computed(() => messages.value.find((message) => (
+  message.role === 'user' && message.id === retryRun.value?.questionMessageId
+))?.content || '')
 const {
   proposal, recommendations, teacherGuidance, selectedRecommendation,
 } = storeToRefs(studyAssistStore)
@@ -939,10 +942,12 @@ function nextSection() {
           </div>
         </div>
         <div v-if="sideRun.active || restoringRetry" class="chat-run-status" role="status"><i class="status-spinner"></i>{{ restoringRetry ? '正在恢复回答状态…' : sideRun.label }}</div>
-        <div v-if="streamError || retryRun" class="error chat-error" role="status">
-          <p>{{ streamError || '回答未完成，可以重新生成回答。' }}</p>
-          <button v-if="retryRun" type="button" class="secondary" :disabled="!canRetry" @click="retryMessage">{{ sideRun.active ? '正在重新生成…' : restoringRetry ? '正在恢复状态…' : '重新生成回答' }}</button>
+        <div v-if="retryRun" class="chat-retry" role="status">
+          <span class="chat-retry-label">重新回答这个问题</span>
+          <p v-if="retryQuestion" class="chat-retry-question">{{ retryQuestion }}</p>
+          <button type="button" :disabled="!canRetry" @click="retryMessage">{{ sideRun.active ? '正在重新生成…' : restoringRetry ? '正在恢复状态…' : '重新生成回答' }}</button>
         </div>
+        <p v-else-if="streamError" class="error chat-error" role="status">{{ streamError }}</p>
         <p v-if="error && error !== streamError" class="error chat-error">{{ error }}</p>
         <form class="composer" :class="{ 'composer-expanded': composerFullscreen }" @submit.prevent="activeConversation ? sendMessage() : openSideConversation()">
           <textarea ref="composerInput" v-model="input" :disabled="sideRun.active || restoringRetry" placeholder="问问当前内容…（Shift / Ctrl / ⌘ + Enter 发送）" @input="resizeComposer" @keydown="handleComposerKeydown"></textarea>
